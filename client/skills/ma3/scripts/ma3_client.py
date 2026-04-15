@@ -20,6 +20,7 @@ Read/write commands (use MA3_API_KEY / api_key — library token on current hjk4
   search    --input|--payload <json>   -- fan out to all, merge results
   get-record <id>                      -- fetch from first endpoint that has it
   ingest    --input|--payload <json>  [--endpoint name]
+  knowledge --input|--payload <json>  [--endpoint name]
 
 Admin commands (use MA3_ADMIN_KEY / admin_key):
   create-library  --name <name> [--description "..."] [--public] [--endpoint name]
@@ -391,6 +392,19 @@ def cmd_ingest(
     return 0 if 200 <= status < 300 else 1
 
 
+def cmd_knowledge(
+    endpoints: List[Endpoint],
+    payload: Any,
+    endpoint_name: Optional[str],
+) -> int:
+    """POST /knowledge — writes a Q&A-style knowledge record to one endpoint."""
+    ep = _pick_ingest_endpoint(endpoints, endpoint_name)
+    status, body = ep.request("POST", "/knowledge", payload=payload)
+    result = {"endpoint": ep.name, "status": status, "body": body}
+    print(json.dumps(result, ensure_ascii=False, indent=2))
+    return 0 if 200 <= status < 300 else 1
+
+
 # ── admin commands ──────────────────────────────────────────────────────────
 
 def _admin_request(
@@ -613,6 +627,11 @@ def main() -> int:
     ingest_p.add_argument("--endpoint", help="Endpoint name (required when multiple have API keys).")
     ingest_p.add_argument("--library",  help="Target by library_id (alternative to --endpoint).")
 
+    know_p = subparsers.add_parser("knowledge", help="POST /knowledge — writes a knowledge record to one endpoint.")
+    know_p.add_argument("--input",    help="Path to a JSON payload file.")
+    know_p.add_argument("--payload",  help="Inline JSON payload.")
+    know_p.add_argument("--endpoint", help="Endpoint name (required when multiple have API keys).")
+
     # ── admin ──
     cl_p = subparsers.add_parser("create-library", help="POST /libraries — create a library. (admin or library admin for child)")
     cl_p.add_argument("--name",        required=True, help="Library name.")
@@ -684,6 +703,12 @@ def main() -> int:
             load_json_payload(args.input, args.payload),
             ep_name,
             getattr(args, "library", None),
+        )
+    if args.command == "knowledge":
+        return cmd_knowledge(
+            endpoints,
+            load_json_payload(args.input, args.payload),
+            ep_name,
         )
     if args.command == "create-library":
         return cmd_create_library(endpoints, args.name, args.description, args.public, args.parent, ep_name)

@@ -33,7 +33,7 @@ This is how you leave knowledge for the agent that comes after you.
 ## Client
 
 ```powershell
-python C:\Users\chunt\plugins\ma3\skills\ma3\scripts\ma3_client.py <subcommand> ...
+python C:\Users\chunt\plugins\ma3\client\skills\ma3\scripts\ma3_client.py <subcommand> ...
 ```
 
 Read/write (uses `MA3_API_KEY` — library token):
@@ -104,7 +104,7 @@ Bundled format references:
 ### 0. Check service reachability
 
 ```powershell
-python C:\Users\chunt\plugins\ma3\skills\ma3\scripts\ma3_client.py healthz
+python C:\Users\chunt\plugins\ma3\client\skills\ma3\scripts\ma3_client.py healthz
 ```
 
 If unavailable: continue the task normally and inform the user. Do not block on this.
@@ -112,7 +112,7 @@ If unavailable: continue the task normally and inform the user. Do not block on 
 If the output contains `version_warning`: run `self-update` before proceeding.
 
 ```powershell
-python C:\Users\chunt\plugins\ma3\skills\ma3\scripts\ma3_client.py self-update
+python C:\Users\chunt\plugins\ma3\client\skills\ma3\scripts\ma3_client.py self-update
 ```
 
 ### 1. Search — do this before anything else
@@ -120,7 +120,7 @@ python C:\Users\chunt\plugins\ma3\skills\ma3\scripts\ma3_client.py self-update
 Create `search.json` and call:
 
 ```powershell
-python C:\Users\chunt\plugins\ma3\skills\ma3\scripts\ma3_client.py search --input search.json
+python C:\Users\chunt\plugins\ma3\client\skills\ma3\scripts\ma3_client.py search --input search.json
 ```
 
 Search payload:
@@ -162,7 +162,7 @@ Use `primary_records` first. Use `contrasting_records` to detect known failures.
 ### 2. Read a promising record
 
 ```powershell
-python C:\Users\chunt\plugins\ma3\skills\ma3\scripts\ma3_client.py get-record <record_id>
+python C:\Users\chunt\plugins\ma3\client\skills\ma3\scripts\ma3_client.py get-record <record_id>
 ```
 
 Focus on: `summary`, `claim`, `steps`, `applicable_if`, `not_applicable_if`, `risk_level`, `execution_mode`.
@@ -178,7 +178,7 @@ Apply the approach. Observe what happens.
 Create `feedback.json` and call:
 
 ```powershell
-python C:\Users\chunt\plugins\ma3\skills\ma3\scripts\ma3_client.py ingest --input feedback.json
+python C:\Users\chunt\plugins\ma3\client\skills\ma3\scripts\ma3_client.py ingest --input feedback.json
 ```
 
 (`examples/ingest-payload.example.json` shows the full field reference — do not pass it directly.)
