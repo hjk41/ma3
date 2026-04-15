@@ -57,8 +57,22 @@ CLIENT_VERSION = "0.3.0"
 # ── helpers ────────────────────────────────────────────────────────────────
 
 def _plugin_root() -> str:
-    script_dir = os.path.dirname(os.path.abspath(__file__))
-    return os.path.abspath(os.path.join(script_dir, "..", "..", ".."))
+    """Locate the plugin root by walking up from the script and looking for anchors.
+
+    Anchors (in order of preference):
+      1. A directory containing .codex-plugin/plugin.json
+      2. A directory containing both .env and skills/
+
+    Falls back to 3 levels up (original behaviour) if no anchor is found.
+    """
+    script_path = Path(os.path.abspath(__file__))
+    for candidate in [script_path.parent, *script_path.parents]:
+        if (candidate / ".codex-plugin" / "plugin.json").exists():
+            return str(candidate)
+        if (candidate / ".env").exists() and (candidate / "skills").exists():
+            return str(candidate)
+    # Fallback: 3 levels up from the script (skills/ma3/scripts/ -> plugin root)
+    return str(script_path.parents[3])
 
 
 def load_dotenv_file() -> None:
@@ -252,6 +266,37 @@ def _parse_version(v: str) -> tuple:
     return tuple(parts)
 
 
+def _request_with_retry(
+    ep: "Endpoint",
+    method: str,
+    path: str,
+    payload: Any = None,
+    timeout: int = 30,
+    retries: int = 1,
+) -> Tuple[int, Any]:
+    """Call ep.request with a custom timeout, retrying once on network/timeout errors."""
+    import time as _time
+
+    url = ep.base_url.rstrip("/") + path
+    headers = ep.headers(include_json=payload is not None)
+    data = json.dumps(payload, ensure_ascii=False).encode("utf-8") if payload is not None else None
+
+    last_status, last_body = 0, {}
+    for attempt in range(retries + 1):
+        req = urllib.request.Request(url, data=data, headers=headers, method=method)
+        try:
+            with urllib.request.urlopen(req, timeout=timeout) as resp:
+                return resp.status, _parse_body(resp.read().decode("utf-8"))
+        except urllib.error.HTTPError as exc:
+            return exc.code, _parse_body(exc.read().decode("utf-8", errors="replace"))
+        except Exception as exc:
+            last_status, last_body = 0, {"error": str(exc)}
+            if attempt < retries:
+                _time.sleep(2)
+
+    return last_status, last_body
+
+
 def cmd_healthz(endpoints: List[Endpoint]) -> int:
     results = {}
     overall_ok = True
@@ -271,12 +316,48 @@ def cmd_healthz(endpoints: List[Endpoint]) -> int:
         else:
             overall_ok = False
         results[ep.name] = ep_result
+    results["plugin_root"] = _plugin_root()
     print(json.dumps(results, ensure_ascii=False, indent=2))
     return 0 if overall_ok else 1
 
 
-def cmd_self_update() -> int:
-    """Pull the latest client from origin/main."""
+def cmd_self_update(endpoints: List[Endpoint]) -> int:
+    """Update all client files from the server, or fall back to git pull."""
+    # Try HTTP download from the first configured endpoint
+    ep = endpoints[0]
+    plugin_root = Path(_plugin_root())
+    client_files = [
+        ("skills/ma3/scripts/ma3_client.py", "/client/ma3_client.py"),
+        ("skills/ma3/SKILL.md",              "/client/SKILL.md"),
+        ("AGENTS.md",                         "/client/AGENTS.md"),
+        ("examples/search-payload.example.json", "/client/examples/search-payload.example.json"),
+        ("examples/ingest-payload.example.json",  "/client/examples/ingest-payload.example.json"),
+    ]
+    downloaded = 0
+    errors = []
+    for rel_path, server_path in client_files:
+        dest = plugin_root / rel_path
+        url = ep.base_url.rstrip("/") + server_path
+        req = urllib.request.Request(url, headers={"User-Agent": "ma3-self-update/1.0"})
+        try:
+            with urllib.request.urlopen(req, timeout=20) as resp:
+                dest.parent.mkdir(parents=True, exist_ok=True)
+                dest.write_bytes(resp.read())
+                print(f"  updated: {dest}")
+                downloaded += 1
+        except Exception as exc:
+            errors.append(f"  WARN: {rel_path}: {exc}")
+
+    if errors:
+        for msg in errors:
+            print(msg, file=sys.stderr)
+
+    if downloaded > 0:
+        print(f"self-update complete ({downloaded} files refreshed from {ep.base_url})")
+        return 0
+
+    # Nothing downloaded from server — fall back to git pull
+    print("Could not reach server; trying git pull ...", file=sys.stderr)
     result = subprocess.run(
         ["git", "rev-parse", "--show-toplevel"],
         cwd=str(Path(__file__).resolve().parent),
@@ -284,14 +365,11 @@ def cmd_self_update() -> int:
         text=True,
     )
     if result.returncode != 0:
-        print("ERROR: not a git repository — cannot self-update.", file=sys.stderr)
+        print("ERROR: not a git repository either — cannot self-update.", file=sys.stderr)
         return 1
     repo_root = result.stdout.strip()
     print(f"Updating ma3 at {repo_root} ...")
-    pull = subprocess.run(
-        ["git", "pull", "origin", "main"],
-        cwd=repo_root,
-    )
+    pull = subprocess.run(["git", "pull", "origin", "main"], cwd=repo_root)
     return pull.returncode
 
 
@@ -326,7 +404,7 @@ def cmd_search(endpoints: List[Endpoint], payload: Any) -> int:
     errors: Dict[str, Any] = {}
 
     for ep in endpoints:
-        status, body = ep.request("POST", "/search", payload)
+        status, body = _request_with_retry(ep, "POST", "/search", payload, timeout=30, retries=1)
         if not (200 <= status < 300):
             errors[ep.name] = {"status": status, "body": body}
             continue
@@ -359,6 +437,57 @@ def cmd_search(endpoints: List[Endpoint], payload: Any) -> int:
 
     print(json.dumps(result, ensure_ascii=False, indent=2))
     return 0 if primary or contrasting else (1 if errors else 0)
+
+
+def cmd_warmup(endpoints: List[Endpoint]) -> int:
+    """Verify full chain: healthz + minimal search on each endpoint."""
+    import time
+    results: Dict[str, Any] = {}
+    overall_ok = True
+
+    for ep in endpoints:
+        ep_result: Dict[str, Any] = {"url": ep.base_url}
+
+        # healthz
+        status, body = ep.request("GET", "/healthz")
+        ep_result["healthz"] = {"status": status, "ok": 200 <= status < 300}
+        if not (200 <= status < 300):
+            overall_ok = False
+            results[ep.name] = ep_result
+            continue
+
+        min_v = body.get("min_client_version")
+        if min_v and _parse_version(CLIENT_VERSION) < _parse_version(min_v):
+            ep_result["version_warning"] = (
+                f"client {CLIENT_VERSION} < server requires {min_v}"
+                " — run: ma3_client.py self-update"
+            )
+            overall_ok = False
+
+        # minimal search
+        minimal_payload = {
+            "problem": "warmup ping",
+            "query_intent": "find_verified_fix",
+            "task_type": "warmup",
+            "max_primary": 1,
+            "max_contrasting": 0,
+        }
+        t0 = time.monotonic()
+        status, sbody = _request_with_retry(ep, "POST", "/search", minimal_payload, timeout=30, retries=1)
+        elapsed = round(time.monotonic() - t0, 2)
+        ep_result["search"] = {
+            "status": status,
+            "ok": 200 <= status < 300,
+            "elapsed_s": elapsed,
+        }
+        if not (200 <= status < 300):
+            overall_ok = False
+
+        results[ep.name] = ep_result
+
+    results["plugin_root"] = _plugin_root()
+    print(json.dumps(results, ensure_ascii=False, indent=2))
+    return 0 if overall_ok else 1
 
 
 def cmd_get_record(endpoints: List[Endpoint], record_id: str) -> int:
@@ -606,7 +735,8 @@ def main() -> int:
 
     # ── read/write ──
     subparsers.add_parser("healthz", help="Probe all configured endpoints.")
-    subparsers.add_parser("self-update", help="Pull latest client from origin/main (git pull).")
+    subparsers.add_parser("self-update", help="Re-download all client files from server (or git pull).")
+    subparsers.add_parser("warmup", help="healthz + minimal search — verify full chain before use.")
 
     list_p = subparsers.add_parser("list", help="GET /records — paginated browse.")
     list_p.add_argument("--offset",   type=int, default=0,  help="Start offset (default 0).")
@@ -690,7 +820,9 @@ def main() -> int:
     if args.command == "healthz":
         return cmd_healthz(endpoints)
     if args.command == "self-update":
-        return cmd_self_update()
+        return cmd_self_update(endpoints)
+    if args.command == "warmup":
+        return cmd_warmup(endpoints)
     if args.command == "list":
         return cmd_list_records(endpoints, args.offset, args.limit, args.status, ep_name)
     if args.command == "search":

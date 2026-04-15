@@ -13,7 +13,7 @@ set -euo pipefail
 # ── defaults ────────────────────────────────────────────────────────────────
 BASE_URL="${MA3_BASE_URL:-http://10.100.193.54:8000}"
 API_KEY="${MA3_API_KEY:-}"
-PLUGIN_DIR="${MA3_PLUGIN_DIR:-$HOME/plugins/ma3/client}"
+PLUGIN_DIR="${MA3_PLUGIN_DIR:-$HOME/plugins/ma3}"
 
 # ── parse args ───────────────────────────────────────────────────────────────
 while [[ $# -gt 0 ]]; do
@@ -44,8 +44,8 @@ echo "Base URL : $BASE_URL"
 echo "Install  : $PLUGIN_DIR"
 echo ""
 
-# ── 1. download ma3_client.py and SKILL.md ──────────────────────────────────
-echo "[1/3] Downloading ma3_client.py and SKILL.md ..."
+# ── 1. download all client files ─────────────────────────────────────────────
+echo "[1/4] Downloading client files ..."
 mkdir -p "$(dirname "$CLIENT_SCRIPT")"
 curl -fsSL "$BASE_URL/client/ma3_client.py" -o "$CLIENT_SCRIPT"
 chmod +x "$CLIENT_SCRIPT"
@@ -55,12 +55,39 @@ SKILL_MD="$PLUGIN_DIR/skills/ma3/SKILL.md"
 curl -fsSL "$BASE_URL/client/SKILL.md" -o "$SKILL_MD"
 echo "      → $SKILL_MD"
 
-# ── 2. write .env (skip if already exists) ───────────────────────────────────
+AGENTS_MD="$PLUGIN_DIR/AGENTS.md"
+curl -fsSL "$BASE_URL/client/AGENTS.md" -o "$AGENTS_MD"
+echo "      → $AGENTS_MD"
+
+mkdir -p "$PLUGIN_DIR/examples"
+curl -fsSL "$BASE_URL/client/examples/search-payload.example.json" \
+     -o "$PLUGIN_DIR/examples/search-payload.example.json"
+echo "      → $PLUGIN_DIR/examples/search-payload.example.json"
+
+curl -fsSL "$BASE_URL/client/examples/ingest-payload.example.json" \
+     -o "$PLUGIN_DIR/examples/ingest-payload.example.json"
+echo "      → $PLUGIN_DIR/examples/ingest-payload.example.json"
+
+# ── 2. create plugin metadata ─────────────────────────────────────────────────
+echo "[2/4] Writing plugin metadata ..."
+PLUGIN_JSON_DIR="$PLUGIN_DIR/.codex-plugin"
+mkdir -p "$PLUGIN_JSON_DIR"
+cat > "$PLUGIN_JSON_DIR/plugin.json" << EOF
+{
+  "name": "ma3",
+  "version": "0.1.0",
+  "description": "Use ma3 for verified agent search, record lookup, and reusable result write-back.",
+  "skills": "../skills/"
+}
+EOF
+echo "      → $PLUGIN_JSON_DIR/plugin.json"
+
+# ── 3. write .env (skip if already exists) ───────────────────────────────────
 ENV_FILE="$PLUGIN_DIR/.env"
 if [[ -f "$ENV_FILE" ]]; then
-  echo "[2/3] .env already exists — skipping (edit manually to update)."
+  echo "[3/4] .env already exists — skipping (edit manually to update)."
 else
-  echo "[2/3] Writing .env ..."
+  echo "[3/4] Writing .env ..."
   cat > "$ENV_FILE" << EOF
 MA3_BASE_URL=$BASE_URL
 MA3_API_KEY=$API_KEY
@@ -70,8 +97,8 @@ EOF
   echo "      → $ENV_FILE"
 fi
 
-# ── 3. patch ~/.claude/settings.json ────────────────────────────────────────
-echo "[3/3] Patching ~/.claude/settings.json ..."
+# ── 4. patch ~/.claude/settings.json ────────────────────────────────────────
+echo "[4/4] Patching ~/.claude/settings.json ..."
 PYTHON=$(command -v python3 || command -v python || echo "")
 if [[ -z "$PYTHON" ]]; then
   echo "      WARNING: python not found — skipping settings patch."
@@ -103,6 +130,6 @@ echo ""
 echo "=== Done! ==="
 echo ""
 echo "Quick test:"
-echo "  python \"$CLIENT_SCRIPT\" healthz"
+echo "  python \"$CLIENT_SCRIPT\" warmup"
 echo ""
 echo "Restart Claude Code for permission rules to take effect."

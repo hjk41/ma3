@@ -33,3 +33,18 @@ def get_ma3_client() -> str:
 @router.get("/client/SKILL.md", response_class=PlainTextResponse)
 def get_skill_md() -> str:
     return (CLIENT_DIR / "skills" / "ma3" / "SKILL.md").read_text(encoding="utf-8")
+
+
+@router.get("/client/AGENTS.md", response_class=PlainTextResponse)
+def get_client_agents_md() -> str:
+    return (CLIENT_DIR / "AGENTS.md").read_text(encoding="utf-8")
+
+
+@router.get("/client/examples/search-payload.example.json", response_class=PlainTextResponse)
+def get_search_example() -> str:
+    return (CLIENT_DIR / "examples" / "search-payload.example.json").read_text(encoding="utf-8")
+
+
+@router.get("/client/examples/ingest-payload.example.json", response_class=PlainTextResponse)
+def get_ingest_example() -> str:
+    return (CLIENT_DIR / "examples" / "ingest-payload.example.json").read_text(encoding="utf-8")

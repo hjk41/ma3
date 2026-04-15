@@ -13,7 +13,7 @@
 param(
     [string]$ApiKey  = $env:MA3_API_KEY,
     [string]$BaseUrl = $(if ($env:MA3_BASE_URL) { $env:MA3_BASE_URL } else { "http://10.100.193.54:8000" }),
-    [string]$Dir     = $(if ($env:MA3_PLUGIN_DIR) { $env:MA3_PLUGIN_DIR } else { "$HOME\plugins\ma3\client" })
+    [string]$Dir     = $(if ($env:MA3_PLUGIN_DIR) { $env:MA3_PLUGIN_DIR } else { "$HOME\plugins\ma3" })
 )
 
 $ClientScript = "$Dir\skills\ma3\scripts\ma3_client.py"
@@ -33,8 +33,8 @@ Write-Host "Base URL : $BaseUrl"
 Write-Host "Install  : $Dir"
 Write-Host ""
 
-# ── 1. download ma3_client.py and SKILL.md ──────────────────────────────────
-Write-Host "[1/3] Downloading ma3_client.py and SKILL.md ..."
+# ── 1. download all client files ─────────────────────────────────────────────
+Write-Host "[1/4] Downloading client files ..."
 New-Item -ItemType Directory -Force -Path (Split-Path $ClientScript) | Out-Null
 Invoke-WebRequest "$BaseUrl/client/ma3_client.py" -OutFile $ClientScript -UseBasicParsing
 Write-Host "      -> $ClientScript"
@@ -43,12 +43,39 @@ $SkillMd = "$Dir\skills\ma3\SKILL.md"
 Invoke-WebRequest "$BaseUrl/client/SKILL.md" -OutFile $SkillMd -UseBasicParsing
 Write-Host "      -> $SkillMd"
 
-# ── 2. write .env (skip if already exists) ───────────────────────────────────
+$AgentsMd = "$Dir\AGENTS.md"
+Invoke-WebRequest "$BaseUrl/client/AGENTS.md" -OutFile $AgentsMd -UseBasicParsing
+Write-Host "      -> $AgentsMd"
+
+New-Item -ItemType Directory -Force -Path "$Dir\examples" | Out-Null
+Invoke-WebRequest "$BaseUrl/client/examples/search-payload.example.json" `
+    -OutFile "$Dir\examples\search-payload.example.json" -UseBasicParsing
+Write-Host "      -> $Dir\examples\search-payload.example.json"
+
+Invoke-WebRequest "$BaseUrl/client/examples/ingest-payload.example.json" `
+    -OutFile "$Dir\examples\ingest-payload.example.json" -UseBasicParsing
+Write-Host "      -> $Dir\examples\ingest-payload.example.json"
+
+# ── 2. create plugin metadata ─────────────────────────────────────────────────
+Write-Host "[2/4] Writing plugin metadata ..."
+$PluginJsonDir = "$Dir\.codex-plugin"
+New-Item -ItemType Directory -Force -Path $PluginJsonDir | Out-Null
+@'
+{
+  "name": "ma3",
+  "version": "0.1.0",
+  "description": "Use ma3 for verified agent search, record lookup, and reusable result write-back.",
+  "skills": "../skills/"
+}
+'@ | Set-Content "$PluginJsonDir\plugin.json" -Encoding UTF8
+Write-Host "      -> $PluginJsonDir\plugin.json"
+
+# ── 3. write .env (skip if already exists) ───────────────────────────────────
 $EnvFile = "$Dir\.env"
 if (Test-Path $EnvFile) {
-    Write-Host "[2/3] .env already exists — skipping (edit manually to update)."
+    Write-Host "[3/4] .env already exists — skipping (edit manually to update)."
 } else {
-    Write-Host "[2/3] Writing .env ..."
+    Write-Host "[3/4] Writing .env ..."
     @"
 MA3_BASE_URL=$BaseUrl
 MA3_API_KEY=$ApiKey
@@ -58,8 +85,8 @@ MA3_CLIENT_SCRIPT=$ClientScript
     Write-Host "      -> $EnvFile"
 }
 
-# ── 3. patch ~/.claude/settings.json ────────────────────────────────────────
-Write-Host "[3/3] Patching ~/.claude/settings.json ..."
+# ── 4. patch ~/.claude/settings.json ────────────────────────────────────────
+Write-Host "[4/4] Patching ~/.claude/settings.json ..."
 $python = Get-Command python -ErrorAction SilentlyContinue
 if (-not $python) { $python = Get-Command python3 -ErrorAction SilentlyContinue }
 if (-not $python) {
@@ -93,6 +120,6 @@ Write-Host ""
 Write-Host "=== Done! ===" -ForegroundColor Green
 Write-Host ""
 Write-Host "Quick test:"
-Write-Host "  python `"$ClientScript`" healthz"
+Write-Host "  python `"$ClientScript`" warmup"
 Write-Host ""
 Write-Host "Restart Claude Code for permission rules to take effect."
