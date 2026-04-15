@@ -66,9 +66,10 @@ if (-not $python) {
     Write-Host "      WARNING: python not found — skipping settings patch." -ForegroundColor Yellow
     Write-Host '      Add manually: "permissions": { "allow": ["Bash(python */ma3_client.py*)"] }'
 } else {
-    & $python.Source - $ClientScript @'
+    $tmpPy = [System.IO.Path]::GetTempFileName() + ".py"
+    @"
 import json, pathlib, sys
-rule = f"Bash(python {sys.argv[1]}*)"
+rule = "Bash(python " + sys.argv[1] + "*)"
 sf   = pathlib.Path.home() / ".claude" / "settings.json"
 sf.parent.mkdir(parents=True, exist_ok=True)
 try:
@@ -79,10 +80,12 @@ allow = s.setdefault("permissions", {}).setdefault("allow", [])
 if rule not in allow:
     allow.append(rule)
     sf.write_text(json.dumps(s, indent=2, ensure_ascii=False), encoding="utf-8")
-    print(f"      -> added rule: {rule}")
+    print("      -> added rule: " + rule)
 else:
     print("      -> rule already present, no change.")
-'@
+"@ | Set-Content $tmpPy -Encoding UTF8
+    & $python.Source $tmpPy $ClientScript
+    Remove-Item $tmpPy -ErrorAction SilentlyContinue
 }
 
 # ── done ─────────────────────────────────────────────────────────────────────
