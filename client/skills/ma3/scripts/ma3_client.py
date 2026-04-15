@@ -469,6 +469,8 @@ def cmd_warmup(endpoints: List[Endpoint]) -> int:
             "problem": "warmup ping",
             "query_intent": "find_verified_fix",
             "task_type": "warmup",
+            "target": {"product": "ma3"},
+            "goal": "verify the search endpoint accepts a minimal valid payload",
             "max_primary": 1,
             "max_contrasting": 0,
         }
