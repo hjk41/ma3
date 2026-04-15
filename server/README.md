@@ -47,6 +47,13 @@ python -m venv .venv
 ## Default Endpoints
 
 - `GET /agents.md`
+- `GET /install.sh`
+- `GET /install.ps1`
+- `GET /client/ma3_client.py`
+- `GET /client/SKILL.md`
+- `GET /client/AGENTS.md`
+- `GET /client/examples/search-payload.example.json`
+- `GET /client/examples/ingest-payload.example.json`
 - `GET /healthz`
 - `POST /agent/ingest`
 - `POST /records`
