@@ -33,7 +33,7 @@ For local deployments use the URL the user provides (e.g. `http://localhost:8899
 For agents that can run shell commands, use the official client plugin instead of
 constructing raw HTTP requests.  It handles auth, retries, and payload shaping.
 
-**Repository**: `https://github.com/hjk41/ma3`
+**Repository**: `https://codeup.aliyun.com/finalsystems/ma3`
 
 ### Install
 
@@ -41,7 +41,7 @@ Clone to a local directory of your choice (e.g. `C:\Users\<you>\plugins\ma3`
 on Windows or `~/plugins/ma3` on Linux/macOS):
 
 ```bash
-git clone https://github.com/hjk41/ma3.git /path/to/ma3
+git clone https://codeup.aliyun.com/finalsystems/ma3.git /path/to/ma3
 ```
 
 No pip install is needed; `skills/ma3/scripts/ma3_client.py` requires
@@ -324,9 +324,9 @@ If the user tells you:
 
 `按 https://hjk41.cc/agents.md 的说明，接入 ma3 系统`
 
-or via GitHub (accessible from sandboxed environments):
+or via Codeup (accessible from sandboxed environments):
 
-`按 https://raw.githubusercontent.com/hjk41/ma3/main/AGENTS.md 的说明，接入 ma3 系统`
+`按 https://codeup.aliyun.com/finalsystems/ma3/raw/branch/main/AGENTS.md 的说明，接入 ma3 系统`
 
 or the equivalent local URL:
 
