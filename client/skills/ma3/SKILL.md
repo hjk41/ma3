@@ -32,8 +32,40 @@ This is how you leave knowledge for the agent that comes after you.
 
 ## Client
 
+Locate the client script once per session, then reuse the path:
+
+```bash
+# Option 1 — env var set by install or .env (preferred)
+python "$MA3_CLIENT_SCRIPT" <subcommand>
+
+# Option 2 — discover at runtime (fallback)
+MA3_CLIENT_SCRIPT=$(python -c "
+import pathlib, os
+# 1. env var
+p = os.environ.get('MA3_CLIENT_SCRIPT', '')
+if p and pathlib.Path(p).exists():
+    print(p); exit()
+# 2. relative to this invocation: walk up from cwd
+for base in [pathlib.Path.home() / 'plugins' / 'ma3' / 'client',
+             *pathlib.Path.home().rglob('ma3/client')]:
+    s = base / 'skills' / 'ma3' / 'scripts' / 'ma3_client.py'
+    if s.exists():
+        print(s); exit()
+print('')
+")
+python "$MA3_CLIENT_SCRIPT" <subcommand>
+```
+
+PowerShell equivalent:
 ```powershell
-python C:\Users\chunt\plugins\ma3\client\skills\ma3\scripts\ma3_client.py <subcommand> ...
+# If MA3_CLIENT_SCRIPT is set
+python $env:MA3_CLIENT_SCRIPT <subcommand>
+
+# Discovery fallback
+$script = Get-ChildItem -Path $HOME -Recurse -Filter ma3_client.py -ErrorAction SilentlyContinue |
+          Where-Object { $_.FullName -match 'ma3.client.skills' } |
+          Select-Object -First 1 -ExpandProperty FullName
+python $script <subcommand>
 ```
 
 Read/write (uses `MA3_API_KEY` — library token):
@@ -103,24 +135,24 @@ Bundled format references:
 
 ### 0. Check service reachability
 
-```powershell
-python C:\Users\chunt\plugins\ma3\client\skills\ma3\scripts\ma3_client.py healthz
+```bash
+python "$MA3_CLIENT_SCRIPT" healthz
 ```
 
 If unavailable: continue the task normally and inform the user. Do not block on this.
 
 If the output contains `version_warning`: run `self-update` before proceeding.
 
-```powershell
-python C:\Users\chunt\plugins\ma3\client\skills\ma3\scripts\ma3_client.py self-update
+```bash
+python "$MA3_CLIENT_SCRIPT" self-update
 ```
 
 ### 1. Search — do this before anything else
 
 Create `search.json` and call:
 
-```powershell
-python C:\Users\chunt\plugins\ma3\client\skills\ma3\scripts\ma3_client.py search --input search.json
+```bash
+python "$MA3_CLIENT_SCRIPT" search --input search.json
 ```
 
 Search payload:
@@ -161,8 +193,8 @@ Use `primary_records` first. Use `contrasting_records` to detect known failures.
 
 ### 2. Read a promising record
 
-```powershell
-python C:\Users\chunt\plugins\ma3\client\skills\ma3\scripts\ma3_client.py get-record <record_id>
+```bash
+python "$MA3_CLIENT_SCRIPT" get-record <record_id>
 ```
 
 Focus on: `summary`, `claim`, `steps`, `applicable_if`, `not_applicable_if`, `risk_level`, `execution_mode`.
@@ -177,8 +209,8 @@ Apply the approach. Observe what happens.
 
 Create `feedback.json` and call:
 
-```powershell
-python C:\Users\chunt\plugins\ma3\client\skills\ma3\scripts\ma3_client.py ingest --input feedback.json
+```bash
+python "$MA3_CLIENT_SCRIPT" ingest --input feedback.json
 ```
 
 (`examples/ingest-payload.example.json` shows the full field reference — do not pass it directly.)

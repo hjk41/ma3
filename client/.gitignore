@@ -1,3 +1,4 @@
 .env
+endpoints.json
 __pycache__/
 *.pyc

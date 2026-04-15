@@ -1,0 +1,15 @@
+{
+  "name": "finalsystems",
+  "plugins": [
+    {
+      "name": "ma3",
+      "source": "./",
+      "description": "ma3 (马妈妈) — institutional memory for AI agents. Search verified records before solving from scratch; write back reusable outcomes.",
+      "version": "0.1.0"
+    }
+  ],
+  "owner": {
+    "name": "hct",
+    "url": "https://hjk41.cc"
+  }
+}

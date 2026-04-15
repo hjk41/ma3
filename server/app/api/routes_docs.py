@@ -1,14 +1,30 @@
 from pathlib import Path
 
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException
 from fastapi.responses import PlainTextResponse
 
 
 router = APIRouter(tags=["docs"])
 
-DOCS_DIR = Path(__file__).resolve().parents[1] / "docs"
+DOCS_DIR   = Path(__file__).resolve().parents[1] / "docs"
+CLIENT_DIR = Path(__file__).resolve().parents[3] / "client"
 
 
 @router.get("/agents.md", response_class=PlainTextResponse)
 def get_agents_md() -> str:
     return (DOCS_DIR / "agents.md").read_text(encoding="utf-8")
+
+
+@router.get("/install.sh", response_class=PlainTextResponse)
+def get_install_sh() -> str:
+    return (CLIENT_DIR / "install.sh").read_text(encoding="utf-8")
+
+
+@router.get("/install.ps1", response_class=PlainTextResponse)
+def get_install_ps1() -> str:
+    return (CLIENT_DIR / "install.ps1").read_text(encoding="utf-8")
+
+
+@router.get("/client/ma3_client.py", response_class=PlainTextResponse)
+def get_ma3_client() -> str:
+    return (CLIENT_DIR / "skills" / "ma3" / "scripts" / "ma3_client.py").read_text(encoding="utf-8")
