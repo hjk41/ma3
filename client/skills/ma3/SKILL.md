@@ -36,24 +36,22 @@ Locate the client script once per session, then reuse the path:
 
 ```bash
 # Option 1 — env var set by install or .env (preferred)
-python "$MA3_CLIENT_SCRIPT" <subcommand>
+python3 "$MA3_CLIENT_SCRIPT" <subcommand>
 
 # Option 2 — discover at runtime (fallback)
-MA3_CLIENT_SCRIPT=$(python -c "
+MA3_CLIENT_SCRIPT=$(python3 -c "
 import pathlib, os
 # 1. env var
 p = os.environ.get('MA3_CLIENT_SCRIPT', '')
 if p and pathlib.Path(p).exists():
     print(p); exit()
-# 2. relative to this invocation: walk up from cwd
-for base in [pathlib.Path.home() / 'plugins' / 'ma3' / 'client',
-             *pathlib.Path.home().rglob('ma3/client')]:
-    s = base / 'skills' / 'ma3' / 'scripts' / 'ma3_client.py'
-    if s.exists():
-        print(s); exit()
+# 2. well-known install path
+s = pathlib.Path.home() / 'plugins' / 'ma3' / 'skills' / 'ma3' / 'scripts' / 'ma3_client.py'
+if s.exists():
+    print(s); exit()
 print('')
 ")
-python "$MA3_CLIENT_SCRIPT" <subcommand>
+python3 "$MA3_CLIENT_SCRIPT" <subcommand>
 ```
 
 PowerShell equivalent:
@@ -136,7 +134,7 @@ Bundled format references:
 ### 0. Check service reachability
 
 ```bash
-python "$MA3_CLIENT_SCRIPT" healthz
+python3 "$MA3_CLIENT_SCRIPT" healthz
 ```
 
 If unavailable: continue the task normally and inform the user. Do not block on this.
@@ -144,7 +142,7 @@ If unavailable: continue the task normally and inform the user. Do not block on 
 If the output contains `version_warning`: run `self-update` before proceeding.
 
 ```bash
-python "$MA3_CLIENT_SCRIPT" self-update
+python3 "$MA3_CLIENT_SCRIPT" self-update
 ```
 
 ### 1. Search — do this before anything else
@@ -152,7 +150,7 @@ python "$MA3_CLIENT_SCRIPT" self-update
 Create `search.json` and call:
 
 ```bash
-python "$MA3_CLIENT_SCRIPT" search --input search.json
+python3 "$MA3_CLIENT_SCRIPT" search --input search.json
 ```
 
 Search payload:
@@ -194,7 +192,7 @@ Use `primary_records` first. Use `contrasting_records` to detect known failures.
 ### 2. Read a promising record
 
 ```bash
-python "$MA3_CLIENT_SCRIPT" get-record <record_id>
+python3 "$MA3_CLIENT_SCRIPT" get-record <record_id>
 ```
 
 Focus on: `summary`, `claim`, `steps`, `applicable_if`, `not_applicable_if`, `risk_level`, `execution_mode`.
@@ -210,7 +208,7 @@ Apply the approach. Observe what happens.
 Create `feedback.json` and call:
 
 ```bash
-python "$MA3_CLIENT_SCRIPT" ingest --input feedback.json
+python3 "$MA3_CLIENT_SCRIPT" ingest --input feedback.json
 ```
 
 (`examples/ingest-payload.example.json` shows the full field reference — do not pass it directly.)
