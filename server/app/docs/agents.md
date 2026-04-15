@@ -33,57 +33,54 @@ For local deployments use the URL the user provides (e.g. `http://localhost:8899
 For agents that can run shell commands, use the official client plugin instead of
 constructing raw HTTP requests.  It handles auth, retries, and payload shaping.
 
-**Repository**: `https://codeup.aliyun.com/finalsystems/ma3`
-
 ### Install
 
-Clone to a local directory of your choice (e.g. `C:\Users\<you>\plugins\ma3`
-on Windows or `~/plugins/ma3` on Linux/macOS):
+Run the one-line installer with the API key the user provides.
+`BASE_URL` is the ma3 server URL (same host this document was fetched from).
+
+**Linux / macOS / WSL / bash:**
 
 ```bash
-git clone https://codeup.aliyun.com/finalsystems/ma3.git /path/to/ma3
+MA3_API_KEY=<your_token> curl -fsSL <BASE_URL>/install.sh | bash
 ```
 
-No pip install is needed; `skills/ma3/scripts/ma3_client.py` requires
-only the Python standard library.
+**Windows PowerShell:**
 
-### Configure
-
-Create a `.env` file in the cloned directory (see `.env.example`):
-
+```powershell
+$env:MA3_API_KEY="<your_token>"; irm <BASE_URL>/install.ps1 | iex
 ```
-MA3_BASE_URL=https://hjk41.cc   # or your local URL
-MA3_API_KEY=your_library_token  # for normal read/write
-MA3_ADMIN_KEY=your_admin_key    # for library/token management (optional)
-MA3_AUTH_MODE=x-api-key         # or: bearer
+
+The installer creates `~/plugins/ma3/` with the client script, skill files, examples,
+and `.env`.  It also symlinks `~/.codex/skills/ma3` so Codex picks up the skill
+automatically on the next restart.
+
+No `pip install` is needed; the client requires only the Python standard library.
+
+### Verify
+
+After installing, run warmup to confirm the full chain (healthz + search):
+
+```bash
+python3 ~/plugins/ma3/skills/ma3/scripts/ma3_client.py warmup
 ```
 
 ### Use
 
 ```bash
 # health check
-python /path/to/ma3/skills/ma3/scripts/ma3_client.py healthz
+python3 ~/plugins/ma3/skills/ma3/scripts/ma3_client.py healthz
 
 # search
-python /path/to/ma3/skills/ma3/scripts/ma3_client.py search --input search_payload.json
+python3 ~/plugins/ma3/skills/ma3/scripts/ma3_client.py search --input search.json
 
 # read a record
-python /path/to/ma3/skills/ma3/scripts/ma3_client.py get-record <record_id>
+python3 ~/plugins/ma3/skills/ma3/scripts/ma3_client.py get-record <record_id>
 
 # write back
-python /path/to/ma3/skills/ma3/scripts/ma3_client.py ingest --input ingest_payload.json
+python3 ~/plugins/ma3/skills/ma3/scripts/ma3_client.py ingest --input ingest.json
 
 # update client to latest version
-python /path/to/ma3/skills/ma3/scripts/ma3_client.py self-update
-```
-
-PowerShell wrapper equivalents are also available in `scripts/`:
-
-```powershell
-powershell -ExecutionPolicy Bypass -File scripts\healthz.ps1
-powershell -ExecutionPolicy Bypass -File scripts\search.ps1 --input search_payload.json
-powershell -ExecutionPolicy Bypass -File scripts\get-record.ps1 <record_id>
-powershell -ExecutionPolicy Bypass -File scripts\ingest.ps1 --input ingest_payload.json
+python3 ~/plugins/ma3/skills/ma3/scripts/ma3_client.py self-update
 ```
 
 ## Authentication
