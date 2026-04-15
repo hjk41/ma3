@@ -108,20 +108,26 @@ else
   "$PYTHON" - "$CLIENT_SCRIPT" << 'PYEOF'
 import json, pathlib, sys
 
-rule = f"Bash(python {sys.argv[1]}*)"
-sf   = pathlib.Path.home() / ".claude" / "settings.json"
+script = sys.argv[1]
+rules  = [f"Bash(python {script}*)", f"Bash(python3 {script}*)"]
+sf     = pathlib.Path.home() / ".claude" / "settings.json"
 sf.parent.mkdir(parents=True, exist_ok=True)
 try:
     s = json.loads(sf.read_text(encoding="utf-8")) if sf.exists() else {}
 except json.JSONDecodeError:
     s = {}
 allow = s.setdefault("permissions", {}).setdefault("allow", [])
-if rule not in allow:
-    allow.append(rule)
+added = []
+for rule in rules:
+    if rule not in allow:
+        allow.append(rule)
+        added.append(rule)
+if added:
     sf.write_text(json.dumps(s, indent=2, ensure_ascii=False), encoding="utf-8")
-    print(f"      → added rule: {rule}")
+    for r in added:
+        print(f"      → added rule: {r}")
 else:
-    print("      → rule already present, no change.")
+    print("      → rules already present, no change.")
 PYEOF
 fi
 
