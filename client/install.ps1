@@ -85,8 +85,20 @@ MA3_CLIENT_SCRIPT=$ClientScript
     Write-Host "      -> $EnvFile"
 }
 
-# ── 4. patch ~/.claude/settings.json ────────────────────────────────────────
-Write-Host "[4/4] Patching ~/.claude/settings.json ..."
+# ── 4. symlink into ~/.codex/skills/ ────────────────────────────────────────
+Write-Host "[4/5] Linking skill into ~/.codex/skills/ ..."
+$CodexSkillsDir = "$HOME\.codex\skills"
+New-Item -ItemType Directory -Force -Path $CodexSkillsDir | Out-Null
+$CodexSkillLink = "$CodexSkillsDir\ma3"
+$SkillTarget = "$Dir\skills\ma3"
+if (Test-Path $CodexSkillLink) {
+    Remove-Item $CodexSkillLink -Force -Recurse
+}
+New-Item -ItemType Junction -Path $CodexSkillLink -Target $SkillTarget | Out-Null
+Write-Host "      -> $CodexSkillLink => $SkillTarget"
+
+# ── 5. patch ~/.claude/settings.json ────────────────────────────────────────
+Write-Host "[5/5] Patching ~/.claude/settings.json ..."
 $python = Get-Command python -ErrorAction SilentlyContinue
 if (-not $python) { $python = Get-Command python3 -ErrorAction SilentlyContinue }
 if (-not $python) {
@@ -128,4 +140,4 @@ Write-Host ""
 Write-Host "Quick test:"
 Write-Host "  python `"$ClientScript`" warmup"
 Write-Host ""
-Write-Host "Restart Claude Code for permission rules to take effect."
+Write-Host "Restart Codex / Claude Code for the skill and permission rules to take effect."

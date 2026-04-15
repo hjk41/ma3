@@ -97,8 +97,19 @@ EOF
   echo "      → $ENV_FILE"
 fi
 
-# ── 4. patch ~/.claude/settings.json ────────────────────────────────────────
-echo "[4/4] Patching ~/.claude/settings.json ..."
+# ── 4. symlink into ~/.codex/skills/ ────────────────────────────────────────
+echo "[4/5] Linking skill into ~/.codex/skills/ ..."
+CODEX_SKILLS_DIR="$HOME/.codex/skills"
+if [[ -d "$CODEX_SKILLS_DIR" || ! -e "$CODEX_SKILLS_DIR" ]]; then
+  mkdir -p "$CODEX_SKILLS_DIR"
+  ln -sf "$PLUGIN_DIR/skills/ma3" "$CODEX_SKILLS_DIR/ma3"
+  echo "      → $CODEX_SKILLS_DIR/ma3 -> $PLUGIN_DIR/skills/ma3"
+else
+  echo "      WARNING: $CODEX_SKILLS_DIR exists but is not a directory — skipping."
+fi
+
+# ── 5. patch ~/.claude/settings.json ────────────────────────────────────────
+echo "[5/5] Patching ~/.claude/settings.json ..."
 PYTHON=$(command -v python3 || command -v python || echo "")
 if [[ -z "$PYTHON" ]]; then
   echo "      WARNING: python not found — skipping settings patch."
@@ -136,6 +147,6 @@ echo ""
 echo "=== Done! ==="
 echo ""
 echo "Quick test:"
-echo "  python \"$CLIENT_SCRIPT\" warmup"
+echo "  python3 \"$CLIENT_SCRIPT\" warmup"
 echo ""
-echo "Restart Claude Code for permission rules to take effect."
+echo "Restart Claude Code / Codex for permission rules and skill to take effect."
