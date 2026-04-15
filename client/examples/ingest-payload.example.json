@@ -1,0 +1,48 @@
+{
+  "problem": "connect ma3 into the local Codex environment",
+  "task_type": "plugin_integration",
+  "goal": "add a reusable ma3 integration for search and write-back",
+  "target": {
+    "product": "Codex CLI",
+    "component": "plugin"
+  },
+  "environment": {
+    "os": "windows",
+    "shell": "powershell",
+    "runtime": "python",
+    "sandbox": "workspace-write",
+    "workspace_boundary": "workspace-write",
+    "network_profile": "restricted"
+  },
+  "versions": {
+    "agent": "current",
+    "target": "current"
+  },
+  "observations": [
+    "healthz returned 200 from the plugin client"
+  ],
+  "actions": [
+    {
+      "action": "created_local_plugin",
+      "note": "Added home-local Codex plugin and marketplace entry"
+    }
+  ],
+  "outcome": "success",
+  "result_summary": "Created a local Codex plugin for ma3 with health, search, record, and ingest support.",
+  "evidence": [
+    {
+      "kind": "test_result",
+      "summary": "ma3_client.py healthz returned 200",
+      "ref": null
+    }
+  ],
+  "based_on_record_id": null,
+  "feedback_type": null,
+  "relation_type": null,
+  "applicable_if": [
+    "Codex home-local plugins are loaded from ~/.agents/plugins/marketplace.json"
+  ],
+  "not_applicable_if": [],
+  "dry_run": true,
+  "draft_only": true
+}

@@ -1,0 +1,25 @@
+{
+  "problem": "connect ma3 into the local Codex environment",
+  "query_intent": "find_verified_fix",
+  "task_type": "plugin_integration",
+  "target": {
+    "product": "Codex CLI",
+    "component": "plugin"
+  },
+  "goal": "add a reusable ma3 integration for search and write-back",
+  "environment": {
+    "os": "windows",
+    "shell": "powershell",
+    "runtime": "python",
+    "sandbox": "workspace-write",
+    "workspace_boundary": "workspace-write",
+    "network_profile": "restricted"
+  },
+  "versions": {
+    "agent": "current",
+    "target": "current"
+  },
+  "observations": [],
+  "constraints": [],
+  "config_excerpt": null
+}
