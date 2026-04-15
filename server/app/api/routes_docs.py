@@ -28,3 +28,8 @@ def get_install_ps1() -> str:
 @router.get("/client/ma3_client.py", response_class=PlainTextResponse)
 def get_ma3_client() -> str:
     return (CLIENT_DIR / "skills" / "ma3" / "scripts" / "ma3_client.py").read_text(encoding="utf-8")
+
+
+@router.get("/client/SKILL.md", response_class=PlainTextResponse)
+def get_skill_md() -> str:
+    return (CLIENT_DIR / "skills" / "ma3" / "SKILL.md").read_text(encoding="utf-8")

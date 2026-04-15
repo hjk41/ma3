@@ -33,11 +33,15 @@ Write-Host "Base URL : $BaseUrl"
 Write-Host "Install  : $Dir"
 Write-Host ""
 
-# ── 1. download ma3_client.py ────────────────────────────────────────────────
-Write-Host "[1/3] Downloading ma3_client.py ..."
+# ── 1. download ma3_client.py and SKILL.md ──────────────────────────────────
+Write-Host "[1/3] Downloading ma3_client.py and SKILL.md ..."
 New-Item -ItemType Directory -Force -Path (Split-Path $ClientScript) | Out-Null
 Invoke-WebRequest "$BaseUrl/client/ma3_client.py" -OutFile $ClientScript -UseBasicParsing
 Write-Host "      -> $ClientScript"
+
+$SkillMd = "$Dir\skills\ma3\SKILL.md"
+Invoke-WebRequest "$BaseUrl/client/SKILL.md" -OutFile $SkillMd -UseBasicParsing
+Write-Host "      -> $SkillMd"
 
 # ── 2. write .env (skip if already exists) ───────────────────────────────────
 $EnvFile = "$Dir\.env"

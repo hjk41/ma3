@@ -44,12 +44,16 @@ echo "Base URL : $BASE_URL"
 echo "Install  : $PLUGIN_DIR"
 echo ""
 
-# ── 1. download ma3_client.py ────────────────────────────────────────────────
-echo "[1/3] Downloading ma3_client.py ..."
+# ── 1. download ma3_client.py and SKILL.md ──────────────────────────────────
+echo "[1/3] Downloading ma3_client.py and SKILL.md ..."
 mkdir -p "$(dirname "$CLIENT_SCRIPT")"
 curl -fsSL "$BASE_URL/client/ma3_client.py" -o "$CLIENT_SCRIPT"
 chmod +x "$CLIENT_SCRIPT"
 echo "      → $CLIENT_SCRIPT"
+
+SKILL_MD="$PLUGIN_DIR/skills/ma3/SKILL.md"
+curl -fsSL "$BASE_URL/client/SKILL.md" -o "$SKILL_MD"
+echo "      → $SKILL_MD"
 
 # ── 2. write .env (skip if already exists) ───────────────────────────────────
 ENV_FILE="$PLUGIN_DIR/.env"
