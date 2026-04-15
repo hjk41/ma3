@@ -60,7 +60,8 @@ MA3_CLIENT_SCRIPT=$ClientScript
 
 # ── 3. patch ~/.claude/settings.json ────────────────────────────────────────
 Write-Host "[3/3] Patching ~/.claude/settings.json ..."
-$python = (Get-Command python -ErrorAction SilentlyContinue) ?? (Get-Command python3 -ErrorAction SilentlyContinue)
+$python = Get-Command python -ErrorAction SilentlyContinue
+if (-not $python) { $python = Get-Command python3 -ErrorAction SilentlyContinue }
 if (-not $python) {
     Write-Host "      WARNING: python not found — skipping settings patch." -ForegroundColor Yellow
     Write-Host '      Add manually: "permissions": { "allow": ["Bash(python */ma3_client.py*)"] }'
