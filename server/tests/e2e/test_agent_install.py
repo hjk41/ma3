@@ -135,14 +135,16 @@ def test_agent_installs_ma3_plugin_autonomously(tmp_path):
     fake_codex_dir = fake_home / ".codex"
     fake_codex_dir.mkdir()
 
-    # Seed an empty settings.json; install.sh step 5 will patch it.
+    # Seed settings.json: empty permissions so install.sh step 5 can add its
+    # own allow rules (which we verify later).
     (fake_claude_dir / "settings.json").write_text("{}", encoding="utf-8")
 
     # ── Subprocess environment ─────────────────────────────────────────────────
 
-    # Auth env vars come from the real settings.json so claude can authenticate.
+    # Auth env vars come from the real settings.json so claude can authenticate
+    # even with HOME redirected to the temp directory.
     # We do NOT set MA3_API_KEY here — the agent should extract it from the prompt
-    # and pass it to install.sh via --api-key (the recommended form in agents.md).
+    # and pass it to install.sh via --api-key (the correct form shown in agents.md).
     subprocess_env = {
         **os.environ,
         **_claude_auth_env(),
@@ -156,10 +158,14 @@ def test_agent_installs_ma3_plugin_autonomously(tmp_path):
         api_key=MA3_TEST_API_KEY,
     )
 
+    # --allowedTools pre-grants Bash and WebFetch so the agent can run the
+    # install command and fetch agents.md without interactive permission prompts.
+    # This is NOT a permission bypass — it explicitly lists the tools the
+    # install workflow requires, using the normal claude permission system.
     result = subprocess.run(
         [
             "claude",
-            "--dangerously-skip-permissions",
+            "--allowedTools", "Bash,WebFetch",
             "--print",
             prompt,
         ],
