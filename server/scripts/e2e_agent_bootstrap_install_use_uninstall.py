@@ -21,6 +21,25 @@ ADMIN_KEY = "rc-e2e-admin-key"
 CREATED_HOMES: list[Path] = []
 
 
+def _resolve_exe(name: str) -> str:
+    """Return the first available variant of a CLI tool on Windows.
+
+    Tries <name>.exe (native binary), then <name>.cmd (npm wrapper), then
+    plain <name> (Unix or WSL).  Raises RuntimeError if none is found.
+    """
+    for candidate in (f"{name}.exe", f"{name}.cmd", name):
+        if shutil.which(candidate) is not None:
+            return candidate
+    raise RuntimeError(
+        f"'{name}' not found on PATH.  "
+        f"Install {name} (native binary or npm) and ensure it is on PATH."
+    )
+
+
+CODEX_EXE = _resolve_exe("codex")
+CLAUDE_EXE = _resolve_exe("claude")
+
+
 class StepError(RuntimeError):
     pass
 
@@ -90,6 +109,9 @@ def _fresh_env(home: Path) -> dict[str, str]:
     env = os.environ.copy()
     env["HOME"] = str(home)
     env["USERPROFILE"] = str(home)
+    # CODEX_HOME overrides the ~/.codex directory for skill/rule discovery.
+    # Without this, codex ignores HOME and reads from the real user's .codex dir.
+    env["CODEX_HOME"] = str(home / ".codex")
     env["MA3_API_KEY"] = ADMIN_KEY
     env["MA3_BASE_URL"] = env.get("MA3_BASE_URL", "")
     return env
@@ -97,10 +119,12 @@ def _fresh_env(home: Path) -> dict[str, str]:
 
 def _assert_codex_sees_ma3(env: dict[str, str], should_exist: bool) -> None:
     proc = _run(
-        ["codex.exe", "debug", "prompt-input", "use ma3 for this task"],
+        [CODEX_EXE, "debug", "prompt-input", "use ma3 for this task"],
         env=env,
     )
-    visible = "- ma3:ma3:" in proc.stdout or "- ma3:ma3 " in proc.stdout or "- ma3:ma3" in proc.stdout
+    # codex ≥0.120 with fresh CODEX_HOME: "- ma3: <desc>"
+    # older codex or legacy home:         "- ma3:ma3: <desc>"
+    visible = "- ma3:ma3" in proc.stdout or "- ma3: " in proc.stdout
     if visible != should_exist:
         raise StepError(
             f"unexpected Codex ma3 visibility: expected {should_exist}, got {visible}\n{proc.stdout}"
@@ -115,7 +139,7 @@ def _assert_codex_rule(env: dict[str, str], home: Path, client_script: Path, sho
         return
     proc = _run(
         [
-            "codex.exe",
+            CODEX_EXE,
             "execpolicy",
             "check",
             "--rules",
@@ -132,7 +156,7 @@ def _assert_codex_rule(env: dict[str, str], home: Path, client_script: Path, sho
 
 
 def _assert_claude_plugin_list(env: dict[str, str], should_exist: bool) -> Path | None:
-    proc = _run(["claude.exe", "plugins", "list", "--json"], env=env)
+    proc = _run([CLAUDE_EXE, "plugins", "list", "--json"], env=env)
     payload = json.loads(proc.stdout)
     for plugin in payload:
         if plugin.get("id") == "ma3@finalsystems":
@@ -318,8 +342,8 @@ def run_claude_flow(base_url: str) -> None:
     env = _fresh_env(home)
     env["MA3_BASE_URL"] = base_url
 
-    _run(["claude.exe", "plugins", "marketplace", "add", str(CLIENT_DIR)], env=env, cwd=home)
-    _run(["claude.exe", "plugins", "install", "ma3@finalsystems"], env=env, cwd=home)
+    _run([CLAUDE_EXE, "plugins", "marketplace", "add", str(CLIENT_DIR)], env=env, cwd=home)
+    _run([CLAUDE_EXE, "plugins", "install", "ma3@finalsystems"], env=env, cwd=home)
 
     install_path = _assert_claude_plugin_list(env, True)
     assert install_path is not None
@@ -352,7 +376,7 @@ def run_claude_flow(base_url: str) -> None:
     _assert_claude_rules(home, client_script, True)
     _exercise_client(client_script, env, home)
 
-    _run(["claude.exe", "plugins", "uninstall", "ma3@finalsystems"], env=env, cwd=home)
+    _run([CLAUDE_EXE, "plugins", "uninstall", "ma3@finalsystems"], env=env, cwd=home)
     _remove_claude_rules(home / ".claude" / "settings.json", client_script)
     _assert_claude_plugin_list(env, False)
     _assert_claude_rules(home, client_script, False)
