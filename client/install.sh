@@ -5,8 +5,9 @@
 #   curl -fsSL http://10.100.193.54:8000/install.sh | bash -s -- --api-key YOUR_KEY
 #   curl -fsSL http://10.100.193.54:8000/install.sh | bash -s -- --api-key YOUR_KEY --base-url http://other:8000
 #
-# Or set env vars before piping:
-#   MA3_API_KEY=xxx curl -fsSL http://10.100.193.54:8000/install.sh | bash
+# Note: avoid `MA3_API_KEY=xxx curl ... | bash` — the variable assignment applies
+# only to curl, not to bash in the pipeline.  Use --api-key or export first:
+#   export MA3_API_KEY=xxx && curl -fsSL .../install.sh | bash
 
 set -euo pipefail
 

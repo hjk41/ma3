@@ -41,7 +41,7 @@ Run the one-line installer with the API key the user provides.
 **Linux / macOS / WSL / bash:**
 
 ```bash
-MA3_API_KEY=<your_token> curl -fsSL <BASE_URL>/install.sh | bash
+curl -fsSL <BASE_URL>/install.sh | bash -s -- --api-key <your_token>
 ```
 
 **Windows PowerShell:**
