@@ -141,15 +141,22 @@ class RecordRepository:
         offset: int,
         limit: int,
         is_admin: bool = False,
+        own_library_id: str | None = None,
     ) -> tuple[list[Record], int]:
         """Return a page of accessible records plus total count matching the same filter.
 
         Draft records with ``library_id IS NULL`` (legacy/unowned) are only shown to admin.
+
+        When ``own_library_id`` is supplied and ``status == "active"``, the query
+        uses a compound predicate so that the caller's own library's drafts are
+        always included alongside the normally filtered rows — no separate
+        ``status=all`` call is required for a library admin to see their queue.
         """
         # Build WHERE clause
         conditions: list[str] = []
         params: list = []
 
+        # --- library visibility filter ---
         if is_admin:
             pass  # No library filter — admin sees all records
         elif library_ids:
@@ -164,8 +171,16 @@ class RecordRepository:
         else:
             conditions.append("library_id IS NULL")
 
-        if status:
-            # Use the indexed status column for efficient filtering
+        # --- status filter ---
+        if status and own_library_id:
+            # Compound: (normal status filter) OR (own-library drafts)
+            # Ensures library admins always see their pending queue without status=all.
+            normal_cond = f"status = ?"
+            own_draft_cond = f"(library_id = ? AND status = 'draft')"
+            conditions.append(f"({normal_cond} OR {own_draft_cond})")
+            params.extend([status, own_library_id])
+        elif status:
+            # Plain status filter
             conditions.append("status = ?")
             params.append(status)
 

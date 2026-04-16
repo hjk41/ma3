@@ -58,18 +58,26 @@ def list_records(
     """Browse accessible records with pagination.
 
     Returns ``{"records": [...], "total": N, "offset": N, "limit": N}``.
-    Use ``status=all`` to include drafts and invalid records (requires a library token).
+
+    When called with a library token and ``status=active`` (the default), the
+    caller's own library's drafts are always included alongside active records —
+    so a library admin can see their pending queue without needing ``status=all``.
+    Use ``status=all`` to also include invalid records.
     """
     raw = _extract_raw(x_api_key, authorization)
     is_admin = bool(raw and _is_admin_key(raw))
     lib_ids = accessible_library_ids(token)
     status_filter = None if status == "all" else status
+    # When filtering by active status, always surface the caller's own library's
+    # drafts so they are visible without needing an explicit status=all.
+    own_library_id = token.library_id if (token and status_filter == "active") else None
     records, total = RecordRepository().list_page(
         library_ids=lib_ids,
         status=status_filter,
         offset=offset,
         limit=limit,
         is_admin=is_admin,
+        own_library_id=own_library_id,
     )
     return {"records": [r.model_dump() for r in records], "total": total, "offset": offset, "limit": limit}
 
