@@ -5,6 +5,7 @@ all functions return ``None`` and callers simply skip vector scoring.
 """
 from __future__ import annotations
 
+import os
 from typing import TYPE_CHECKING
 
 import numpy as np
@@ -14,6 +15,7 @@ if TYPE_CHECKING:
 
 _model = None
 _MODEL_NAME = "all-MiniLM-L6-v2"
+_DISABLE_EMBEDDINGS = os.environ.get("MA3_DISABLE_EMBEDDINGS") == "1"
 
 
 def _get_model():
@@ -29,6 +31,8 @@ def embed_text(text: str) -> np.ndarray | None:
 
     Returns ``None`` if ``sentence-transformers`` is not installed.
     """
+    if _DISABLE_EMBEDDINGS:
+        return None
     if not text.strip():
         return None
     try:

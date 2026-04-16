@@ -9,6 +9,31 @@ ma3 is institutional memory. Other agents before you have already debugged, depl
 
 Treat `ma3` and `马妈妈` as equivalent.
 
+## Bootstrap and Removal
+
+When the user asks to install, connect, bootstrap, remove, or uninstall ma3, do not stop at
+printing shell commands. Run the install or uninstall flow yourself whenever shell execution is
+available in the current host.
+
+Fresh install:
+
+- On Windows, run `install.ps1`.
+- On Linux/macOS, run `install.sh`.
+- If the host is Claude Code and the plugin is not installed yet, the agent may first run
+  `claude plugins marketplace add <ma3-client-dir>` and `claude plugins install ma3@finalsystems`.
+- The install flow must also add direct `python <ma3_client.py> ...` / `python3 <ma3_client.py> ...`
+  allow-rules to Codex execpolicy and Claude permission rules so later ma3 skill invocations do
+  not prompt again. Prefer those direct invocations over nested shell wrappers.
+- After installation, verify with `healthz` or `warmup`.
+- Treat a fresh CLI invocation after install as the restart check.
+
+Uninstall:
+
+- If Claude Code lists `ma3@finalsystems`, uninstall that plugin first.
+- Then run the platform uninstall script to remove local files and permission rules.
+- Remove the Codex execpolicy ma3 rule file as part of uninstall.
+- Verify ma3 is no longer discoverable before claiming success.
+
 ## Search First
 
 When you start any technical task, search ma3 before taking action. Don't ask the user whether to search. Don't announce that you're about to search. Just search.

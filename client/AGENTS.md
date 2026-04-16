@@ -28,6 +28,29 @@ Default: `https://hjk41.cc`
 
 For local deployments use the URL the user provides (e.g. `http://localhost:8899`).
 
+## Bootstrap Contract
+
+If the user asks to install, connect, bootstrap, remove, or uninstall ma3, do the work yourself.
+Do not stop at handing the user `install.ps1`, `install.sh`, `uninstall.ps1`, or `uninstall.sh`
+unless command execution is unavailable.
+
+Fresh install:
+
+- Read this document first.
+- Run the platform-appropriate install flow yourself.
+- Ensure the install flow adds direct `python <ma3_client.py> ...` / `python3 <ma3_client.py> ...`
+  allow-rules for Codex execpolicy and Claude permissions. Prefer these direct invocations over
+  wrapping them in nested `powershell -Command` or `bash -lc` strings.
+- Re-invoke the host CLI after install to confirm ma3 is discoverable.
+- Run at least `healthz` and one real `search` or `warmup` before declaring success.
+
+Uninstall:
+
+- If Claude Code has `ma3@finalsystems` installed as a plugin, remove it.
+- Run the platform-appropriate uninstall flow yourself.
+- Ensure the Codex execpolicy rule file and Claude allow-rules are removed.
+- Re-check discoverability before declaring ma3 fully removed.
+
 ## Client Plugin (recommended)
 
 For agents that can run shell commands, use the official client plugin instead of
@@ -37,15 +60,31 @@ constructing raw HTTP requests.  It handles auth, retries, and payload shaping.
 
 ### Install
 
-Clone to a local directory of your choice (e.g. `C:\Users\<you>\plugins\ma3`
-on Windows or `~/plugins/ma3` on Linux/macOS):
+Preferred bootstrap path:
 
-```bash
-git clone https://github.com/hjk41/ma3.git /path/to/ma3
+Windows PowerShell:
+
+```powershell
+Invoke-WebRequest http://<server>/install.ps1 -OutFile install.ps1
+powershell -ExecutionPolicy Bypass -File .\install.ps1 -ApiKey <token> -BaseUrl http://<server>
 ```
 
-No pip install is needed; `skills/ma3/scripts/ma3_client.py` requires
-only the Python standard library.
+Linux/macOS:
+
+```bash
+curl -fsSL http://<server>/install.sh -o install.sh
+bash ./install.sh --api-key <token> --base-url http://<server>
+```
+
+If the host is Claude Code and plugin install is available, agents may also bootstrap with:
+
+```powershell
+claude plugins marketplace add /path/to/ma3/client
+claude plugins install ma3@finalsystems
+```
+
+Then run the installed `install.ps1` / `install.sh` in the plugin directory so `.env`,
+Codex skill links, and Claude permission rules are created automatically.
 
 ### Configure
 
@@ -335,8 +374,14 @@ or the equivalent local URL:
 then you should:
 
 1. read this document
-2. install the client plugin if not already present
+2. install the client plugin yourself if not already present
 3. check `/healthz`; run `self-update` if `version_warning` appears
 4. use `/search` before repeated exploration when applicable
 5. use `/agent/ingest` to write back reusable results
 6. prefer `dry_run` or `draft_only` when uncertainty or risk exists
+
+If the user says to uninstall ma3, you should:
+
+1. remove the Claude plugin if present
+2. run the platform uninstall flow yourself
+3. verify that ma3 is no longer discoverable

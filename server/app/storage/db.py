@@ -209,13 +209,25 @@ def backfill_search_indexes() -> None:
 
 
 def seed_if_empty() -> None:
-    from app.storage.repositories import RecordRepository
+    from app.storage.fts import fts_upsert
 
-    repo = RecordRepository()
-    if repo.count() > 0:
+    with get_connection() as conn:
+        row = conn.execute("SELECT COUNT(*) AS count FROM records").fetchone()
+    if row and int(row["count"]) > 0:
         return
     if not settings.seed_path.exists():
         return
     payload = json.loads(settings.seed_path.read_text(encoding="utf-8"))
-    for item in payload:
-        repo.insert(Record.model_validate(item))
+    records = [Record.model_validate(item) for item in payload]
+    with get_connection() as conn:
+        for record in records:
+            conn.execute(
+                "INSERT OR REPLACE INTO records(record_id, library_id, status, payload_json) VALUES (?, ?, ?, ?)",
+                (
+                    record.record_id,
+                    record.library_id,
+                    record.status.value,
+                    json.dumps(record.model_dump(), ensure_ascii=False),
+                ),
+            )
+            fts_upsert(conn, record)

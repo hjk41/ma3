@@ -24,7 +24,7 @@ class ServerBootError(RuntimeError):
 
 
 @contextmanager
-def managed_ma3_server(port: int = 8899):
+def managed_ma3_server(port: int = 8899, env_overrides: dict[str, str] | None = None):
     TMP_ROOT.mkdir(parents=True, exist_ok=True)
     temp_dir = TMP_ROOT / f"run_{uuid4().hex}"
     temp_dir.mkdir(parents=True, exist_ok=True)
@@ -36,6 +36,8 @@ def managed_ma3_server(port: int = 8899):
     env = os.environ.copy()
     env["MA3_DB_PATH"] = str(db_path)
     env["MA3_SEED_PATH"] = str(SEED_PATH)
+    if env_overrides:
+        env.update(env_overrides)
 
     with log_path.open("w", encoding="utf-8") as log_file:
         process = subprocess.Popen(
@@ -72,7 +74,7 @@ def wait_for_server(
     base_url: str,
     process: subprocess.Popen,
     log_path: Path,
-    timeout_seconds: float = 20.0,
+    timeout_seconds: float = 60.0,
 ) -> None:
     deadline = time.time() + timeout_seconds
     last_error = "server did not respond"

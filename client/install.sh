@@ -10,24 +10,29 @@
 
 set -euo pipefail
 
-# ── defaults ────────────────────────────────────────────────────────────────
 BASE_URL="${MA3_BASE_URL:-http://10.100.193.54:8000}"
 API_KEY="${MA3_API_KEY:-}"
 PLUGIN_DIR="${MA3_PLUGIN_DIR:-$HOME/plugins/ma3}"
 
-# ── parse args ───────────────────────────────────────────────────────────────
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    --api-key)  API_KEY="$2";  shift 2 ;;
+    --api-key) API_KEY="$2"; shift 2 ;;
     --base-url) BASE_URL="$2"; shift 2 ;;
-    --dir)      PLUGIN_DIR="$2"; shift 2 ;;
+    --dir) PLUGIN_DIR="$2"; shift 2 ;;
     *) shift ;;
   esac
 done
 
 CLIENT_SCRIPT="$PLUGIN_DIR/skills/ma3/scripts/ma3_client.py"
+SKILL_MD="$PLUGIN_DIR/skills/ma3/SKILL.md"
+AGENTS_MD="$PLUGIN_DIR/AGENTS.md"
+UNINSTALL_SH="$PLUGIN_DIR/uninstall.sh"
+SEARCH_EXAMPLE="$PLUGIN_DIR/examples/search-payload.example.json"
+INGEST_EXAMPLE="$PLUGIN_DIR/examples/ingest-payload.example.json"
+CODEX_RULES_DIR="$HOME/.codex/rules"
+CODEX_RULE_FILE="$CODEX_RULES_DIR/ma3.rules"
+CLIENT_SCRIPT_FORWARD="${CLIENT_SCRIPT//\\//}"
 
-# ── prompt for key if missing (reads from /dev/tty so pipe-safe) ─────────────
 if [[ -z "$API_KEY" ]]; then
   if [[ -e /dev/tty ]]; then
     read -rp "ma3 API Key: " API_KEY < /dev/tty
@@ -44,35 +49,28 @@ echo "Base URL : $BASE_URL"
 echo "Install  : $PLUGIN_DIR"
 echo ""
 
-# ── 1. download all client files ─────────────────────────────────────────────
-echo "[1/4] Downloading client files ..."
+echo "[1/5] Downloading client files ..."
 mkdir -p "$(dirname "$CLIENT_SCRIPT")"
+mkdir -p "$PLUGIN_DIR/examples"
 curl -fsSL "$BASE_URL/client/ma3_client.py" -o "$CLIENT_SCRIPT"
 chmod +x "$CLIENT_SCRIPT"
-echo "      → $CLIENT_SCRIPT"
-
-SKILL_MD="$PLUGIN_DIR/skills/ma3/SKILL.md"
+echo "      -> $CLIENT_SCRIPT"
 curl -fsSL "$BASE_URL/client/SKILL.md" -o "$SKILL_MD"
-echo "      → $SKILL_MD"
-
-AGENTS_MD="$PLUGIN_DIR/AGENTS.md"
+echo "      -> $SKILL_MD"
 curl -fsSL "$BASE_URL/client/AGENTS.md" -o "$AGENTS_MD"
-echo "      → $AGENTS_MD"
+echo "      -> $AGENTS_MD"
+curl -fsSL "$BASE_URL/client/uninstall.sh" -o "$UNINSTALL_SH"
+chmod +x "$UNINSTALL_SH"
+echo "      -> $UNINSTALL_SH"
+curl -fsSL "$BASE_URL/client/examples/search-payload.example.json" -o "$SEARCH_EXAMPLE"
+echo "      -> $SEARCH_EXAMPLE"
+curl -fsSL "$BASE_URL/client/examples/ingest-payload.example.json" -o "$INGEST_EXAMPLE"
+echo "      -> $INGEST_EXAMPLE"
 
-mkdir -p "$PLUGIN_DIR/examples"
-curl -fsSL "$BASE_URL/client/examples/search-payload.example.json" \
-     -o "$PLUGIN_DIR/examples/search-payload.example.json"
-echo "      → $PLUGIN_DIR/examples/search-payload.example.json"
-
-curl -fsSL "$BASE_URL/client/examples/ingest-payload.example.json" \
-     -o "$PLUGIN_DIR/examples/ingest-payload.example.json"
-echo "      → $PLUGIN_DIR/examples/ingest-payload.example.json"
-
-# ── 2. create plugin metadata ─────────────────────────────────────────────────
-echo "[2/4] Writing plugin metadata ..."
+echo "[2/5] Writing plugin metadata ..."
 PLUGIN_JSON_DIR="$PLUGIN_DIR/.codex-plugin"
 mkdir -p "$PLUGIN_JSON_DIR"
-cat > "$PLUGIN_JSON_DIR/plugin.json" << EOF
+cat > "$PLUGIN_JSON_DIR/plugin.json" <<'EOF'
 {
   "name": "ma3",
   "version": "0.1.0",
@@ -80,73 +78,80 @@ cat > "$PLUGIN_JSON_DIR/plugin.json" << EOF
   "skills": "../skills/"
 }
 EOF
-echo "      → $PLUGIN_JSON_DIR/plugin.json"
+echo "      -> $PLUGIN_JSON_DIR/plugin.json"
 
-# ── 3. write .env (skip if already exists) ───────────────────────────────────
 ENV_FILE="$PLUGIN_DIR/.env"
 if [[ -f "$ENV_FILE" ]]; then
-  echo "[3/4] .env already exists — skipping (edit manually to update)."
+  echo "[3/5] .env already exists - skipping (edit manually to update)."
 else
-  echo "[3/4] Writing .env ..."
-  cat > "$ENV_FILE" << EOF
+  echo "[3/5] Writing .env ..."
+  cat > "$ENV_FILE" <<EOF
 MA3_BASE_URL=$BASE_URL
 MA3_API_KEY=$API_KEY
 MA3_AUTH_MODE=x-api-key
 MA3_CLIENT_SCRIPT=$CLIENT_SCRIPT
 EOF
-  echo "      → $ENV_FILE"
+  echo "      -> $ENV_FILE"
 fi
 
-# ── 4. symlink into ~/.codex/skills/ ────────────────────────────────────────
 echo "[4/5] Linking skill into ~/.codex/skills/ ..."
 CODEX_SKILLS_DIR="$HOME/.codex/skills"
 if [[ -d "$CODEX_SKILLS_DIR" || ! -e "$CODEX_SKILLS_DIR" ]]; then
   mkdir -p "$CODEX_SKILLS_DIR"
   ln -sf "$PLUGIN_DIR/skills/ma3" "$CODEX_SKILLS_DIR/ma3"
-  echo "      → $CODEX_SKILLS_DIR/ma3 -> $PLUGIN_DIR/skills/ma3"
+  echo "      -> $CODEX_SKILLS_DIR/ma3 => $PLUGIN_DIR/skills/ma3"
+  mkdir -p "$CODEX_RULES_DIR"
+  cat > "$CODEX_RULE_FILE" <<EOF
+prefix_rule(pattern=["python", "$CLIENT_SCRIPT"], decision="allow")
+prefix_rule(pattern=["python3", "$CLIENT_SCRIPT"], decision="allow")
+prefix_rule(pattern=["python", "$CLIENT_SCRIPT_FORWARD"], decision="allow")
+prefix_rule(pattern=["python3", "$CLIENT_SCRIPT_FORWARD"], decision="allow")
+EOF
+  echo "      -> $CODEX_RULE_FILE"
 else
-  echo "      WARNING: $CODEX_SKILLS_DIR exists but is not a directory — skipping."
+  echo "      WARNING: $CODEX_SKILLS_DIR exists but is not a directory - skipping."
 fi
 
-# ── 5. patch ~/.claude/settings.json ────────────────────────────────────────
 echo "[5/5] Patching ~/.claude/settings.json ..."
-PYTHON=$(command -v python3 || command -v python || echo "")
+PYTHON="$(command -v python3 || command -v python || echo "")"
 if [[ -z "$PYTHON" ]]; then
-  echo "      WARNING: python not found — skipping settings patch."
-  echo "      Add this manually to ~/.claude/settings.json:"
-  echo '      "permissions": { "allow": ["Bash(python */ma3_client.py*)"] }'
+  echo "      WARNING: python not found - skipping settings patch."
+  echo '      Add manually: "permissions": { "allow": ["Bash(python */ma3_client.py*)"] }'
 else
-  "$PYTHON" - "$CLIENT_SCRIPT" << 'PYEOF'
-import json, pathlib, sys
+  "$PYTHON" - "$CLIENT_SCRIPT" <<'PYEOF'
+import json
+import pathlib
+import sys
 
 script = sys.argv[1]
-rules  = [f"Bash(python {script}*)", f"Bash(python3 {script}*)"]
-sf     = pathlib.Path.home() / ".claude" / "settings.json"
-sf.parent.mkdir(parents=True, exist_ok=True)
+rules = [f"Bash(python {script}*)", f"Bash(python3 {script}*)"]
+settings_file = pathlib.Path.home() / ".claude" / "settings.json"
+settings_file.parent.mkdir(parents=True, exist_ok=True)
 try:
-    s = json.loads(sf.read_text(encoding="utf-8")) if sf.exists() else {}
-except json.JSONDecodeError:
-    s = {}
-allow = s.setdefault("permissions", {}).setdefault("allow", [])
+    settings = json.loads(settings_file.read_text(encoding="utf-8")) if settings_file.exists() else {}
+except Exception:
+    settings = {}
+allow = settings.setdefault("permissions", {}).setdefault("allow", [])
 added = []
 for rule in rules:
     if rule not in allow:
         allow.append(rule)
         added.append(rule)
 if added:
-    sf.write_text(json.dumps(s, indent=2, ensure_ascii=False), encoding="utf-8")
-    for r in added:
-        print(f"      → added rule: {r}")
+    settings_file.write_text(json.dumps(settings, indent=2, ensure_ascii=False), encoding="utf-8")
+    for rule in added:
+        print(f"      -> added rule: {rule}")
 else:
-    print("      → rules already present, no change.")
+    print("      -> rules already present, no change.")
 PYEOF
 fi
 
-# ── done ─────────────────────────────────────────────────────────────────────
 echo ""
 echo "=== Done! ==="
 echo ""
 echo "Quick test:"
 echo "  python3 \"$CLIENT_SCRIPT\" warmup"
 echo ""
-echo "Restart Claude Code / Codex for permission rules and skill to take effect."
+echo "Restart Codex / Claude Code for the skill and permission rules to take effect."
+echo "Uninstall later with:"
+echo "  bash \"$UNINSTALL_SH\""

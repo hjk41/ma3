@@ -40,6 +40,16 @@ def get_client_agents_md() -> str:
     return (CLIENT_DIR / "AGENTS.md").read_text(encoding="utf-8")
 
 
+@router.get("/client/uninstall.sh", response_class=PlainTextResponse)
+def get_uninstall_sh() -> str:
+    return (CLIENT_DIR / "uninstall.sh").read_text(encoding="utf-8")
+
+
+@router.get("/client/uninstall.ps1", response_class=PlainTextResponse)
+def get_uninstall_ps1() -> str:
+    return (CLIENT_DIR / "uninstall.ps1").read_text(encoding="utf-8")
+
+
 @router.get("/client/examples/search-payload.example.json", response_class=PlainTextResponse)
 def get_search_example() -> str:
     return (CLIENT_DIR / "examples" / "search-payload.example.json").read_text(encoding="utf-8")
