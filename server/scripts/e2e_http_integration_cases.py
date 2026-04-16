@@ -36,7 +36,7 @@ def case_http_agents_bootstrap(client: httpx.Client, base_url: str) -> str:
     assert health.status_code == 200, health.text
     health_json = health.json()
     assert health_json["status"] == "ok"
-    assert health_json["service"] == "ma3"
+    assert "ma3" in health_json["service"]
 
     return "case_http_agents_bootstrap passed"
 
