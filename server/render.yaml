@@ -1,4 +1,9 @@
-﻿services:
+databases:
+  - name: ma3-db
+    databaseName: ma3
+    user: ma3
+
+services:
   - type: web
     name: ma3
     runtime: python
@@ -9,9 +14,7 @@
     envVars:
       - key: PYTHON_VERSION
         value: 3.12
-      - key: MA3_DB_PATH
-        value: /var/data/ma3.db
-    disk:
-      name: ma3-data
-      mountPath: /var/data
-      sizeGB: 1
+      - key: MA3_DATABASE_URL
+        fromDatabase:
+          name: ma3-db
+          property: connectionString

@@ -1,16 +1,18 @@
-"""FTS5 helpers for tag and content full-text search."""
+"""Search helpers for tag and content matching across supported databases."""
 from __future__ import annotations
 
 import sqlite3
 
-from app.storage.db import get_connection
+from app.storage.db import get_connection, is_postgres
 
 
-def fts_upsert(conn: sqlite3.Connection, record) -> None:
+def fts_upsert(conn, record) -> None:
     """Insert or replace FTS index entries for a record.
 
     Must be called within an open connection/transaction.
     """
+    if is_postgres():
+        return
     record_id = record.record_id
     tags_str = " ".join(record.tags) if record.tags else ""
 
@@ -38,8 +40,10 @@ def fts_upsert(conn: sqlite3.Connection, record) -> None:
     )
 
 
-def fts_delete(conn: sqlite3.Connection, record_id: str) -> None:
+def fts_delete(conn, record_id: str) -> None:
     """Remove FTS index entries for a record."""
+    if is_postgres():
+        return
     conn.execute(
         "DELETE FROM records_fts_tags WHERE record_id = ?", (record_id,)
     )
@@ -72,6 +76,9 @@ def fts_tag_search(
     """
     if not query.strip():
         return []
+
+    if is_postgres():
+        return _pg_tag_search(query, accessible_library_ids, status_filter, limit)
 
     lib_sql, lib_params = _build_library_filter(accessible_library_ids)
     sql = f"""
@@ -107,6 +114,9 @@ def fts_content_search(
     if not query.strip():
         return []
 
+    if is_postgres():
+        return _pg_content_search(query, accessible_library_ids, status_filter, limit)
+
     lib_sql, lib_params = _build_library_filter(accessible_library_ids)
     sql = f"""
         SELECT f.record_id, -bm25(records_fts_content) AS score
@@ -124,4 +134,84 @@ def fts_content_search(
             rows = conn.execute(sql, params).fetchall()
         return [(row[0], float(row[1])) for row in rows]
     except sqlite3.OperationalError:
+        return []
+
+
+def _pg_library_filter(alias: str, accessible_library_ids: set[str]) -> tuple[str, list]:
+    if not accessible_library_ids:
+        return f"{alias}.library_id IS NULL", []
+    placeholders = ",".join("?" * len(accessible_library_ids))
+    return (
+        f"({alias}.library_id IS NULL OR {alias}.library_id IN ({placeholders}))",
+        list(accessible_library_ids),
+    )
+
+
+def _pg_tag_search(
+    query: str,
+    accessible_library_ids: set[str],
+    status_filter: str,
+    limit: int,
+) -> list[tuple[str, float]]:
+    lib_sql, lib_params = _pg_library_filter("r", accessible_library_ids)
+    sql = f"""
+        SELECT r.record_id,
+               ts_rank_cd(
+                   to_tsvector('simple', COALESCE(tags.tags_text, '')),
+                   websearch_to_tsquery('simple', ?)
+               ) AS score
+        FROM records r
+        LEFT JOIN LATERAL (
+            SELECT string_agg(value, ' ') AS tags_text
+            FROM jsonb_array_elements_text(COALESCE(r.payload_json->'tags', '[]'::jsonb)) AS value
+        ) AS tags ON TRUE
+        WHERE to_tsvector('simple', COALESCE(tags.tags_text, '')) @@ websearch_to_tsquery('simple', ?)
+          AND {lib_sql}
+          AND r.status = ?
+        ORDER BY score DESC
+        LIMIT ?
+    """
+    params = [query, query, *lib_params, status_filter, limit]
+    try:
+        with get_connection() as conn:
+            rows = conn.execute(sql, params).fetchall()
+        return [(row["record_id"], float(row["score"])) for row in rows]
+    except Exception:
+        return []
+
+
+def _pg_content_search(
+    query: str,
+    accessible_library_ids: set[str],
+    status_filter: str,
+    limit: int,
+) -> list[tuple[str, float]]:
+    lib_sql, lib_params = _pg_library_filter("r", accessible_library_ids)
+    content_expr = (
+        "concat_ws(' ', "
+        "COALESCE(r.payload_json->>'title', ''), "
+        "COALESCE(r.payload_json->>'problem_family', ''), "
+        "COALESCE(r.payload_json->>'summary', ''), "
+        "COALESCE(r.payload_json->>'claim', '')"
+        ")"
+    )
+    sql = f"""
+        SELECT r.record_id,
+               ts_rank_cd(
+                   to_tsvector('simple', {content_expr}),
+                   websearch_to_tsquery('simple', ?)
+               ) AS score
+        FROM records r
+        WHERE to_tsvector('simple', {content_expr}) @@ websearch_to_tsquery('simple', ?)
+          AND {lib_sql}
+          AND r.status = ?
+        ORDER BY score DESC
+        LIMIT ?
+    """
+    params = [query, query, *lib_params, status_filter, limit]
+    try:
+        with get_connection() as conn:
+            rows = conn.execute(sql, params).fetchall()
+        return [(row["record_id"], float(row["score"])) for row in rows]
+    except Exception:
         return []

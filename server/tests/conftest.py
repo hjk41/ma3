@@ -43,11 +43,15 @@ def _mock_embed_record(record) -> np.ndarray:
 def _isolated_settings(tmp_path):
     """Redirect every test to a fresh DB and set a known admin key."""
     orig_db = config.settings.db_path
+    orig_database_url = config.settings.database_url
+    orig_backend = config.settings.db_backend
     orig_key = config.settings.api_key
     orig_seed = config.settings.seed_path
 
     db = tmp_path / "test.db"
     object.__setattr__(config.settings, "db_path", db)
+    object.__setattr__(config.settings, "database_url", None)
+    object.__setattr__(config.settings, "db_backend", "sqlite")
     object.__setattr__(config.settings, "api_key", ADMIN_KEY)
     # Point seed_path at a non-existent file so seed_if_empty() is a no-op
     object.__setattr__(config.settings, "seed_path", tmp_path / "no_seed.json")
@@ -56,6 +60,8 @@ def _isolated_settings(tmp_path):
     yield
 
     object.__setattr__(config.settings, "db_path", orig_db)
+    object.__setattr__(config.settings, "database_url", orig_database_url)
+    object.__setattr__(config.settings, "db_backend", orig_backend)
     object.__setattr__(config.settings, "api_key", orig_key)
     object.__setattr__(config.settings, "seed_path", orig_seed)
 

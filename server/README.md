@@ -30,11 +30,27 @@ ma3/
 2. Install dependencies from `requirements.txt`.
 3. Start the server from the repository root.
 
+### Database
+
+`ma3` now supports:
+
+- `SQLite` for local/dev usage via `MA3_DB_PATH`
+- `PostgreSQL` for shared/org deployments via `MA3_DATABASE_URL`
+
+If `MA3_DATABASE_URL` is set, it takes precedence over `MA3_DB_PATH`.
+
 ### Windows PowerShell
 
 ```powershell
 python -m venv .venv
 .venv\Scripts\python.exe -m pip install -r requirements.txt
+.venv\Scripts\python.exe -m uvicorn app.main:app --reload
+```
+
+### PostgreSQL example
+
+```powershell
+$env:MA3_DATABASE_URL="postgresql://ma3_user:secret@db.internal:5432/ma3"
 .venv\Scripts\python.exe -m uvicorn app.main:app --reload
 ```
 
@@ -183,7 +199,7 @@ This repository now includes a Render blueprint at:
 
 - `render.yaml`
 
-It deploys ma3 as a Python web service, sets `PYTHON_VERSION=3.12`, and mounts a persistent disk so `SQLite` can live at `/var/data/ma3.db`.
+It deploys ma3 as a Python web service, sets `PYTHON_VERSION=3.12`, and is ready to consume a managed PostgreSQL connection via `MA3_DATABASE_URL`.
 
 ## Agent Ingest
 

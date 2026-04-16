@@ -4,8 +4,8 @@ from app.models.library import InviteCode, Library, TokenInfo
 from app.models.relation import RecordRelation
 from app.models.feedback import Feedback
 from app.models.record import Record
-from app.storage.db import get_connection
-from app.storage.fts import fts_upsert
+from app.storage.db import _json_param, _upsert, get_connection, is_postgres
+from app.storage.fts import fts_delete, fts_upsert
 from app.services.embedding_service import (
     embed_record,
     serialize_embedding,
@@ -17,22 +17,22 @@ from app.core.time import utc_now_iso
 def is_ancestor_or_self(candidate_lib_id: str, target_lib_id: str) -> bool:
     """Return True if candidate_lib_id equals target_lib_id or is an ancestor of it.
 
-    Uses a SQLite recursive CTE to walk the parent chain from target upward.
+    Uses a recursive CTE to walk the parent chain from target upward.
     """
     with get_connection() as conn:
         row = conn.execute(
             """
             WITH RECURSIVE chain(lib_id) AS (
-                SELECT :target
+                SELECT ?
                 UNION ALL
                 SELECT l.parent_library_id
                 FROM libraries l
                 JOIN chain c ON l.library_id = c.lib_id
                 WHERE l.parent_library_id IS NOT NULL
             )
-            SELECT COUNT(*) AS cnt FROM chain WHERE lib_id = :candidate
+            SELECT COUNT(*) AS cnt FROM chain WHERE lib_id = ?
             """,
-            {"target": target_lib_id, "candidate": candidate_lib_id},
+            (target_lib_id, candidate_lib_id),
         ).fetchone()
     return bool(row and row["cnt"] > 0)
 
@@ -52,19 +52,26 @@ def _row_to_library(row) -> Library:
 _LIB_COLS = "library_id, name, description, is_public, parent_library_id, is_personal, created_at"
 
 
+def _load_json_payload(raw):
+    return raw if isinstance(raw, dict) else json.loads(raw)
+
+
 class RecordRepository:
     def insert(self, record: Record) -> None:
         with get_connection() as conn:
             conn.execute(
-                "INSERT OR REPLACE INTO records(record_id, library_id, status, payload_json) VALUES (?, ?, ?, ?)",
+                _upsert(
+                    "records",
+                    ["record_id"],
+                    ["record_id", "library_id", "status", "payload_json"],
+                ),
                 (
                     record.record_id,
                     record.library_id,
                     record.status.value,
-                    json.dumps(record.model_dump(), ensure_ascii=False),
+                    _json_param(record.model_dump()),
                 ),
             )
-            # Keep FTS indexes in sync
             fts_upsert(conn, record)
 
         # Generate and store embedding (outside the main transaction so a slow
@@ -73,8 +80,11 @@ class RecordRepository:
         if embedding is not None:
             with get_connection() as conn:
                 conn.execute(
-                    "INSERT OR REPLACE INTO record_embeddings"
-                    "(record_id, embedding, model, created_at) VALUES (?,?,?,?)",
+                    _upsert(
+                        "record_embeddings",
+                        ["record_id"],
+                        ["record_id", "embedding", "model", "created_at"],
+                    ),
                     (
                         record.record_id,
                         serialize_embedding(embedding),
@@ -91,12 +101,12 @@ class RecordRepository:
             ).fetchone()
         if row is None:
             return None
-        return Record.model_validate(json.loads(row["payload_json"]))
+        return Record.model_validate(_load_json_payload(row["payload_json"]))
 
     def list_all(self) -> list[Record]:
         with get_connection() as conn:
             rows = conn.execute("SELECT payload_json FROM records").fetchall()
-        return [Record.model_validate(json.loads(row["payload_json"])) for row in rows]
+        return [Record.model_validate(_load_json_payload(row["payload_json"])) for row in rows]
 
     def list_accessible(self, library_ids: set[str]) -> list[Record]:
         """Return records in accessible libraries plus legacy records (library_id IS NULL)."""
@@ -113,7 +123,7 @@ class RecordRepository:
             )
             with get_connection() as conn:
                 rows = conn.execute(query, list(library_ids)).fetchall()
-        return [Record.model_validate(json.loads(row["payload_json"])) for row in rows]
+        return [Record.model_validate(_load_json_payload(row["payload_json"])) for row in rows]
 
     def list_by_library(self, library_id: str) -> list[Record]:
         """Return all records belonging to a specific library (for admin/review use)."""
@@ -122,7 +132,7 @@ class RecordRepository:
                 "SELECT payload_json FROM records WHERE library_id = ?",
                 (library_id,),
             ).fetchall()
-        return [Record.model_validate(json.loads(row["payload_json"])) for row in rows]
+        return [Record.model_validate(_load_json_payload(row["payload_json"])) for row in rows]
 
     def list_page(
         self,
@@ -167,12 +177,17 @@ class RecordRepository:
                     f"SELECT COUNT(*) AS count FROM records {where}", params
                 ).fetchone()["count"]
             )
+            order_by = (
+                "rowid ASC"
+                if not is_postgres()
+                else "COALESCE(payload_json->>'created_at', '') ASC, record_id ASC"
+            )
             rows = conn.execute(
                 f"SELECT payload_json FROM records {where} "
-                "ORDER BY rowid ASC LIMIT ? OFFSET ?",
+                f"ORDER BY {order_by} LIMIT ? OFFSET ?",
                 params + [limit, offset],
             ).fetchall()
-        records = [Record.model_validate(json.loads(r["payload_json"])) for r in rows]
+        records = [Record.model_validate(_load_json_payload(r["payload_json"])) for r in rows]
         return records, total
 
     def count(self) -> int:
@@ -186,18 +201,13 @@ class RecordRepository:
             # Fetch record_ids first; FTS5 virtual tables require direct equality
             # comparisons (WHERE col = ?) — subquery-based IN clauses are silently ignored.
             record_ids = [
-                row[0]
+                row["record_id"]
                 for row in conn.execute(
                     "SELECT record_id FROM records WHERE library_id = ?", (library_id,)
                 ).fetchall()
             ]
             for record_id in record_ids:
-                conn.execute(
-                    "DELETE FROM records_fts_tags WHERE record_id = ?", (record_id,)
-                )
-                conn.execute(
-                    "DELETE FROM records_fts_content WHERE record_id = ?", (record_id,)
-                )
+                fts_delete(conn, record_id)
             if record_ids:
                 placeholders = ",".join("?" * len(record_ids))
                 conn.execute(
@@ -229,7 +239,7 @@ class RecordRepository:
         )
         with get_connection() as conn:
             rows = conn.execute(sql, list(record_ids) + lib_params).fetchall()
-        return [Record.model_validate(json.loads(row["payload_json"])) for row in rows]
+        return [Record.model_validate(_load_json_payload(row["payload_json"])) for row in rows]
 
     def get_embeddings_batch(
         self, record_ids: set[str]
@@ -251,11 +261,15 @@ class FeedbackRepository:
     def insert(self, feedback: Feedback) -> None:
         with get_connection() as conn:
             conn.execute(
-                "INSERT OR REPLACE INTO feedback(feedback_id, record_id, payload_json) VALUES (?, ?, ?)",
+                _upsert(
+                    "feedback",
+                    ["feedback_id"],
+                    ["feedback_id", "record_id", "payload_json"],
+                ),
                 (
                     feedback.feedback_id,
                     feedback.record_id,
-                    json.dumps(feedback.model_dump(), ensure_ascii=False),
+                    _json_param(feedback.model_dump()),
                 ),
             )
 
@@ -265,19 +279,23 @@ class FeedbackRepository:
                 "SELECT payload_json FROM feedback WHERE record_id = ?",
                 (record_id,),
             ).fetchall()
-        return [Feedback.model_validate(json.loads(row["payload_json"])) for row in rows]
+        return [Feedback.model_validate(_load_json_payload(row["payload_json"])) for row in rows]
 
 
 class RelationRepository:
     def insert(self, relation: RecordRelation) -> None:
         with get_connection() as conn:
             conn.execute(
-                "INSERT OR REPLACE INTO relations(relation_id, from_record_id, to_record_id, payload_json) VALUES (?, ?, ?, ?)",
+                _upsert(
+                    "relations",
+                    ["relation_id"],
+                    ["relation_id", "from_record_id", "to_record_id", "payload_json"],
+                ),
                 (
                     relation.relation_id,
                     relation.from_record_id,
                     relation.to_record_id,
-                    json.dumps(relation.model_dump(), ensure_ascii=False),
+                    _json_param(relation.model_dump()),
                 ),
             )
 
@@ -292,7 +310,7 @@ class RelationRepository:
                 (record_id, record_id),
             ).fetchall()
         return [
-            RecordRelation.model_validate(json.loads(row["payload_json"]))
+            RecordRelation.model_validate(_load_json_payload(row["payload_json"]))
             for row in rows
         ]
 
@@ -301,14 +319,26 @@ class LibraryRepository:
     def insert(self, library: Library) -> None:
         with get_connection() as conn:
             conn.execute(
-                "INSERT OR REPLACE INTO libraries(library_id, name, description, is_public, parent_library_id, is_personal, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                _upsert(
+                    "libraries",
+                    ["library_id"],
+                    [
+                        "library_id",
+                        "name",
+                        "description",
+                        "is_public",
+                        "parent_library_id",
+                        "is_personal",
+                        "created_at",
+                    ],
+                ),
                 (
                     library.library_id,
                     library.name,
                     library.description,
-                    int(library.is_public),
+                    library.is_public,
                     library.parent_library_id,
-                    int(library.is_personal),
+                    library.is_personal,
                     library.created_at,
                 ),
             )
@@ -330,8 +360,9 @@ class LibraryRepository:
 
     def list_public(self) -> list[Library]:
         with get_connection() as conn:
+            public_clause = "is_public = 1" if not is_postgres() else "is_public IS TRUE"
             rows = conn.execute(
-                f"SELECT {_LIB_COLS} FROM libraries WHERE is_public = 1"
+                f"SELECT {_LIB_COLS} FROM libraries WHERE {public_clause}"
             ).fetchall()
         return [_row_to_library(r) for r in rows]
 
@@ -420,8 +451,18 @@ class InviteCodeRepository:
     def insert(self, invite: InviteCode, code_hash: str) -> None:
         with get_connection() as conn:
             conn.execute(
-                "INSERT INTO invite_codes(code_id, code_hash, created_at, used_at, used_by_library_id) VALUES (?, ?, ?, ?, ?)",
-                (invite.code_id, code_hash, invite.created_at, invite.used_at, invite.used_by_library_id),
+                _upsert(
+                    "invite_codes",
+                    ["code_id"],
+                    ["code_id", "code_hash", "created_at", "used_at", "used_by_library_id"],
+                ),
+                (
+                    invite.code_id,
+                    code_hash,
+                    invite.created_at,
+                    invite.used_at,
+                    invite.used_by_library_id,
+                ),
             )
 
     def get_by_hash(self, code_hash: str) -> InviteCode | None:
