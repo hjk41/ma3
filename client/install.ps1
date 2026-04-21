@@ -84,16 +84,18 @@ MA3_CLIENT_SCRIPT=$ClientScript
     Write-Host "      -> $EnvFile"
 }
 
-Write-Host "[4/5] Linking skill into ~/.codex/skills/ ..."
-$CodexSkillsDir = "$HOME\.codex\skills"
-New-Item -ItemType Directory -Force -Path $CodexSkillsDir | Out-Null
-$CodexSkillLink = "$CodexSkillsDir\ma3"
+# ── 4. symlink into ~/.codex/skills/ and ~/.claude/skills/ ──────────────────
+Write-Host "[4/5] Linking skill into ~/.codex/skills/ and ~/.claude/skills/ ..."
 $SkillTarget = "$Dir\skills\ma3"
-if (Test-Path -LiteralPath $CodexSkillLink) {
-    Remove-Item -LiteralPath $CodexSkillLink -Force -Recurse
+foreach ($SkillsDir in @("$HOME\.codex\skills", "$HOME\.claude\skills")) {
+    New-Item -ItemType Directory -Force -Path $SkillsDir | Out-Null
+    $SkillLink = "$SkillsDir\ma3"
+    if (Test-Path $SkillLink) {
+        Remove-Item $SkillLink -Force -Recurse
+    }
+    New-Item -ItemType Junction -Path $SkillLink -Target $SkillTarget | Out-Null
+    Write-Host "      -> $SkillLink => $SkillTarget"
 }
-New-Item -ItemType Junction -Path $CodexSkillLink -Target $SkillTarget | Out-Null
-Write-Host "      -> $CodexSkillLink => $SkillTarget"
 
 Write-Host "      -> writing Codex allow rules to $CodexRuleFile"
 New-Item -ItemType Directory -Force -Path $CodexRulesDir | Out-Null

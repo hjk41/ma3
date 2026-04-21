@@ -97,6 +97,68 @@ MA3_ADMIN_KEY=your_admin_key    # for library/token management (optional)
 MA3_AUTH_MODE=x-api-key         # or: bearer
 ```
 
+### Post-install verification
+
+After running `install.sh` (or `install.ps1`), verify the installation before use:
+
+**1. Confirm `ma3_client.py` is present**
+
+```bash
+ls ~/plugins/ma3/skills/ma3/scripts/ma3_client.py
+```
+
+Expected: file exists and is executable.
+
+**2. Confirm `.env` has the required keys**
+
+```bash
+grep -E "MA3_BASE_URL|MA3_API_KEY" ~/plugins/ma3/.env
+```
+
+Expected: both keys are set and non-empty.
+
+**3. Confirm skill symlinks exist (Claude Code and Codex only)**
+
+```bash
+ls -la ~/.claude/skills/ma3   # Claude Code
+ls -la ~/.codex/skills/ma3    # Codex
+```
+
+Expected: both are symlinks pointing to `~/plugins/ma3/skills/ma3`.
+
+If a symlink is missing, create it:
+
+```bash
+ln -sf ~/plugins/ma3/skills/ma3 ~/.claude/skills/ma3
+ln -sf ~/plugins/ma3/skills/ma3 ~/.codex/skills/ma3
+```
+
+**4. Run a health check**
+
+```bash
+python ~/plugins/ma3/skills/ma3/scripts/ma3_client.py healthz
+```
+
+Expected: `{"status": "ok", ...}`.  A `version_warning` in the response means
+you should run `self-update` before proceeding.
+
+---
+
+**For agents outside Claude Code and Codex:** the skill directory is never
+auto-loaded for you.  You must locate `ma3_client.py` yourself and call it
+directly.  Steps 1–2 and 4 above are the minimum verification.  If the default
+path `~/plugins/ma3/skills/ma3/scripts/ma3_client.py` does not exist, search
+for it with:
+
+```bash
+find ~ -name "ma3_client.py" 2>/dev/null | head -5
+```
+
+Record the resolved path and use it in all subsequent `python <path> <command>`
+calls.  Do not rely on a skill being injected into your context.
+
+---
+
 ### Use
 
 ```bash

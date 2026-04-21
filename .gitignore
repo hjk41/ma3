@@ -6,4 +6,5 @@ server/data/*.db
 server/.tmp*/
 client/.env
 tmp-*.json
+*_ingest_*.json
 

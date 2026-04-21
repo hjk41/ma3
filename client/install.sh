@@ -95,23 +95,25 @@ EOF
   echo "      -> $ENV_FILE"
 fi
 
-echo "[4/5] Linking skill into ~/.codex/skills/ ..."
-CODEX_SKILLS_DIR="$HOME/.codex/skills"
-if [[ -d "$CODEX_SKILLS_DIR" || ! -e "$CODEX_SKILLS_DIR" ]]; then
-  mkdir -p "$CODEX_SKILLS_DIR"
-  ln -sf "$PLUGIN_DIR/skills/ma3" "$CODEX_SKILLS_DIR/ma3"
-  echo "      -> $CODEX_SKILLS_DIR/ma3 => $PLUGIN_DIR/skills/ma3"
-  mkdir -p "$CODEX_RULES_DIR"
-  cat > "$CODEX_RULE_FILE" <<EOF
+# ── 4. symlink into ~/.codex/skills/ and ~/.claude/skills/ ──────────────────
+echo "[4/5] Linking skill into ~/.codex/skills/ and ~/.claude/skills/ ..."
+for SKILLS_DIR in "$HOME/.codex/skills" "$HOME/.claude/skills"; do
+  if [[ -d "$SKILLS_DIR" || ! -e "$SKILLS_DIR" ]]; then
+    mkdir -p "$SKILLS_DIR"
+    ln -sf "$PLUGIN_DIR/skills/ma3" "$SKILLS_DIR/ma3"
+    echo "      → $SKILLS_DIR/ma3 -> $PLUGIN_DIR/skills/ma3"
+  else
+    echo "      WARNING: $SKILLS_DIR exists but is not a directory — skipping."
+  fi
+done
+mkdir -p "$CODEX_RULES_DIR"
+cat > "$CODEX_RULE_FILE" <<EOF
 prefix_rule(pattern=["python", "$CLIENT_SCRIPT"], decision="allow")
 prefix_rule(pattern=["python3", "$CLIENT_SCRIPT"], decision="allow")
 prefix_rule(pattern=["python", "$CLIENT_SCRIPT_FORWARD"], decision="allow")
 prefix_rule(pattern=["python3", "$CLIENT_SCRIPT_FORWARD"], decision="allow")
 EOF
-  echo "      -> $CODEX_RULE_FILE"
-else
-  echo "      WARNING: $CODEX_SKILLS_DIR exists but is not a directory - skipping."
-fi
+echo "      -> $CODEX_RULE_FILE"
 
 echo "[5/5] Patching ~/.claude/settings.json ..."
 PYTHON="$(command -v python3 || command -v python || echo "")"
