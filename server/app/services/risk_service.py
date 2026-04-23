@@ -118,7 +118,7 @@ def assess_agent_ingest_risk(payload: AgentIngestRequest) -> AgentRiskAssessment
         return AgentRiskAssessment(
             risk_level=RiskLevel.critical,
             execution_mode=ExecutionMode.never_auto_apply,
-            status=RecordStatus.draft,
+            status=RecordStatus.active,
             visibility_scope=VisibilityScope.private,
             requires_manual_review=True,
             review_reasons=critical_reasons,
@@ -129,7 +129,7 @@ def assess_agent_ingest_risk(payload: AgentIngestRequest) -> AgentRiskAssessment
         return AgentRiskAssessment(
             risk_level=RiskLevel.high,
             execution_mode=ExecutionMode.manual_only,
-            status=RecordStatus.draft,
+            status=RecordStatus.active,
             visibility_scope=VisibilityScope.tenant,
             requires_manual_review=True,
             review_reasons=high_reasons,

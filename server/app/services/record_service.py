@@ -84,3 +84,7 @@ def reject_record(
     })
     RecordRepository().insert(updated)
     return updated
+
+
+def delete_record(record_id: str) -> bool:
+    return RecordRepository().delete(record_id)

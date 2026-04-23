@@ -47,7 +47,6 @@ def _build_record_create(
     payload: AgentIngestRequest,
     assessment: AgentRiskAssessment,
 ) -> RecordCreate:
-    status = RecordStatus.draft if payload.draft_only else assessment.status
     return RecordCreate(
         title=_build_title(payload),
         problem_family=_slugify(payload.task_type),
@@ -66,7 +65,7 @@ def _build_record_create(
         applicable_if=payload.applicable_if,
         not_applicable_if=payload.not_applicable_if,
         tags=payload.tags,
-        status=status,
+        status=assessment.status,
         visibility_scope=assessment.visibility_scope,
         risk_level=assessment.risk_level,
         execution_mode=assessment.execution_mode,
@@ -99,7 +98,7 @@ def ingest_agent_report(
             requires_manual_review=assessment.requires_manual_review,
             review_reasons=assessment.review_reasons,
             dry_run=True,
-            draft_only=payload.draft_only,
+            draft_only=False,
             record=_preview_record(record_payload, library_id),
             feedback=None,
             relation=None,
@@ -138,7 +137,7 @@ def ingest_agent_report(
         requires_manual_review=assessment.requires_manual_review,
         review_reasons=assessment.review_reasons,
         dry_run=False,
-        draft_only=payload.draft_only,
+        draft_only=False,
         record=record,
         feedback=feedback,
         relation=relation,

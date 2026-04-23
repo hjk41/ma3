@@ -141,7 +141,7 @@ def require_admin_role(
     if info.role != "admin":
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="admin-role token required to promote or reject records",
+            detail="admin-role token required to manage records",
         )
     return info.library_id
 

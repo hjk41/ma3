@@ -46,7 +46,7 @@ def _assess(**overrides):
 def test_critical_patterns_in_problem(text):
     a = _assess(problem=text)
     assert a.risk_level == RiskLevel.critical
-    assert a.status == RecordStatus.draft
+    assert a.status == RecordStatus.active
     assert a.execution_mode == ExecutionMode.never_auto_apply
     assert a.requires_manual_review is True
     assert a.visibility_scope == VisibilityScope.private
@@ -82,7 +82,7 @@ def test_critical_pattern_in_observations():
 def test_high_risk_secrets_in_problem(text):
     a = _assess(problem=text)
     assert a.risk_level == RiskLevel.high
-    assert a.status == RecordStatus.draft
+    assert a.status == RecordStatus.active
     assert a.execution_mode == ExecutionMode.manual_only
     assert a.requires_manual_review is True
     assert a.visibility_scope == VisibilityScope.tenant

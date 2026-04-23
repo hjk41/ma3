@@ -238,19 +238,19 @@ def test_invite_code_cannot_be_reused(authed_client, client):
 
 # ── Role enforcement ──────────────────────────────────────────────────────────
 
-def test_writer_cannot_promote_own_draft(authed_client, lib_with_token):
-    """A writer-role token must not be able to promote drafts — that requires admin."""
+def test_writer_cannot_promote_active_record(authed_client, lib_with_token):
+    """Promote remains admin-only and only applies to legacy drafts."""
     lib_id, writer_token = lib_with_token
     writer_headers = {"X-API-Key": writer_token}
 
-    # Create a draft record (draft_only=True)
+    # New writes are active immediately.
     record_id = authed_client.post(
         "/agent/ingest",
         json=make_ingest_payload(draft_only=True),
         headers=writer_headers,
     ).json()["record"]["record_id"]
 
-    # Writer attempts to promote — should be rejected
+    # Writer attempts to promote — still rejected because promote is admin-only.
     resp = authed_client.patch(
         f"/records/{record_id}/promote",
         headers=writer_headers,
@@ -258,8 +258,8 @@ def test_writer_cannot_promote_own_draft(authed_client, lib_with_token):
     assert resp.status_code == 403
 
 
-def test_admin_token_can_promote_draft(authed_client, lib_with_admin_token):
-    """An admin-role token for the record's library can promote drafts."""
+def test_admin_promote_rejects_non_draft_record(authed_client, lib_with_admin_token):
+    """Promote is now only for legacy drafts; new writes are already active."""
     lib_id, admin_token = lib_with_admin_token
     admin_headers = {"X-API-Key": admin_token}
 
@@ -273,8 +273,7 @@ def test_admin_token_can_promote_draft(authed_client, lib_with_admin_token):
         f"/records/{record_id}/promote",
         headers=admin_headers,
     )
-    assert resp.status_code == 200
-    assert resp.json()["status"] == "active"
+    assert resp.status_code == 400
 
 
 def test_reader_token_cannot_write(authed_client, lib_with_token):
@@ -335,71 +334,61 @@ def test_reader_token_can_search_private_library(authed_client, lib_with_token):
     assert record_id in ids
 
 
-# ── Draft visibility ──────────────────────────────────────────────────────────
+# ── Active visibility + admin deletion ───────────────────────────────────────
 
-def test_library_token_sees_own_drafts_in_default_active_listing(authed_client, lib_with_token):
-    """Regression: GET /records (default status=active) must show the calling
-    library's own draft records so admins can see their pending review queue
-    without explicitly passing status=all.
-
-    Bug: before the fix, the compound SQL predicate was missing — library drafts
-    were silently excluded when status=active filtered them out.
-    """
+def test_library_token_sees_immediately_active_record_in_default_listing(authed_client, lib_with_token):
+    """Regression: writes should be visible immediately without promotion."""
     lib_id, writer_token = lib_with_token
     writer_headers = {"X-API-Key": writer_token}
 
-    # Ingest a draft record into the library
-    draft_id = authed_client.post(
+    record_id = authed_client.post(
         "/agent/ingest",
         json=make_ingest_payload(draft_only=True),
         headers=writer_headers,
     ).json()["record"]["record_id"]
 
-    # Default listing (status=active) via the library token must include the draft
     resp = authed_client.get("/records", headers=writer_headers)
     assert resp.status_code == 200
     ids = [r["record_id"] for r in resp.json()["records"]]
-    assert draft_id in ids, (
-        "Library's own draft should be visible in default status=active listing"
-    )
-
-    # Sanity: status=draft also returns it
-    resp_draft = authed_client.get("/records?status=draft", headers=writer_headers)
-    draft_ids = [r["record_id"] for r in resp_draft.json()["records"]]
-    assert draft_id in draft_ids
-
-    # Sanity: unauthenticated caller does NOT see the draft
-    resp_anon = authed_client.get("/records")  # admin key, but no library filter
-    # (admin sees everything — skip this check for admin; use unauthenticated client instead)
+    assert record_id in ids
 
 
-def test_other_library_token_does_not_see_foreign_drafts(authed_client, lib_with_token):
-    """A library token must NOT see draft records belonging to a different library
-    in the default active listing — only the owner library's drafts should surface.
-    """
+def test_admin_can_delete_record(authed_client, lib_with_admin_token):
+    """Library admin can permanently delete a record in their library."""
+    _, admin_token = lib_with_admin_token
+    admin_headers = {"X-API-Key": admin_token}
+
+    record_id = authed_client.post(
+        "/agent/ingest",
+        json=make_ingest_payload(tags=["delete-me"]),
+        headers=admin_headers,
+    ).json()["record"]["record_id"]
+
+    delete_resp = authed_client.delete(f"/records/{record_id}", headers=admin_headers)
+    assert delete_resp.status_code == 200
+    assert delete_resp.json()["ok"] is True
+
+    get_resp = authed_client.get(f"/records/{record_id}", headers=admin_headers)
+    assert get_resp.status_code == 404
+
+
+def test_other_library_admin_cannot_delete_foreign_record(authed_client, lib_with_token):
+    """Admin deletion is scoped to the record's library."""
     lib_id, writer_token = lib_with_token
     writer_headers = {"X-API-Key": writer_token}
 
-    # Create a second, separate library with its own token
+    record_id = authed_client.post(
+        "/agent/ingest",
+        json=make_ingest_payload(),
+        headers=writer_headers,
+    ).json()["record"]["record_id"]
+
     lib_b = authed_client.post("/libraries", json={"name": "lib-b"}).json()
     tok_b = authed_client.post(
         f"/libraries/{lib_b['library_id']}/tokens",
-        json={"label": "b-writer"},
+        json={"label": "b-admin", "role": "admin"},
     ).json()["token"]
     headers_b = {"X-API-Key": tok_b}
 
-    # lib_b ingests a draft
-    draft_id = authed_client.post(
-        "/agent/ingest",
-        json=make_ingest_payload(draft_only=True),
-        headers=headers_b,
-    ).json()["record"]["record_id"]
-
-    # lib_a's token queries records — should NOT see lib_b's draft
-    resp = authed_client.get("/records", headers=writer_headers)
-    assert resp.status_code == 200
-    ids = [r["record_id"] for r in resp.json()["records"]]
-    assert draft_id not in ids, (
-        "Token from lib_a must not see draft records belonging to lib_b"
-    )
-
+    resp = authed_client.delete(f"/records/{record_id}", headers=headers_b)
+    assert resp.status_code == 403

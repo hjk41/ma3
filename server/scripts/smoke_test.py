@@ -209,13 +209,13 @@ def main() -> None:
         assert len(paged.json()["primary_records"]) <= 1
         assert len(paged.json()["contrasting_records"]) == 0
 
-        # ── 11. Draft + promote ─────────────────────────────────────────────
+        # ── 11. Immediate visibility + delete ──────────────────────────────
         draft = client.post(
             "/agent/ingest",
             json={
                 "problem": "test draft promotion flow",
                 "task_type": "documentation",
-                "goal": "verify draft can be promoted",
+                "goal": "verify writes are immediately visible",
                 "target": {"product": "ma3", "component": "records"},
                 "environment": None,
                 "versions": None,
@@ -229,10 +229,10 @@ def main() -> None:
             headers=PUB_HEADERS,
         )
         assert draft.status_code == 200, draft.text
-        assert draft.json()["record"]["status"] == "draft"
+        assert draft.json()["record"]["status"] == "active"
         draft_id = draft.json()["record"]["record_id"]
 
-        # Draft should not appear in search
+        # Record should appear in search immediately
         search_before = client.post(
             "/search",
             json={
@@ -245,28 +245,11 @@ def main() -> None:
             headers=PUB_HEADERS,
         )
         before_ids = [m["record"]["record_id"] for m in search_before.json()["primary_records"]]
-        assert draft_id not in before_ids, "draft must not appear in search"
+        assert draft_id in before_ids, "newly written record must appear in search immediately"
 
-        # Promote to active
-        promoted = client.patch(f"/records/{draft_id}/promote", headers=PUB_HEADERS)
-        assert promoted.status_code == 200, promoted.text
-        assert promoted.json()["status"] == "active"
-
-        # Now it should appear in search
-        search_after = client.post(
-            "/search",
-            json={
-                "problem": "test draft promotion flow",
-                "query_intent": "verify",
-                "task_type": "documentation",
-                "target": {"product": "ma3", "component": "records"},
-                "goal": "verify",
-                "max_primary": 10,
-            },
-            headers=PUB_HEADERS,
-        )
-        after_ids = [m["record"]["record_id"] for m in search_after.json()["primary_records"]]
-        assert draft_id in after_ids, "promoted record must appear in search"
+        deleted = client.delete(f"/records/{draft_id}", headers=PUB_HEADERS)
+        assert deleted.status_code == 200, deleted.text
+        assert deleted.json()["ok"] is True
 
         # ── 12. Redaction ────────────────────────────────────────────────────
         redaction_rec = client.post(

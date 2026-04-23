@@ -112,27 +112,24 @@ def test_failure_record_in_contrasting_bucket(authed_client, lib_with_token):
     assert len(primary_ids) > 0 or len(contrasting_ids) > 0
 
 
-# ── J5-D: Record can be promoted to supersede another ────────────────────────
+# ── J5-D: Legacy promote endpoint rejects newly active records ───────────────
 
-def test_promote_record_transitions_to_active(authed_client, lib_with_token):
+def test_promote_record_rejects_newly_active_record(authed_client, lib_with_token):
     _, token = lib_with_token
     headers = {"X-API-Key": token}
 
-    # Create a draft record
+    # New writes are already active even when draft_only=True is sent.
     record_id = authed_client.post(
         "/agent/ingest",
         json=make_ingest_payload(draft_only=True),
         headers=headers,
     ).json()["record"]["record_id"]
 
-    # Promote it
     promoted = authed_client.patch(
         f"/records/{record_id}/promote",
         json={"review_note": "verified by senior engineer"},
     )
-    assert promoted.status_code == 200
-    assert promoted.json()["status"] == "active"
-    assert promoted.json()["review_note"] == "verified by senior engineer"
+    assert promoted.status_code == 400
 
 
 # ── J5-E: Record PATCH updates verification_level ────────────────────────────

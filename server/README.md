@@ -9,7 +9,7 @@
 
 - Multi-library access control with scoped library tokens
 - Agent search (fan-out, dedup, environment scoring, conflict/not-applicable penalties)
-- Draft → review → promote / reject workflow
+- Immediate write visibility with optional admin reject / delete controls
 - Write-back via `POST /agent/ingest` with dry-run and draft-only modes
 - Works for technical and non-technical records (environment fields optional)
 
@@ -227,7 +227,7 @@ The service then:
 `POST /agent/ingest` now supports two safety-oriented write modes:
 
 - `dry_run: true`: build the normalized record preview and risk assessment without persisting anything
-- `draft_only: true`: persist only the generated record as `status = draft` and skip derived feedback / relation writes
+- `draft_only: true`: accepted for backward compatibility, but writes are still persisted as immediately visible records
 
 Every response also returns:
 

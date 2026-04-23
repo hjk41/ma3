@@ -51,7 +51,7 @@ After completing any task where you applied or tested a ma3 record, write an ing
 - Record proved correct → `outcome: "success"` with `based_on_record_id`
 - Record failed or partially worked → `outcome: "failure"` or `"partial_success"` with observations
 - New reusable finding (no prior record) → independent ingest without `based_on_record_id`
-- Always use `feedback_type: "derived_record"`, `relation_type: "derived_from"`, `draft_only: true`
+- Always use `feedback_type: "derived_record"` and `relation_type: "derived_from"`; use `dry_run: true` when you want a preview instead of a persisted write
 
 This is how you leave knowledge for the agent that comes after you.
 
@@ -104,14 +104,14 @@ Admin (uses `MA3_ADMIN_KEY`):
 - `create-token <library_id> [--label <label>] [--role reader|writer|admin]`
 - `list-tokens`
 - `revoke-token`
-- `promote`
 - `reject`
+- `delete-record`
 
 Environment variables:
 - `MA3_BASE_URL` — defaults to `https://hjk41.cc`
 - `MA3_API_KEY` — library token for normal read/write
 - `MA3_LIBRARY_ID` — which library this token belongs to (used in ingest output; optional)
-- `MA3_ADMIN_KEY` — for library/token management and promote/reject
+- `MA3_ADMIN_KEY` — for library/token management and reject/delete actions
 - `MA3_AUTH_MODE` — `x-api-key` (default) or `bearer`
 - Legacy fallback: `YINGCHAN_BASE_URL`, `YINGCHAN_API_KEY`, `YINGCHAN_AUTH_MODE`
 
@@ -260,7 +260,7 @@ Feedback payload:
 
 ## Write-Back Rules
 
-- `draft_only: true` by default.
+- `draft_only` is accepted for backward compatibility, but writes are now directly visible.
 - Use `dry_run: true` when field quality is uncertain.
 - Set `based_on_record_id` whenever you applied an existing record.
 - Avoid raw secrets in any field.

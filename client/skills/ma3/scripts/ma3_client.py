@@ -28,8 +28,8 @@ Admin commands (use MA3_ADMIN_KEY / admin_key):
   create-token    <library_id> [--label <label>]      [--endpoint name]
   list-tokens     <library_id>                        [--endpoint name]
   revoke-token    <library_id> <token_id>             [--endpoint name]
-  promote         <record_id>  [--note "..."]         [--endpoint name]
   reject          <record_id>  [--note "..."]         [--endpoint name]
+  delete-record   <record_id>                         [--endpoint name]
 """
 import argparse
 import io
@@ -51,7 +51,7 @@ if hasattr(sys.stderr, "buffer"):
 
 
 DEFAULT_BASE_URL = "https://hjk41.cc"
-CLIENT_VERSION = "0.3.0"
+CLIENT_VERSION = "0.4.0"
 
 
 # ── helpers ────────────────────────────────────────────────────────────────
@@ -106,7 +106,7 @@ class Endpoint:
     name: str
     base_url: str
     api_key: Optional[str] = None    # library token for normal read/write on current deployment
-    admin_key: Optional[str] = None  # admin key — for library/token/promote management
+    admin_key: Optional[str] = None  # admin key — for library/token/record management
     auth_mode: str = "x-api-key"     # "x-api-key" | "bearer"
     library_id: Optional[str] = None # which library this token belongs to (client-side metadata)
 
@@ -304,6 +304,8 @@ def cmd_healthz(endpoints: List[Endpoint]) -> int:
         status, body = ep.request("GET", "/healthz")
         ep_result: Dict[str, Any] = {"url": ep.base_url, "status": status, "body": body}
         if 200 <= status < 300:
+            if "features" in body:
+                ep_result["features"] = body["features"]
             min_v = body.get("min_client_version")
             if min_v and _parse_version(CLIENT_VERSION) < _parse_version(min_v):
                 ep_result["version_warning"] = (
@@ -455,6 +457,8 @@ def cmd_warmup(endpoints: List[Endpoint]) -> int:
             overall_ok = False
             results[ep.name] = ep_result
             continue
+        if "features" in body:
+            ep_result["features"] = body["features"]
 
         min_v = body.get("min_client_version")
         if min_v and _parse_version(CLIENT_VERSION) < _parse_version(min_v):
@@ -711,6 +715,14 @@ def cmd_reject(
                                    endpoint_name, payload)
 
 
+def cmd_delete_record(
+    endpoints: List[Endpoint],
+    record_id: str,
+    endpoint_name: Optional[str],
+) -> int:
+    return _write_or_admin_request(endpoints, "DELETE", f"/records/{record_id}", endpoint_name)
+
+
 # ── payload loading ─────────────────────────────────────────────────────────
 
 def load_json_payload(input_path: Optional[str], payload_text: Optional[str]) -> Any:
@@ -806,7 +818,7 @@ def main() -> int:
     wm_p = subparsers.add_parser("whoami", help="GET /libraries/whoami — show identity for current credentials.")
     wm_p.add_argument("--endpoint", help="Target endpoint by name.")
 
-    pr_p = subparsers.add_parser("promote", help="PATCH /records/{id}/promote — approve a draft. (admin)")
+    pr_p = subparsers.add_parser("promote", help="PATCH /records/{id}/promote — approve a legacy draft if needed. (admin)")
     pr_p.add_argument("record_id", help="Record ID to promote.")
     pr_p.add_argument("--note",    help="Optional review note.", default=None)
     pr_p.add_argument("--endpoint", help="Target endpoint by name.")
@@ -815,6 +827,10 @@ def main() -> int:
     rj_p.add_argument("record_id", help="Record ID to reject.")
     rj_p.add_argument("--note",    help="Optional review note.", default=None)
     rj_p.add_argument("--endpoint", help="Target endpoint by name.")
+
+    dr_p = subparsers.add_parser("delete-record", help="DELETE /records/{id} — permanently delete a record. (admin)")
+    dr_p.add_argument("record_id", help="Record ID to delete.")
+    dr_p.add_argument("--endpoint", help="Target endpoint by name.")
 
     args = parser.parse_args()
     ep_name = getattr(args, "endpoint", None)
@@ -866,6 +882,8 @@ def main() -> int:
         return cmd_promote(endpoints, args.record_id, args.note, ep_name)
     if args.command == "reject":
         return cmd_reject(endpoints, args.record_id, args.note, ep_name)
+    if args.command == "delete-record":
+        return cmd_delete_record(endpoints, args.record_id, ep_name)
 
     parser.print_help()
     return 1

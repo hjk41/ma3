@@ -210,6 +210,33 @@ class RecordRepository:
             row = conn.execute("SELECT COUNT(*) AS count FROM records").fetchone()
         return int(row["count"])
 
+    def delete(self, record_id: str) -> bool:
+        with get_connection() as conn:
+            row = conn.execute(
+                "SELECT 1 FROM records WHERE record_id = ?",
+                (record_id,),
+            ).fetchone()
+            if row is None:
+                return False
+            fts_delete(conn, record_id)
+            conn.execute(
+                "DELETE FROM record_embeddings WHERE record_id = ?",
+                (record_id,),
+            )
+            conn.execute(
+                "DELETE FROM feedback WHERE record_id = ?",
+                (record_id,),
+            )
+            conn.execute(
+                "DELETE FROM relations WHERE from_record_id = ? OR to_record_id = ?",
+                (record_id, record_id),
+            )
+            conn.execute(
+                "DELETE FROM records WHERE record_id = ?",
+                (record_id,),
+            )
+        return True
+
     def delete_by_library(self, library_id: str) -> int:
         """Delete all records belonging to a library. Returns count deleted."""
         with get_connection() as conn:

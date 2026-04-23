@@ -215,8 +215,8 @@ If the service responds `401`, ask the user to provide their library token.
 ### Record management
 
 - `GET /records` — list records (paginated)
-- `PATCH /records/{record_id}/promote` — approve a draft (library admin or global admin)
 - `PATCH /records/{record_id}/reject` — reject a record (library admin or global admin)
+- `DELETE /records/{record_id}` — permanently delete a record (library admin or global admin)
 
 ### Library management
 
@@ -366,8 +366,8 @@ Send agent-native facts, not low-level storage objects:
 When writing back:
 
 - use `dry_run: true` first if you are unsure about field quality
-- otherwise prefer `draft_only: true` for a first pass
-- only skip `draft_only` when you are confident the record is well-formed and low-risk
+- `draft_only` is accepted for backward compatibility, but new writes are visible immediately
+- use `dry_run: true` when you want preview-only behavior without persistence
 
 If you reused an existing ma3 record, set:
 
@@ -399,7 +399,7 @@ If `requires_manual_review` is true:
 
 - do not claim the write-back is final
 - tell the user the result was routed for review; they can approve it with
-  `PATCH /records/{record_id}/promote`
+  `DELETE /records/{record_id}`
 
 If `persisted` is false:
 

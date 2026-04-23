@@ -1,11 +1,6 @@
 """
-Journey 3: High-risk / critical content is quarantined to draft.
-
-Scenario:
-  An agent submits a report that contains critical patterns (rm -rf, sudo).
-  The system automatically quarantines it as a draft, flags it for manual review,
-  and ensures it does NOT appear in search.  An admin can see it in drafts and
-  can promote or reject it.
+Journey 3: High-risk / critical content remains immediately written but still
+requires manual review and is filtered appropriately from search.
 """
 from __future__ import annotations
 
@@ -13,9 +8,9 @@ import pytest
 from tests.conftest import make_ingest_payload, make_search_payload
 
 
-# ── J3-A: Critical pattern → draft, requires_manual_review ───────────────────
+# ── J3-A: Critical pattern → active + manual review ──────────────────────────
 
-def test_critical_content_quarantined_as_draft(authed_client, lib_with_token):
+def test_critical_content_requires_manual_review_but_is_active(authed_client, lib_with_token):
     _, token = lib_with_token
     headers = {"X-API-Key": token}
 
@@ -31,7 +26,7 @@ def test_critical_content_quarantined_as_draft(authed_client, lib_with_token):
     assert resp.status_code == 200
     body = resp.json()
     assert body["requires_manual_review"] is True
-    assert body["record"]["status"] == "draft"
+    assert body["record"]["status"] == "active"
     assert body["record"]["risk_level"] == "critical"
     assert len(body["review_reasons"]) > 0
 
@@ -63,7 +58,7 @@ def test_critical_record_absent_from_search(authed_client, lib_with_token):
     assert record_id not in all_ids
 
 
-# ── J3-C: High-risk content (secrets) → draft, manual_only ───────────────────
+# ── J3-C: High-risk content (secrets) → active, manual_only ──────────────────
 
 def test_high_risk_secrets_quarantined(authed_client, lib_with_token):
     _, token = lib_with_token
@@ -79,7 +74,7 @@ def test_high_risk_secrets_quarantined(authed_client, lib_with_token):
     )
     body = resp.json()
     assert body["record"]["risk_level"] == "high"
-    assert body["record"]["status"] == "draft"
+    assert body["record"]["status"] == "active"
     assert body["requires_manual_review"] is True
 
 
@@ -89,7 +84,7 @@ def test_admin_can_view_draft_records(authed_client, lib_with_token):
     lib_id, token = lib_with_token
     headers = {"X-API-Key": token}
 
-    # Create a critical record (goes to draft)
+    # Create a critical record (now active but still marked critical/private)
     authed_client.post(
         "/agent/ingest",
         json=make_ingest_payload(problem="need to sudo run the deploy script"),
@@ -99,28 +94,22 @@ def test_admin_can_view_draft_records(authed_client, lib_with_token):
     drafts_resp = authed_client.get(f"/libraries/{lib_id}/drafts", headers=headers)
     assert drafts_resp.status_code == 200
     drafts = drafts_resp.json()
-    assert any(d["status"] == "draft" for d in drafts)
+    assert drafts == []
 
 
-# ── J3-E: Admin promotes draft → record becomes active ────────────────────────
+# ── J3-E: New writes are active immediately ───────────────────────────────────
 
-def test_admin_promotes_draft_to_active(authed_client, lib_with_token):
+def test_new_write_is_active_without_promotion(authed_client, lib_with_token):
     lib_id, token = lib_with_token
     headers = {"X-API-Key": token}
 
-    record_id = authed_client.post(
+    resp = authed_client.post(
         "/agent/ingest",
         json=make_ingest_payload(draft_only=True, tags=["promote-test"]),
         headers=headers,
-    ).json()["record"]["record_id"]
-
-    # Promote (using admin key — library admin)
-    promote_resp = authed_client.patch(
-        f"/records/{record_id}/promote",
-        json={"review_note": "looks good, approved"},
     )
-    assert promote_resp.status_code == 200
-    assert promote_resp.json()["status"] == "active"
+    assert resp.status_code == 200
+    assert resp.json()["record"]["status"] == "active"
 
 
 # ── J3-F: Promoted critical record still excluded (risk_level=critical filter) ─
@@ -138,9 +127,6 @@ def test_critical_record_excluded_from_search_even_after_promotion(authed_client
         ),
         headers=headers,
     ).json()["record"]["record_id"]
-
-    # Force promote to active
-    authed_client.patch(f"/records/{record_id}/promote")
 
     # Still should NOT appear in search (critical risk filter in search_service)
     search_resp = authed_client.post(

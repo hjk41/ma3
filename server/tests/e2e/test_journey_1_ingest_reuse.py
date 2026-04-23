@@ -137,9 +137,9 @@ def test_dry_run_does_not_persist(authed_client, lib_with_token):
     assert get_resp.status_code == 404
 
 
-# ── J1-F: draft_only flag sets status to draft ────────────────────────────────
+# ── J1-F: draft_only no longer hides records behind promotion ─────────────────
 
-def test_draft_only_creates_draft_record(authed_client, lib_with_token):
+def test_draft_only_still_creates_active_record(authed_client, lib_with_token):
     _, token = lib_with_token
     headers = {"X-API-Key": token}
 
@@ -149,14 +149,16 @@ def test_draft_only_creates_draft_record(authed_client, lib_with_token):
         headers=headers,
     )
     assert resp.status_code == 200
-    record = resp.json()["record"]
-    assert record["status"] == "draft"
+    body = resp.json()
+    record = body["record"]
+    assert body["draft_only"] is False
+    assert record["status"] == "active"
 
-    # Draft should not appear in search
+    # Record should appear in search immediately
     search_resp = authed_client.post(
         "/search",
         json=make_search_payload(),
         headers=headers,
     )
     primary_ids = [m["record"]["record_id"] for m in search_resp.json()["primary_records"]]
-    assert record["record_id"] not in primary_ids
+    assert record["record_id"] in primary_ids

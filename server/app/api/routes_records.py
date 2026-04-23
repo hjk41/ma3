@@ -13,6 +13,7 @@ from app.models.record import Record, RecordCreate, RecordUpdate, PromoteRequest
 from app.services.library_service import accessible_library_ids
 from app.services.record_service import (
     create_record,
+    delete_record,
     get_record,
     update_record,
     promote_record,
@@ -155,3 +156,22 @@ def reject_record_endpoint(
         return reject_record(record, review_note=body.review_note)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
+
+
+@router.delete("/{record_id}", response_model=dict)
+def delete_record_endpoint(
+    record_id: str,
+    admin_library_id: str | None = Depends(require_admin_role),
+) -> dict:
+    """Delete a record permanently.
+
+    Requires an admin-role token for this record's library, or the global admin key.
+    """
+    record = RecordRepository().get(record_id)
+    if record is None:
+        raise HTTPException(status_code=404, detail="record not found")
+    _check_admin_access_to_record(record, admin_library_id)
+    deleted = delete_record(record_id)
+    if not deleted:
+        raise HTTPException(status_code=404, detail="record not found")
+    return {"ok": True, "record_id": record_id}
