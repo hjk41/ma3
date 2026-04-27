@@ -215,6 +215,7 @@ If the service responds `401`, ask the user to provide their library token.
 ### Record management
 
 - `GET /records` — list records (paginated)
+- `PATCH /records/{record_id}/promote` — approve a draft (library admin or global admin)
 - `PATCH /records/{record_id}/reject` — reject a record (library admin or global admin)
 - `DELETE /records/{record_id}` — permanently delete a record (library admin or global admin)
 
@@ -399,7 +400,7 @@ If `requires_manual_review` is true:
 
 - do not claim the write-back is final
 - tell the user the result was routed for review; they can approve it with
-  `DELETE /records/{record_id}`
+  `PATCH /records/{record_id}/promote`
 
 If `persisted` is false:
 
