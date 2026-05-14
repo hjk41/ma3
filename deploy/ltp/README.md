@@ -51,7 +51,9 @@ Render the template with:
 - `MA3_ENABLE_DELTA` — start with `0`
 - `MA3_DELTA_URL` — only when delta import is implemented
 - `MA3_RUN_V1_TO_V2_MIGRATION` — default `1`; set `0` only for debugging a pure v1 restore
-- `MA3_PORT` — default `8000`
+- `MA3_PORT` — default `8000`; on LTP shared-node jobs prefer a high unused port
+  such as `18080` to avoid collisions with services already listening on the
+  host network namespace
 - `MA3_CEPHFS_ENABLE` — set `1` when `MA3_BACKUP_DIR` is on CephFS
 - `MA3_CEPHFS_USER` — CephFS user, for example `chuntao.hong`
 - `MA3_CEPHFS_MOUNT` — default `/mnt/cephfs`
@@ -107,6 +109,11 @@ and only then reads `$MA3_BACKUP_DIR/latest.manifest.json`.
 The job template still keeps `enableLocalStorage` parameterized with
 `LTP_STORAGE_HOSTPATH` and `LTP_STORAGE_MNTPATH` for non-Ceph local scratch.
 Those fields are not the CephFS data mount.
+
+When running on LTP, do not rely on `/healthz` alone to prove this instance is
+serving traffic: another node-local service may already own the requested port.
+`bootstrap_ma3_ltp.sh` verifies the uvicorn child process and `/v2/doctor`
+identity before writing the instance manifest.
 
 ## Backup format
 

@@ -10,6 +10,28 @@ umask 077
 log() { printf '[ma3-ltp] %s\n' "$*" >&2; }
 die() { log "ERROR: $*"; exit 1; }
 
+doctor_matches_instance() {
+  curl -fsS "http://127.0.0.1:${MA3_PORT}/v2/doctor" >/tmp/ma3-doctor.json 2>/dev/null || return 1
+  MA3_EXPECTED_INSTANCE_ID="$MA3_INSTANCE_ID" \
+  MA3_EXPECTED_GIT_COMMIT="${MA3_GIT_COMMIT:-}" \
+  python3 - <<'PY'
+import json
+import os
+import sys
+
+doctor = json.load(open("/tmp/ma3-doctor.json", "r", encoding="utf-8"))
+expected_instance_id = os.environ["MA3_EXPECTED_INSTANCE_ID"]
+expected_git_commit = os.environ.get("MA3_EXPECTED_GIT_COMMIT") or ""
+
+if doctor.get("status") != "ok":
+    sys.exit(1)
+if doctor.get("instance_id") != expected_instance_id:
+    sys.exit(1)
+if expected_git_commit and doctor.get("git_commit") != expected_git_commit:
+    sys.exit(1)
+PY
+}
+
 : "${MA3_GIT_REPO:?MA3_GIT_REPO is required}"
 : "${MA3_GIT_REF:?MA3_GIT_REF is required}"
 : "${MA3_ADMIN_KEY:?MA3_ADMIN_KEY is required}"
@@ -234,14 +256,24 @@ MA3_PID="$!"
 echo "$MA3_PID" > "${MA3_WORKDIR}/ma3.pid"
 
 log "waiting for healthcheck"
+MA3_READY=0
 for _ in $(seq 1 60); do
-  if curl -fsS "http://127.0.0.1:${MA3_PORT}/healthz" >/tmp/ma3-health.json 2>/dev/null; then
+  if ! kill -0 "$MA3_PID" 2>/dev/null; then
+    tail -80 /var/log/ma3/ma3.log >&2 || true
+    die "ma3 uvicorn process exited before becoming ready"
+  fi
+  if curl -fsS "http://127.0.0.1:${MA3_PORT}/healthz" >/tmp/ma3-health.json 2>/dev/null && doctor_matches_instance; then
+    MA3_READY=1
     break
   fi
   sleep 2
 done
+if [[ "$MA3_READY" != "1" ]]; then
+  tail -80 /var/log/ma3/ma3.log >&2 || true
+  die "ma3 did not become ready on port ${MA3_PORT} with matching /v2/doctor identity"
+fi
 curl -fsS "http://127.0.0.1:${MA3_PORT}/healthz" | python3 -m json.tool
-curl -fsS "http://127.0.0.1:${MA3_PORT}/v2/doctor" | python3 -m json.tool || true
+curl -fsS "http://127.0.0.1:${MA3_PORT}/v2/doctor" | python3 -m json.tool
 
 log "installing daily log archive cron entry"
 if command -v cron >/dev/null 2>&1; then

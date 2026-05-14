@@ -642,6 +642,14 @@ The restore path must tolerate environment-specific backup paths. If a manifest'
 
 The template passes `MA3_RUN_V1_TO_V2_MIGRATION` to the bootstrap script. The default submitted v2 instance should keep it enabled so a restored v1 dump becomes v2-native before agents start using the instance.
 
+Because LTP CPU jobs may share the node network namespace with existing
+services, the submitted `MA3_PORT` must be a high, job-specific port instead of
+assuming `8000` is free. Bootstrap must not treat a generic `/healthz` response
+as sufficient: after starting uvicorn it must verify that the child process is
+still alive and that `/v2/doctor` reports this exact `MA3_INSTANCE_ID` (and, when
+set, `MA3_GIT_COMMIT`). This prevents false positives where `127.0.0.1:$PORT`
+is already occupied by another service on the node.
+
 ### 13.3.1 LTP Deployment Tests
 
 Deployment changes must be checked with:
@@ -652,6 +660,9 @@ Deployment changes must be checked with:
   `MA3_CEPHFS_KEYRING`
 - a unit/static check that `bootstrap_ma3_ltp.sh` validates the keyring identity
   and waits for `mountpoint -q $MA3_CEPHFS_MOUNT` before reading backups
+- a unit/static check that LTP health validation requires the uvicorn process to
+  be alive and `/v2/doctor.instance_id == MA3_INSTANCE_ID` before writing the
+  instance manifest
 - one fresh LTP submission using a pinned commit, no `deliver_assets`, and a real
   CephFS keyring secret; success requires `/healthz` and `/v2/doctor` to pass
   from inside the container before any SSH hot patching
