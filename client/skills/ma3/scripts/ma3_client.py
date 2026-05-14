@@ -566,13 +566,13 @@ def apply_redaction_mode(payload: Any, redaction_mode: Optional[str]) -> Any:
             summary = ", ".join(f"{key}={value}" for key, value in sorted(hits.items()))
             print(
                 f"ma3 detected contextual/sensitive values ({summary}). Choose redaction mode: "
-                "[a]uto redact all, [c]ontextual keep paths/IPs/emails, [n]one keep all if personal library. [a/c/n] ",
+                "[a]uto redact detected values, [n]one keep detected values. [a/n] ",
                 end="",
                 file=sys.stderr,
                 flush=True,
             )
             answer = sys.stdin.readline().strip().lower()
-            mode = "none" if answer in {"n", "no", "none", "全保留"} else "contextual" if answer in {"c", "contextual", "上下文"} else "auto"
+            mode = "none" if answer in {"n", "no", "none", "全保留"} else "auto"
         else:
             mode = "auto"
     payload = dict(payload)
@@ -868,13 +868,13 @@ def main() -> int:
     ingest_p.add_argument("--payload",  help="Inline JSON payload.")
     ingest_p.add_argument("--endpoint", help="Endpoint name (required when multiple have API keys).")
     ingest_p.add_argument("--library",  help="Target by library_id (alternative to --endpoint).")
-    ingest_p.add_argument("--redaction-mode", choices=["auto", "contextual", "none"], help="auto redacts all; contextual keeps paths/IPs/emails; none keeps secrets only for personal libraries.")
+    ingest_p.add_argument("--redaction-mode", choices=["auto", "none"], help="auto redacts detected values; none preserves them after user confirmation.")
 
     know_p = subparsers.add_parser("knowledge", help="POST /knowledge — writes a knowledge record to one endpoint.")
     know_p.add_argument("--input",    help="Path to a JSON payload file.")
     know_p.add_argument("--payload",  help="Inline JSON payload.")
     know_p.add_argument("--endpoint", help="Endpoint name (required when multiple have API keys).")
-    know_p.add_argument("--redaction-mode", choices=["auto", "contextual", "none"], help="auto redacts all; contextual keeps paths/IPs/emails; none keeps secrets only for personal libraries.")
+    know_p.add_argument("--redaction-mode", choices=["auto", "none"], help="auto redacts detected values; none preserves them after user confirmation.")
 
     # ── v2 agent/tool workflow wrappers ──
     v2ctx_p = subparsers.add_parser("v2-context", help="POST /v2/agent/context — one-call agent retrieval context.")
@@ -886,7 +886,7 @@ def main() -> int:
     v2rep_p.add_argument("--input", help="Path to a JSON payload file.")
     v2rep_p.add_argument("--payload", help="Inline JSON payload.")
     v2rep_p.add_argument("--endpoint", help="Target endpoint by name.")
-    v2rep_p.add_argument("--redaction-mode", choices=["auto", "contextual", "none"], help="auto redacts all; contextual keeps paths/IPs/emails; none keeps secrets only for personal libraries.")
+    v2rep_p.add_argument("--redaction-mode", choices=["auto", "none"], help="auto redacts detected values; none preserves them after user confirmation.")
 
     v2case_p = subparsers.add_parser("v2-case", help="GET /v2/cases/{id} — read a v2 case timeline.")
     v2case_p.add_argument("case_id", help="Case ID to fetch.")

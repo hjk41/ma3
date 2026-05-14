@@ -106,7 +106,7 @@ class V2AgentReportRequest(BaseModel):
     case_id: str | None = None
     case_assignment_mode: str = "auto"
     dry_run: bool = False
-    redaction_mode: Literal["auto", "contextual", "none"] = "auto"
+    redaction_mode: Literal["auto", "none"] = "auto"
 
 
 class V2AgentReportResponse(BaseModel):

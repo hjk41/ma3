@@ -38,4 +38,4 @@ class KnowledgeCreate(BaseModel):
 
     # Measurement / environment conditions (for measured / agent_verified kinds)
     conditions: dict | None = None
-    redaction_mode: Literal["auto", "contextual", "none"] = "auto"
+    redaction_mode: Literal["auto", "none"] = "auto"

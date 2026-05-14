@@ -3,14 +3,7 @@ from app.core.time import utc_now_iso
 from app.models.record import Record, RecordCreate, RecordUpdate
 from app.models.enums import RecordStatus
 from app.services.redaction import redact_value
-from app.storage.repositories import LibraryRepository, RecordRepository
-
-
-def _allow_secret_preservation(library_id: str | None) -> bool:
-    if library_id is None:
-        return False
-    library = LibraryRepository().get(library_id)
-    return bool(library and library.is_personal)
+from app.storage.repositories import RecordRepository
 
 
 def create_record(
@@ -18,13 +11,7 @@ def create_record(
     library_id: str | None = None,
     redaction_mode: str = "auto",
 ) -> Record:
-    sanitized = RecordCreate.model_validate(
-        redact_value(
-            payload.model_dump(),
-            mode=redaction_mode,
-            allow_secret_preservation=_allow_secret_preservation(library_id),
-        )
-    )
+    sanitized = RecordCreate.model_validate(redact_value(payload.model_dump(), mode=redaction_mode))
     now = utc_now_iso()
     record = Record(
         record_id=new_id("vk"),

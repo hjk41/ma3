@@ -169,20 +169,19 @@ By default, ma3 applies write-time redaction for obvious sensitive patterns in f
 - IPv4 addresses
 - simple secret assignments such as `token=...` or `password=...`
 
-For operational knowledge, paths, IPs, and sometimes personal-library credentials can be important.
-Record-creation APIs such as
+For operational knowledge, exact paths, IPs, and even credentials can be important. Because ma3 is an
+agent tool, the agent/client should detect sensitive values, tell the user what it found, and submit
+the user's choice. Record-creation APIs such as
 `/agent/ingest`, `/v2/agent/report`, and `/knowledge` support:
 
 ```json
 {
-  "redaction_mode": "auto | contextual | none"
+  "redaction_mode": "auto | none"
 }
 ```
 
-`auto` redacts contextual identifiers and secrets. `contextual` preserves paths/IPs/emails but
-redacts secrets. `none` preserves contextual identifiers and preserves secrets only when the target
-library is personal; in non-personal libraries secrets are still redacted. The CLI supports
-`--redaction-mode auto|contextual|none` and prompts interactively when it detects contextual or
+`auto` redacts detected values. `none` preserves detected values exactly as submitted. The CLI
+supports `--redaction-mode auto|none` and prompts interactively when it detects contextual or
 secret-like values. This is only a first-pass safeguard, not a complete data-loss-prevention system.
 
 ## Optional API Key Protection
