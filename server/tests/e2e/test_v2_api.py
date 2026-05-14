@@ -155,6 +155,47 @@ def test_topics_link_to_filtered_cases_with_pagination(authed_client):
     assert "Next" in cases_page.text
 
 
+def test_search_explain_interactive_ui_and_feedback(authed_client):
+    authed_client.post("/v2/agent/report", json=_v2_report_payload(
+        target={"product": "search-ui-api", "component": "client"},
+        task_type="search explain ui",
+        tags=["search-ui"],
+        result_summary="Search explain UI seed",
+    ))
+
+    page = authed_client.get("/ui/search-explain")
+    assert page.status_code == 200
+    assert "Run Search Explain" in page.text
+    assert "API Key (optional" in page.text
+    assert "localStorage" in page.text
+    assert "/v2/search/explain" in page.text
+    assert "score_breakdown" in page.text
+    assert "/v2/search/feedback" in page.text
+
+    explain = authed_client.post("/v2/search/explain", json={
+        "problem": "search explain ui seed",
+        "task_type": "search explain ui",
+        "goal": "find interactive search diagnostics",
+        "target": {"product": "search-ui-api", "component": "client"},
+        "tags": ["search-ui"],
+        "max_cases": 5,
+        "max_records_per_case": 3,
+        "include_explain": True,
+    })
+    assert explain.status_code == 200, explain.text
+    body = explain.json()
+    assert body["explain"]["query_hash"]
+    assert body["explain"]["score_breakdown"]
+
+    feedback = authed_client.post("/v2/search/feedback", json={
+        "query_hash": body["explain"]["query_hash"],
+        "case_id": body["cases"][0]["case"]["case_id"] if body["cases"] else None,
+        "judgment": "useful",
+    })
+    assert feedback.status_code == 200
+    assert feedback.json()["feedback_id"].startswith("sf_")
+
+
 def test_public_base_url_renders_agents_and_doctor(authed_client):
     from app.core import config
 

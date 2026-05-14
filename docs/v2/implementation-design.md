@@ -472,6 +472,7 @@ A change is not complete until tests or an explicit manual acceptance checklist 
 - `/v2/stats/*` returns consistent aggregate counts
 - `/v2/cases` topic filters return only matching cases and support offset/limit pagination
 - `/ui/topics` renders topic drill-down links and `/ui/cases` consumes query parameters for filtered pagination
+- `/ui/search-explain` renders an interactive form, calls `/v2/search/explain`, displays cases/explain diagnostics, and can submit `/v2/search/feedback` judgments
 - `/metrics` exposes expected metric names
 
 ### Migration tests
@@ -589,7 +590,7 @@ The first web UI should be a lightweight static frontend served by FastAPI under
 - `/ui/overview`: consumes `/v2/stats/overview`, `/v2/stats/search`, and `/v2/stats/knowledge-quality`.
 - `/ui/topics`: consumes a new `/v2/topics` API that aggregates records/cases by product, component, tags, problem family, and case clusters. Every topic bucket is a drill-down link to `/ui/cases?topic_kind=...&topic=...`.
 - `/ui/cases`: consumes `/v2/cases` and `/v2/cases/{case_id}`. It accepts optional `topic_kind`/`topic` query parameters and paginates the filtered case list with `limit`/`offset`.
-- `/ui/search-explain`: submits to `/v2/search/explain` and writes judgments to `/v2/search/feedback`.
+- `/ui/search-explain`: provides an interactive query form for problem/task/goal/target/tags/max results plus an optional locally saved API key, submits to `/v2/search/explain`, renders grouped cases plus score breakdown/stages/query hash, and writes useful/not-useful judgments to `/v2/search/feedback`.
 - `/ui/quality-actions`: consumes `/v2/stats/quality-actions`.
 
 ### 14.2 Additional APIs
