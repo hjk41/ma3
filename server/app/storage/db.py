@@ -201,6 +201,7 @@ def _initialize_sqlite() -> None:
             )
             """
         )
+        _initialize_v2_sqlite(conn)
 
 
 def _initialize_postgres() -> None:
@@ -296,6 +297,109 @@ def _initialize_postgres() -> None:
             )
             """
         )
+        _initialize_v2_postgres(conn)
+
+
+def _initialize_v2_sqlite(conn) -> None:
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS cases (
+            case_id TEXT PRIMARY KEY,
+            library_id TEXT,
+            state TEXT NOT NULL,
+            target_product TEXT NOT NULL DEFAULT '',
+            target_component TEXT,
+            updated_at TEXT NOT NULL,
+            payload_json TEXT NOT NULL
+        )
+        """
+    )
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_cases_library_state ON cases(library_id, state)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_cases_target ON cases(target_product, target_component)")
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS search_events (
+            event_id TEXT PRIMARY KEY,
+            library_id TEXT,
+            created_at TEXT NOT NULL,
+            route TEXT NOT NULL,
+            latency_ms REAL NOT NULL DEFAULT 0,
+            result_count INTEGER NOT NULL DEFAULT 0,
+            case_count INTEGER NOT NULL DEFAULT 0,
+            full_scan INTEGER NOT NULL DEFAULT 0,
+            error_type TEXT,
+            query_hash TEXT,
+            payload_json TEXT NOT NULL
+        )
+        """
+    )
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_search_events_created ON search_events(created_at)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_search_events_hash ON search_events(query_hash)")
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS search_feedback (
+            feedback_id TEXT PRIMARY KEY,
+            query_hash TEXT,
+            record_id TEXT,
+            case_id TEXT,
+            judgment TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            payload_json TEXT NOT NULL
+        )
+        """
+    )
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_search_feedback_judgment ON search_feedback(judgment)")
+
+
+def _initialize_v2_postgres(conn) -> None:
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS cases (
+            case_id TEXT PRIMARY KEY,
+            library_id TEXT,
+            state TEXT NOT NULL,
+            target_product TEXT NOT NULL DEFAULT '',
+            target_component TEXT,
+            updated_at TEXT NOT NULL,
+            payload_json JSONB NOT NULL
+        )
+        """
+    )
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_cases_library_state ON cases(library_id, state)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_cases_target ON cases(target_product, target_component)")
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS search_events (
+            event_id TEXT PRIMARY KEY,
+            library_id TEXT,
+            created_at TEXT NOT NULL,
+            route TEXT NOT NULL,
+            latency_ms DOUBLE PRECISION NOT NULL DEFAULT 0,
+            result_count INTEGER NOT NULL DEFAULT 0,
+            case_count INTEGER NOT NULL DEFAULT 0,
+            full_scan BOOLEAN NOT NULL DEFAULT FALSE,
+            error_type TEXT,
+            query_hash TEXT,
+            payload_json JSONB NOT NULL
+        )
+        """
+    )
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_search_events_created ON search_events(created_at)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_search_events_hash ON search_events(query_hash)")
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS search_feedback (
+            feedback_id TEXT PRIMARY KEY,
+            query_hash TEXT,
+            record_id TEXT,
+            case_id TEXT,
+            judgment TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            payload_json JSONB NOT NULL
+        )
+        """
+    )
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_search_feedback_judgment ON search_feedback(judgment)")
 
 
 def backfill_search_indexes() -> None:

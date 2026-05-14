@@ -47,12 +47,26 @@ def _isolated_settings(tmp_path):
     orig_backend = config.settings.db_backend
     orig_key = config.settings.api_key
     orig_seed = config.settings.seed_path
+    orig_public_base_url = config.settings.public_base_url
+    orig_instance_id = config.settings.instance_id
+    orig_git_commit = config.settings.git_commit
+    orig_op_log_dir = config.settings.op_log_dir
+    orig_log_archive_dir = config.settings.log_archive_dir
+    orig_log_local_retention_days = config.settings.log_local_retention_days
+    orig_log_redact_raw = config.settings.log_redact_raw
 
     db = tmp_path / "test.db"
     object.__setattr__(config.settings, "db_path", db)
     object.__setattr__(config.settings, "database_url", None)
     object.__setattr__(config.settings, "db_backend", "sqlite")
     object.__setattr__(config.settings, "api_key", ADMIN_KEY)
+    object.__setattr__(config.settings, "public_base_url", None)
+    object.__setattr__(config.settings, "instance_id", None)
+    object.__setattr__(config.settings, "git_commit", None)
+    object.__setattr__(config.settings, "op_log_dir", tmp_path / "ops")
+    object.__setattr__(config.settings, "log_archive_dir", tmp_path / "archive")
+    object.__setattr__(config.settings, "log_local_retention_days", 2)
+    object.__setattr__(config.settings, "log_redact_raw", True)
     # Point seed_path at a non-existent file so seed_if_empty() is a no-op
     object.__setattr__(config.settings, "seed_path", tmp_path / "no_seed.json")
 
@@ -64,6 +78,13 @@ def _isolated_settings(tmp_path):
     object.__setattr__(config.settings, "db_backend", orig_backend)
     object.__setattr__(config.settings, "api_key", orig_key)
     object.__setattr__(config.settings, "seed_path", orig_seed)
+    object.__setattr__(config.settings, "public_base_url", orig_public_base_url)
+    object.__setattr__(config.settings, "instance_id", orig_instance_id)
+    object.__setattr__(config.settings, "git_commit", orig_git_commit)
+    object.__setattr__(config.settings, "op_log_dir", orig_op_log_dir)
+    object.__setattr__(config.settings, "log_archive_dir", orig_log_archive_dir)
+    object.__setattr__(config.settings, "log_local_retention_days", orig_log_local_retention_days)
+    object.__setattr__(config.settings, "log_redact_raw", orig_log_redact_raw)
 
 
 # ── Autouse: mock embeddings ─────────────────────────────────────────────────

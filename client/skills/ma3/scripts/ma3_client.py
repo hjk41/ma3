@@ -540,6 +540,26 @@ def cmd_knowledge(
     return 0 if 200 <= status < 300 else 1
 
 
+def cmd_v2_request(
+    endpoints: List[Endpoint],
+    method: str,
+    path: str,
+    endpoint_name: Optional[str],
+    payload: Any = None,
+    require_write: bool = False,
+) -> int:
+    """Call a v2 endpoint on one selected endpoint.
+
+    v2 commands are intentionally single-endpoint: agent workflows should avoid
+    fan-out surprises when writing reports or reading case timelines.
+    """
+    ep = _pick_ingest_endpoint(endpoints, endpoint_name) if require_write else _single_or_all(endpoints, endpoint_name)[0]
+    status, body = ep.request(method, path, payload=payload)
+    result = {"endpoint": ep.name, "status": status, "body": body}
+    print(json.dumps(result, ensure_ascii=False, indent=2))
+    return 0 if 200 <= status < 300 else 1
+
+
 # ── admin commands ──────────────────────────────────────────────────────────
 
 def _admin_request(
@@ -776,6 +796,39 @@ def main() -> int:
     know_p.add_argument("--payload",  help="Inline JSON payload.")
     know_p.add_argument("--endpoint", help="Endpoint name (required when multiple have API keys).")
 
+    # ── v2 agent/tool workflow wrappers ──
+    v2ctx_p = subparsers.add_parser("v2-context", help="POST /v2/agent/context — one-call agent retrieval context.")
+    v2ctx_p.add_argument("--input", help="Path to a JSON payload file.")
+    v2ctx_p.add_argument("--payload", help="Inline JSON payload.")
+    v2ctx_p.add_argument("--endpoint", help="Target endpoint by name.")
+
+    v2rep_p = subparsers.add_parser("v2-report", help="POST /v2/agent/report — write an agent result with case assignment.")
+    v2rep_p.add_argument("--input", help="Path to a JSON payload file.")
+    v2rep_p.add_argument("--payload", help="Inline JSON payload.")
+    v2rep_p.add_argument("--endpoint", help="Target endpoint by name.")
+
+    v2case_p = subparsers.add_parser("v2-case", help="GET /v2/cases/{id} — read a v2 case timeline.")
+    v2case_p.add_argument("case_id", help="Case ID to fetch.")
+    v2case_p.add_argument("--endpoint", help="Target endpoint by name.")
+
+    v2cases_p = subparsers.add_parser("v2-cases", help="GET /v2/cases — browse v2 cases.")
+    v2cases_p.add_argument("--state", help="Optional case state filter.")
+    v2cases_p.add_argument("--limit", type=int, default=20)
+    v2cases_p.add_argument("--offset", type=int, default=0)
+    v2cases_p.add_argument("--endpoint", help="Target endpoint by name.")
+
+    v2exp_p = subparsers.add_parser("v2-explain", help="POST /v2/search/explain — explain v2 retrieval/ranking.")
+    v2exp_p.add_argument("--input", help="Path to a JSON payload file.")
+    v2exp_p.add_argument("--payload", help="Inline JSON payload.")
+    v2exp_p.add_argument("--endpoint", help="Target endpoint by name.")
+
+    v2doc_p = subparsers.add_parser("v2-doctor", help="GET /v2/doctor — server-side v2 diagnostics.")
+    v2doc_p.add_argument("--endpoint", help="Target endpoint by name.")
+
+    v2stats_p = subparsers.add_parser("v2-stats", help="GET /v2/stats/{name} — overview/search/knowledge-quality/quality-actions.")
+    v2stats_p.add_argument("name", choices=["overview", "search", "knowledge-quality", "quality-actions"])
+    v2stats_p.add_argument("--endpoint", help="Target endpoint by name.")
+
     # ── admin ──
     cl_p = subparsers.add_parser("create-library", help="POST /libraries — create a library. (admin or library admin for child)")
     cl_p.add_argument("--name",        required=True, help="Library name.")
@@ -860,6 +913,23 @@ def main() -> int:
             load_json_payload(args.input, args.payload),
             ep_name,
         )
+    if args.command == "v2-context":
+        return cmd_v2_request(endpoints, "POST", "/v2/agent/context", ep_name, load_json_payload(args.input, args.payload))
+    if args.command == "v2-report":
+        return cmd_v2_request(endpoints, "POST", "/v2/agent/report", ep_name, load_json_payload(args.input, args.payload), require_write=True)
+    if args.command == "v2-case":
+        return cmd_v2_request(endpoints, "GET", f"/v2/cases/{args.case_id}", ep_name)
+    if args.command == "v2-cases":
+        path = f"/v2/cases?limit={args.limit}&offset={args.offset}"
+        if args.state:
+            path += f"&state={args.state}"
+        return cmd_v2_request(endpoints, "GET", path, ep_name)
+    if args.command == "v2-explain":
+        return cmd_v2_request(endpoints, "POST", "/v2/search/explain", ep_name, load_json_payload(args.input, args.payload))
+    if args.command == "v2-doctor":
+        return cmd_v2_request(endpoints, "GET", "/v2/doctor", ep_name)
+    if args.command == "v2-stats":
+        return cmd_v2_request(endpoints, "GET", f"/v2/stats/{args.name}", ep_name)
     if args.command == "create-library":
         return cmd_create_library(endpoints, args.name, args.description, args.public, args.parent, ep_name)
     if args.command == "delete-library":

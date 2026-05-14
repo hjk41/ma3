@@ -37,6 +37,8 @@ class RecordCreate(BaseModel):
     execution_mode: ExecutionMode = ExecutionMode.review_before_apply
     source_type: str = "manual"
     tags: list[str] = Field(default_factory=list)
+    # v2: primary Case/Thread assignment. Optional for legacy records.
+    case_id: str | None = None
     # Q&A knowledge fields (optional, populated by /knowledge endpoint)
     question: str | None = None
     scope: str | None = None

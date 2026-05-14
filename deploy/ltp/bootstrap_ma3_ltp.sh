@@ -1,0 +1,219 @@
+#!/usr/bin/env bash
+# Bootstrap a prod-like ma3 instance inside one LTP/OpenPAI container.
+#
+# This script is intentionally self-contained so an LTP job can pull code and
+# start a full ma3 instance without manual file upload after the container starts.
+
+set -euo pipefail
+umask 077
+
+log() { printf '[ma3-ltp] %s\n' "$*" >&2; }
+die() { log "ERROR: $*"; exit 1; }
+
+: "${MA3_GIT_REPO:?MA3_GIT_REPO is required}"
+: "${MA3_GIT_REF:?MA3_GIT_REF is required}"
+: "${MA3_ADMIN_KEY:?MA3_ADMIN_KEY is required}"
+: "${MA3_BACKUP_DIR:?MA3_BACKUP_DIR is required}"
+
+MA3_INSTANCE_ID="${MA3_INSTANCE_ID:-ma3-${PAI_JOB_NAME:-ltp}-$(date -u +%Y%m%dT%H%M%SZ)}"
+MA3_WORKDIR="${MA3_WORKDIR:-/root/ma3-instance}"
+MA3_REPO_DIR="${MA3_REPO_DIR:-${MA3_WORKDIR}/repo}"
+MA3_VENV="${MA3_VENV:-${MA3_WORKDIR}/.venv}"
+MA3_PORT="${MA3_PORT:-8000}"
+MA3_PUBLIC_BASE_URL="${MA3_PUBLIC_BASE_URL:-http://127.0.0.1:${MA3_PORT}}"
+MA3_BACKUP_MANIFEST="${MA3_BACKUP_MANIFEST:-latest}"
+MA3_ENABLE_DELTA="${MA3_ENABLE_DELTA:-0}"
+MA3_DELTA_URL="${MA3_DELTA_URL:-}"
+MA3_RUN_V1_TO_V2_MIGRATION="${MA3_RUN_V1_TO_V2_MIGRATION:-1}"
+MA3_MANIFEST_DIR="${MA3_MANIFEST_DIR:-${MA3_BACKUP_DIR}/instances}"
+MA3_OP_LOG_DIR="${MA3_OP_LOG_DIR:-/var/log/ma3/ops}"
+MA3_LOG_ARCHIVE_DIR="${MA3_LOG_ARCHIVE_DIR:-${MA3_BACKUP_DIR}/logs}"
+MA3_LOG_LOCAL_RETENTION_DAYS="${MA3_LOG_LOCAL_RETENTION_DAYS:-2}"
+MA3_V1_TO_V2_REPORT="${MA3_V1_TO_V2_REPORT:-${MA3_WORKDIR}/v1_to_v2_migration_report.json}"
+MA3_REQUIREMENTS_FILE="${MA3_REQUIREMENTS_FILE:-server/requirements-ltp.txt}"
+MA3_DISABLE_EMBEDDINGS="${MA3_DISABLE_EMBEDDINGS:-1}"
+
+PGHOST="${PGHOST:-localhost}"
+PGPORT="${PGPORT:-5432}"
+PGDATABASE="${PGDATABASE:-ma3db}"
+PGUSER="${PGUSER:-ma3user}"
+PGPASSWORD="${PGPASSWORD:?PGPASSWORD is required}"
+
+export MA3_INSTANCE_ID MA3_PUBLIC_BASE_URL PGHOST PGPORT PGDATABASE PGUSER PGPASSWORD
+export MA3_OP_LOG_DIR MA3_LOG_ARCHIVE_DIR MA3_LOG_LOCAL_RETENTION_DAYS
+
+log "instance_id=${MA3_INSTANCE_ID}"
+log "workdir=${MA3_WORKDIR}"
+mkdir -p "$MA3_WORKDIR" "$MA3_MANIFEST_DIR" /var/log/ma3
+
+if ! command -v pg_isready >/dev/null 2>&1 || ! command -v python3 >/dev/null 2>&1 || ! python3 -m venv --help >/dev/null 2>&1; then
+  if command -v apt-get >/dev/null 2>&1; then
+    log "installing missing runtime packages with apt-get"
+    export DEBIAN_FRONTEND=noninteractive
+    apt-get update
+    apt-get install -y --no-install-recommends git curl ca-certificates python3 python3-venv python3-pip postgresql postgresql-client cron
+  else
+    die "missing runtime packages and apt-get is unavailable; use an image with git/curl/python3-venv/PostgreSQL"
+  fi
+fi
+
+if command -v pg_ctlcluster >/dev/null 2>&1; then
+  log "starting local PostgreSQL cluster"
+  pg_ctlcluster 16 main start 2>/dev/null || pg_ctlcluster 15 main start 2>/dev/null || true
+fi
+
+if ! pg_isready -h "$PGHOST" -p "$PGPORT" >/dev/null 2>&1 && command -v pg_lsclusters >/dev/null 2>&1; then
+  DETECTED_PGPORT="$(pg_lsclusters --no-header 2>/dev/null | awk '$4 == "online" {print $3; exit}')"
+  if [[ -n "$DETECTED_PGPORT" ]]; then
+    log "detected PostgreSQL cluster port=${DETECTED_PGPORT}"
+    PGPORT="$DETECTED_PGPORT"
+    export PGPORT
+  fi
+fi
+
+if ! pg_isready -h "$PGHOST" -p "$PGPORT" >/dev/null 2>&1; then
+  die "PostgreSQL is not ready at ${PGHOST}:${PGPORT}; use an image with PostgreSQL or pre-start it"
+fi
+
+log "ensuring database/user exist"
+if command -v su >/dev/null 2>&1 && id postgres >/dev/null 2>&1; then
+  su -c "psql -tc \"SELECT 1 FROM pg_roles WHERE rolname='${PGUSER}'\" | grep -q 1 || psql -c \"CREATE USER ${PGUSER} WITH PASSWORD '${PGPASSWORD}';\"" postgres || true
+  su -c "psql -tc \"SELECT 1 FROM pg_database WHERE datname='${PGDATABASE}'\" | grep -q 1 || createdb -O ${PGUSER} ${PGDATABASE}" postgres || true
+  su -c "psql -d ${PGDATABASE} -c \"GRANT ALL ON SCHEMA public TO ${PGUSER};\"" postgres || true
+fi
+
+log "cloning code"
+rm -rf "$MA3_REPO_DIR"
+if [[ -n "${MA3_GIT_SSH_KEY:-}" ]]; then
+  mkdir -p /root/.ssh
+  printf '%s\n' "$MA3_GIT_SSH_KEY" > /root/.ssh/id_ma3_codeup
+  chmod 600 /root/.ssh/id_ma3_codeup
+  export GIT_SSH_COMMAND="ssh -i /root/.ssh/id_ma3_codeup -o StrictHostKeyChecking=no"
+fi
+if [[ -n "${MA3_GIT_TOKEN:-}" && "$MA3_GIT_REPO" =~ ^https:// ]]; then
+  AUTH_REPO="${MA3_GIT_REPO/https:\/\//https:\/\/${MA3_GIT_TOKEN}@}"
+else
+  AUTH_REPO="$MA3_GIT_REPO"
+fi
+git clone --depth 1 --branch "$MA3_GIT_REF" "$AUTH_REPO" "$MA3_REPO_DIR"
+cd "$MA3_REPO_DIR"
+if [[ -n "${MA3_GIT_COMMIT:-}" ]]; then
+  git fetch --depth 1 origin "$MA3_GIT_COMMIT" || true
+  git checkout "$MA3_GIT_COMMIT"
+fi
+RESOLVED_COMMIT="$(git rev-parse HEAD)"
+export MA3_GIT_COMMIT="$RESOLVED_COMMIT"
+log "code commit=${RESOLVED_COMMIT}"
+
+log "creating virtualenv"
+python3 -m venv "$MA3_VENV"
+"$MA3_VENV/bin/pip" install --upgrade pip
+"$MA3_VENV/bin/pip" install -r "$MA3_REPO_DIR/$MA3_REQUIREMENTS_FILE"
+
+log "restoring database backup"
+MA3_BACKUP_MANIFEST="$MA3_BACKUP_MANIFEST" \
+MA3_BACKUP_DIR="$MA3_BACKUP_DIR" \
+PGHOST="$PGHOST" PGPORT="$PGPORT" PGDATABASE="$PGDATABASE" PGUSER="$PGUSER" PGPASSWORD="$PGPASSWORD" \
+  bash "$MA3_REPO_DIR/deploy/ltp/restore_postgres.sh"
+
+if [[ "$MA3_ENABLE_DELTA" == "1" ]]; then
+  if [[ -z "$MA3_DELTA_URL" ]]; then
+    die "MA3_ENABLE_DELTA=1 but MA3_DELTA_URL is empty"
+  fi
+  log "delta sync requested; placeholder fetch from ${MA3_DELTA_URL}"
+  # Intentionally conservative: delta import must be schema/version aware.
+  # A future implementation should call an authenticated prod export endpoint
+  # and apply an idempotent JSONL delta.
+  curl -fsS "$MA3_DELTA_URL" -o "${MA3_WORKDIR}/delta.jsonl"
+fi
+
+if [[ "$MA3_RUN_V1_TO_V2_MIGRATION" == "1" ]]; then
+  log "running v1-to-v2 case migration"
+  cd "$MA3_REPO_DIR/server"
+  MA3_DATABASE_URL="postgresql://${PGUSER}:${PGPASSWORD}@${PGHOST}:${PGPORT}/${PGDATABASE}" \
+    "$MA3_VENV/bin/python3" scripts/migrate_v1_to_v2_cases.py \
+      --apply \
+      --report "$MA3_V1_TO_V2_REPORT"
+else
+  log "skipping v1-to-v2 case migration (MA3_RUN_V1_TO_V2_MIGRATION=${MA3_RUN_V1_TO_V2_MIGRATION})"
+fi
+
+log "writing root-only env file"
+cat > "${MA3_WORKDIR}/ma3.env" <<EOF
+MA3_DATABASE_URL=postgresql://${PGUSER}:${PGPASSWORD}@${PGHOST}:${PGPORT}/${PGDATABASE}
+MA3_API_KEY=${MA3_ADMIN_KEY}
+MA3_PUBLIC_BASE_URL=${MA3_PUBLIC_BASE_URL}
+MA3_INSTANCE_ID=${MA3_INSTANCE_ID}
+MA3_GIT_COMMIT=${RESOLVED_COMMIT}
+MA3_OP_LOG_DIR=${MA3_OP_LOG_DIR}
+MA3_LOG_ARCHIVE_DIR=${MA3_LOG_ARCHIVE_DIR}
+MA3_LOG_LOCAL_RETENTION_DAYS=${MA3_LOG_LOCAL_RETENTION_DAYS}
+MA3_LOG_REDACT_RAW=1
+MA3_DISABLE_EMBEDDINGS=${MA3_DISABLE_EMBEDDINGS}
+MA3_REQUIREMENTS_FILE=${MA3_REQUIREMENTS_FILE}
+MA3_RUN_V1_TO_V2_MIGRATION=${MA3_RUN_V1_TO_V2_MIGRATION}
+MA3_V1_TO_V2_REPORT=${MA3_V1_TO_V2_REPORT}
+HF_HUB_OFFLINE=${HF_HUB_OFFLINE:-1}
+EOF
+chmod 600 "${MA3_WORKDIR}/ma3.env"
+
+log "starting ma3"
+set -a
+# shellcheck disable=SC1090
+. "${MA3_WORKDIR}/ma3.env"
+set +a
+cd "$MA3_REPO_DIR/server"
+nohup "$MA3_VENV/bin/python3" -m uvicorn app.main:app --host 0.0.0.0 --port "$MA3_PORT" \
+  > /var/log/ma3/ma3.log 2>&1 &
+MA3_PID="$!"
+echo "$MA3_PID" > "${MA3_WORKDIR}/ma3.pid"
+
+log "waiting for healthcheck"
+for _ in $(seq 1 60); do
+  if curl -fsS "http://127.0.0.1:${MA3_PORT}/healthz" >/tmp/ma3-health.json 2>/dev/null; then
+    break
+  fi
+  sleep 2
+done
+curl -fsS "http://127.0.0.1:${MA3_PORT}/healthz" | python3 -m json.tool
+curl -fsS "http://127.0.0.1:${MA3_PORT}/v2/doctor" | python3 -m json.tool || true
+
+log "installing daily log archive cron entry"
+if command -v cron >/dev/null 2>&1; then
+  (crontab -l 2>/dev/null | grep -v 'archive_logs.sh' || true; echo "7 3 * * * cd '$MA3_REPO_DIR/server' && . '$MA3_WORKDIR/ma3.env' && bash '$MA3_REPO_DIR/deploy/ltp/archive_logs.sh' >> /var/log/ma3/archive.log 2>&1") | crontab -
+  cron || true
+fi
+
+INSTANCE_MANIFEST="${MA3_MANIFEST_DIR}/${MA3_INSTANCE_ID}.json"
+python3 - "$INSTANCE_MANIFEST" <<'PY'
+import json
+import os
+import pathlib
+import time
+
+path = pathlib.Path(__import__("sys").argv[1])
+path.parent.mkdir(parents=True, exist_ok=True)
+manifest = {
+    "format": "ma3-ltp-instance-v1",
+    "instance_id": os.environ["MA3_INSTANCE_ID"],
+    "job_name": os.environ.get("PAI_JOB_NAME"),
+    "task_index": os.environ.get("PAI_CURRENT_TASK_ROLE_CURRENT_TASK_INDEX"),
+    "public_base_url": os.environ.get("MA3_PUBLIC_BASE_URL"),
+    "git_repo": os.environ.get("MA3_GIT_REPO"),
+    "git_ref": os.environ.get("MA3_GIT_REF"),
+    "git_commit": os.environ.get("MA3_GIT_COMMIT"),
+    "backup_manifest": os.environ.get("MA3_BACKUP_MANIFEST"),
+    "v1_to_v2_migration": os.environ.get("MA3_RUN_V1_TO_V2_MIGRATION"),
+    "v1_to_v2_report": os.environ.get("MA3_V1_TO_V2_REPORT"),
+    "database": os.environ.get("PGDATABASE"),
+    "started_at_epoch": int(time.time()),
+    "healthz": f"http://127.0.0.1:{os.environ.get('MA3_PORT', '8000')}/healthz",
+    "agents_md": f"{os.environ.get('MA3_PUBLIC_BASE_URL', '').rstrip('/')}/agents.md",
+}
+path.write_text(json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8")
+PY
+ln -sfn "$(basename "$INSTANCE_MANIFEST")" "${MA3_MANIFEST_DIR}/latest-instance.json"
+log "instance manifest: ${INSTANCE_MANIFEST}"
+
+log "ready: ${MA3_PUBLIC_BASE_URL}"
+tail -F /var/log/ma3/ma3.log

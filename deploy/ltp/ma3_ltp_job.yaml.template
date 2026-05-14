@@ -1,0 +1,92 @@
+protocolVersion: 2
+name: ma3-${MA3_INSTANCE_NAME}
+type: job
+jobRetryCount: 0
+
+prerequisites:
+  - type: dockerimage
+    # The image should include: git, curl, python3-venv, PostgreSQL server/client.
+    # Keep this image internal and versioned for reproducible ma3 instance boots.
+    uri: '${MA3_DOCKER_IMAGE}'
+    name: docker_image0
+
+taskRoles:
+  ma3:
+    instances: 1
+    completion:
+      minFailedInstances: 1
+    dockerImage: docker_image0
+    resourcePerInstance:
+      gpu: 0
+      cpu: 8
+      memoryMB: 32768
+    extraContainerOptions:
+      shmMB: 8192
+    commands:
+      - |
+        set -euo pipefail
+        export MA3_GIT_REPO='${MA3_GIT_REPO}'
+        export MA3_GIT_REF='${MA3_GIT_REF}'
+        export MA3_GIT_COMMIT='${MA3_GIT_COMMIT}'
+        export MA3_PUBLIC_BASE_URL='${MA3_PUBLIC_BASE_URL}'
+        export MA3_INSTANCE_ID='${MA3_INSTANCE_ID}'
+        export MA3_BACKUP_DIR='${MA3_BACKUP_DIR}'
+        export MA3_BACKUP_MANIFEST='${MA3_BACKUP_MANIFEST}'
+        export MA3_ENABLE_DELTA='${MA3_ENABLE_DELTA}'
+        export MA3_DELTA_URL='${MA3_DELTA_URL}'
+        export MA3_RUN_V1_TO_V2_MIGRATION='${MA3_RUN_V1_TO_V2_MIGRATION}'
+        export MA3_PORT='${MA3_PORT}'
+        export MA3_ADMIN_KEY='<% $secrets.MA3_ADMIN_KEY %>'
+        export PGPASSWORD='<% $secrets.MA3_POSTGRES_PASSWORD %>'
+        export MA3_GIT_TOKEN='<% $secrets.MA3_GIT_TOKEN %>'
+        export MA3_GIT_SSH_KEY='<% $secrets.MA3_GIT_SSH_KEY %>'
+        export HF_HUB_OFFLINE='1'
+        export MA3_DISABLE_EMBEDDINGS='1'
+        export MA3_REQUIREMENTS_FILE='server/requirements-ltp.txt'
+        if ! command -v git >/dev/null 2>&1 || ! command -v ssh >/dev/null 2>&1; then
+          export DEBIAN_FRONTEND=noninteractive
+          apt-get update
+          apt-get install -y --no-install-recommends git openssh-client ca-certificates
+        fi
+        if [ -n "${MA3_GIT_SSH_KEY}" ]; then
+          mkdir -p /root/.ssh
+          printf '%s\n' "${MA3_GIT_SSH_KEY}" > /root/.ssh/id_ma3_codeup
+          chmod 600 /root/.ssh/id_ma3_codeup
+          export GIT_SSH_COMMAND="ssh -i /root/.ssh/id_ma3_codeup -o StrictHostKeyChecking=no"
+        fi
+        if [ -n "${MA3_GIT_TOKEN}" ] && printf '%s' "${MA3_GIT_REPO}" | grep -q '^https://'; then
+          BOOTSTRAP_REPO="${MA3_GIT_REPO/https:\/\//https:\/\/${MA3_GIT_TOKEN}@}"
+        else
+          BOOTSTRAP_REPO="${MA3_GIT_REPO}"
+        fi
+        git clone --depth 1 --branch "${MA3_GIT_REF}" "${BOOTSTRAP_REPO}" /tmp/ma3-bootstrap
+        cd /tmp/ma3-bootstrap
+        if [ -n "${MA3_GIT_COMMIT}" ]; then
+          git fetch --depth 1 origin "${MA3_GIT_COMMIT}" || true
+          git checkout "${MA3_GIT_COMMIT}"
+        fi
+        bash deploy/ltp/bootstrap_ma3_ltp.sh
+
+defaults:
+  virtualCluster: ${LTP_VIRTUAL_CLUSTER}
+
+extras:
+  com.microsoft.pai.runtimeplugin:
+    - plugin: ssh
+      parameters:
+        jobssh: true
+  hivedScheduler:
+    taskRoles:
+      ma3:
+        skuNum: 1
+        skuType: ${LTP_SKU_TYPE}
+  enableLocalStorage:
+    enabled: true
+    hostpath: /mntext
+    mntpath: /output
+
+secrets:
+  MA3_ADMIN_KEY: '${MA3_ADMIN_KEY}'
+  MA3_POSTGRES_PASSWORD: '${MA3_POSTGRES_PASSWORD}'
+  MA3_GIT_TOKEN: '${MA3_GIT_TOKEN}'
+  MA3_GIT_SSH_KEY: '${MA3_GIT_SSH_KEY}'

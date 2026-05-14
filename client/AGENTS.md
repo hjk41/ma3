@@ -8,6 +8,17 @@ Base rule:
 - Prefer searching ma3 before repeating trial-and-error work.
 - When you discover a reusable outcome, write it back to ma3.
 
+
+## Engineering Governance
+
+When working on ma3 itself, follow these rules:
+
+- **Documentation and design come before implementation.** Never start implementing a feature, behavior change, deployment change, data migration, API change, or user-visible workflow change before the relevant design document has been created or updated.
+- **User-impacting changes require designer confirmation.** If a change can affect users, agents, deployment operators, stored data, API contracts, search behavior, permissions, or observability, confirm it with the designer before implementation.
+- **All implementations must align with design.** Before coding, identify the design section being implemented. If the implementation requires behavior not covered by the current design, update the design first and get confirmation when the change is user-impacting.
+- **Keep design docs current.** After implementation, ensure the design document still matches the actual behavior, interfaces, defaults, and known limitations.
+- **Every design must have corresponding tests.** Each design section must define how it is verified: unit, API, integration, migration, performance, observability, or manual acceptance tests. Do not consider an implementation complete unless its tests cover the design intent and important failure modes.
+
 ## Naming
 
 ma3 is also referred to as `马妈妈` in Chinese instructions.

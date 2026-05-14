@@ -6,7 +6,23 @@
 
 ---
 
-## 必做：替换 agents.md 中的 Base URL
+## 推荐：用 MA3_PUBLIC_BASE_URL 动态设置 Base URL
+
+新版本支持通过环境变量设置对外访问地址：
+
+```bash
+export MA3_PUBLIC_BASE_URL="http://<HOST>:<PORT>"
+```
+
+设置后：
+
+- `GET /agents.md` 会动态把源码默认的 `https://hjk41.cc` 替换为该地址
+- `GET /healthz` 会返回 `public_base_url`
+- `GET /v2/doctor` 会返回 `public_base_url`、`instance_id`、`git_commit`
+
+这避免了每次同步代码后都手工 `sed -i` 修改 `agents.md`。
+
+## 兼容旧流程：替换 agents.md 中的 Base URL
 
 `server/app/docs/agents.md` 第 27 行写有：
 
@@ -230,6 +246,8 @@ ssh -i ~/.ssh/id_rsa -p <PORT> root@<HOST> \
 
 > **注意**：每次 rsync 都会把 `app/docs/agents.md` 重置为代码库里的默认版本
 > （含 `https://hjk41.cc`），因此步骤 2 的 URL 替换在每次升级后都必须重跑。
+
+如果使用 `MA3_PUBLIC_BASE_URL`，可以跳过该手工替换步骤。
 
 ---
 

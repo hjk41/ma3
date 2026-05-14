@@ -3,6 +3,8 @@ from pathlib import Path
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import PlainTextResponse
 
+from app.core.config import settings
+
 
 router = APIRouter(tags=["docs"])
 
@@ -12,7 +14,10 @@ CLIENT_DIR = Path(__file__).resolve().parents[3] / "client"
 
 @router.get("/agents.md", response_class=PlainTextResponse)
 def get_agents_md() -> str:
-    return (DOCS_DIR / "agents.md").read_text(encoding="utf-8")
+    text = (DOCS_DIR / "agents.md").read_text(encoding="utf-8")
+    if settings.public_base_url:
+        text = text.replace("https://hjk41.cc", settings.public_base_url.rstrip("/"))
+    return text
 
 
 @router.get("/install.sh", response_class=PlainTextResponse)
