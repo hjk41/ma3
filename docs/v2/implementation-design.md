@@ -614,16 +614,24 @@ The supported CephFS path is:
 
 - `MA3_CEPHFS_ENABLE=1`
 - `MA3_CEPHFS_USER=<ceph user>`
-- `MA3_CEPHFS_KEYRING=<full keyring from LTP secret>`
+- `MA3_CEPHFS_KEYRING=<full current keyring from LTP secret>`
 - `MA3_CEPHFS_MOUNT=/mnt/cephfs`
 - `MA3_CEPHFS_FS_NAME=mycephfs`
 - `MA3_CEPHFS_MON=10.100.65.50,10.100.65.51,10.100.160.70`
 
+`MA3_CEPHFS_KEYRING` must be copied from the CephFS keyring portal
+(`https://ceph-user.zhilicon.com`) close to submission time and passed via LTP
+secrets. Do not assume an old local keyring cache is still valid: an expired or
+reset keyring causes `ceph-fuse`/`ceph` authentication errors even if the file
+header still matches the user.
+
 `bootstrap_ma3_ltp.sh` should run the internal Ceph bootstrap helper, install
-`ceph-common`/`ceph-fuse`, write the keyring and `/etc/ceph/ceph.conf`, mount
-with `ceph-fuse`, and only then create `$MA3_BACKUP_DIR/instances` or call
-`restore_postgres.sh`. This ensures `latest.manifest.json` and the dump file are
-read from real CephFS rather than from an accidentally-created local directory.
+`ceph-common`/`ceph-fuse`, write the keyring and `/etc/ceph/ceph.conf`, validate
+that the keyring identity matches `MA3_CEPHFS_USER`, mount with `ceph-fuse`,
+wait for the path to become a real mountpoint, and only then create
+`$MA3_BACKUP_DIR/instances` or call `restore_postgres.sh`. This ensures
+`latest.manifest.json` and the dump file are read from real CephFS rather than
+from an accidentally-created local directory.
 
 `restore_postgres.sh` must fail fast when the manifest is missing so a broken
 storage mapping does not silently start an empty instance.
@@ -642,6 +650,8 @@ Deployment changes must be checked with:
 - static inspection that `ma3_ltp_job.yaml.template` passes
   `MA3_CEPHFS_ENABLE`, `MA3_CEPHFS_USER`, and the secret-backed
   `MA3_CEPHFS_KEYRING`
+- a unit/static check that `bootstrap_ma3_ltp.sh` validates the keyring identity
+  and waits for `mountpoint -q $MA3_CEPHFS_MOUNT` before reading backups
 - one fresh LTP submission using a pinned commit, no `deliver_assets`, and a real
   CephFS keyring secret; success requires `/healthz` and `/v2/doctor` to pass
   from inside the container before any SSH hot patching

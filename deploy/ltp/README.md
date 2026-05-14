@@ -93,10 +93,16 @@ commands:
     export MA3_CEPHFS_KEYRING='<% $secrets.MA3_CEPHFS_KEYRING %>'
 ```
 
+Use a **current** full keyring copied from `https://ceph-user.zhilicon.com` when
+rendering the LTP secret. A stale local keyring cache can have the right
+`[client.<user>]` header but still fail Ceph authentication after the portal key
+has been reset.
+
 `bootstrap_ma3_ltp.sh` installs `ceph-common`/`ceph-fuse`, writes the keyring to
 `/etc/ceph/$MA3_CEPHFS_USER.keyring`, writes `/etc/ceph/ceph.conf` with the MON
-hosts, mounts CephFS with `ceph-fuse`, and only then reads
-`$MA3_BACKUP_DIR/latest.manifest.json`.
+hosts, validates that the keyring identity matches `MA3_CEPHFS_USER`, mounts
+CephFS with `ceph-fuse`, waits for `/mnt/cephfs` to become a real mountpoint,
+and only then reads `$MA3_BACKUP_DIR/latest.manifest.json`.
 
 The job template still keeps `enableLocalStorage` parameterized with
 `LTP_STORAGE_HOSTPATH` and `LTP_STORAGE_MNTPATH` for non-Ceph local scratch.

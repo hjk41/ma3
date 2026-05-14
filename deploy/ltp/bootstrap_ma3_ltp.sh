@@ -69,8 +69,15 @@ mount_cephfs_if_enabled() {
   fi
 
   mkdir -p /etc/ceph "$MA3_CEPHFS_MOUNT"
-  printf '%s\n' "$MA3_CEPHFS_KEYRING" > "/etc/ceph/${MA3_CEPHFS_USER}.keyring"
-  chmod 600 "/etc/ceph/${MA3_CEPHFS_USER}.keyring"
+  local keyring_path="/etc/ceph/${MA3_CEPHFS_USER}.keyring"
+  printf '%s\n' "$MA3_CEPHFS_KEYRING" > "$keyring_path"
+  chmod 600 "$keyring_path"
+  local keyring_user
+  keyring_user="$(awk '/^\[client\.[^]]+\]$/ {gsub(/^\[client\./, ""); gsub(/\]$/, ""); print; exit}' "$keyring_path")"
+  [[ -n "$keyring_user" ]] || die "CephFS keyring is missing a [client.<user>] header"
+  [[ "$keyring_user" == "$MA3_CEPHFS_USER" ]] || die "CephFS keyring identity client.${keyring_user} does not match MA3_CEPHFS_USER=${MA3_CEPHFS_USER}"
+  awk '/^[[:space:]]*key[[:space:]]*=/ {found=1} END {exit found ? 0 : 1}' "$keyring_path" \
+    || die "CephFS keyring for ${MA3_CEPHFS_USER} is missing a key entry"
   cat > /etc/ceph/ceph.conf <<EOF
 [global]
 mon_host = ${MA3_CEPHFS_MON}
@@ -82,17 +89,19 @@ EOF
     ceph-fuse "$MA3_CEPHFS_MOUNT" \
       --client_fs="$MA3_CEPHFS_FS_NAME" \
       --id "$MA3_CEPHFS_USER" \
-      --keyring "/etc/ceph/${MA3_CEPHFS_USER}.keyring" \
+      --keyring "$keyring_path" \
       --client_reconnect_stale=1
   fi
 
-  if ! timeout 15 bash -c "until test -d '$MA3_CEPHFS_MOUNT'; do sleep 1; done"; then
-    die "CephFS mountpoint did not become visible: ${MA3_CEPHFS_MOUNT}"
+  if ! timeout 30 bash -c 'until mountpoint -q "$1"; do sleep 1; done' _ "$MA3_CEPHFS_MOUNT"; then
+    findmnt "$MA3_CEPHFS_MOUNT" -o TARGET,FSTYPE,OPTIONS -n >&2 || true
+    die "CephFS mountpoint did not become mounted: ${MA3_CEPHFS_MOUNT}"
   fi
   log "CephFS mounted; backup dir check: ${MA3_BACKUP_DIR}"
-  if [[ ! -e "$MA3_BACKUP_DIR" ]]; then
+  if [[ ! -d "$MA3_BACKUP_DIR" ]]; then
     die "MA3_BACKUP_DIR does not exist after CephFS mount: ${MA3_BACKUP_DIR}"
   fi
+  ls -ld "$MA3_BACKUP_DIR" >&2 || true
 }
 
 log "instance_id=${MA3_INSTANCE_ID}"
