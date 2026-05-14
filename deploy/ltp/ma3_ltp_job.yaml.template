@@ -40,6 +40,7 @@ taskRoles:
         export MA3_CEPHFS_USER='${MA3_CEPHFS_USER}'
         export MA3_CEPHFS_MOUNT='${MA3_CEPHFS_MOUNT}'
         export MA3_CEPHFS_FS_NAME='${MA3_CEPHFS_FS_NAME}'
+        export MA3_CEPHFS_MON='${MA3_CEPHFS_MON}'
         export MA3_CEPHFS_KEYRING='<% $secrets.MA3_CEPHFS_KEYRING %>'
         export MA3_ADMIN_KEY='<% $secrets.MA3_ADMIN_KEY %>'
         export PGPASSWORD='<% $secrets.MA3_POSTGRES_PASSWORD %>'

@@ -617,10 +617,11 @@ The supported CephFS path is:
 - `MA3_CEPHFS_KEYRING=<full keyring from LTP secret>`
 - `MA3_CEPHFS_MOUNT=/mnt/cephfs`
 - `MA3_CEPHFS_FS_NAME=mycephfs`
+- `MA3_CEPHFS_MON=10.100.65.50,10.100.65.51,10.100.160.70`
 
 `bootstrap_ma3_ltp.sh` should run the internal Ceph bootstrap helper, install
-`ceph-common`/`ceph-fuse`, write the keyring to `/etc/ceph`, mount with
-`ceph-fuse`, and only then create `$MA3_BACKUP_DIR/instances` or call
+`ceph-common`/`ceph-fuse`, write the keyring and `/etc/ceph/ceph.conf`, mount
+with `ceph-fuse`, and only then create `$MA3_BACKUP_DIR/instances` or call
 `restore_postgres.sh`. This ensures `latest.manifest.json` and the dump file are
 read from real CephFS rather than from an accidentally-created local directory.
 

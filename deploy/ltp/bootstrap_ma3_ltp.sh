@@ -37,6 +37,7 @@ MA3_CEPHFS_USER="${MA3_CEPHFS_USER:-}"
 MA3_CEPHFS_KEYRING="${MA3_CEPHFS_KEYRING:-}"
 MA3_CEPHFS_MOUNT="${MA3_CEPHFS_MOUNT:-/mnt/cephfs}"
 MA3_CEPHFS_FS_NAME="${MA3_CEPHFS_FS_NAME:-mycephfs}"
+MA3_CEPHFS_MON="${MA3_CEPHFS_MON:-10.100.65.50,10.100.65.51,10.100.160.70}"
 
 PGHOST="${PGHOST:-localhost}"
 PGPORT="${PGPORT:-5432}"
@@ -70,6 +71,10 @@ mount_cephfs_if_enabled() {
   mkdir -p /etc/ceph "$MA3_CEPHFS_MOUNT"
   printf '%s\n' "$MA3_CEPHFS_KEYRING" > "/etc/ceph/${MA3_CEPHFS_USER}.keyring"
   chmod 600 "/etc/ceph/${MA3_CEPHFS_USER}.keyring"
+  cat > /etc/ceph/ceph.conf <<EOF
+[global]
+mon_host = ${MA3_CEPHFS_MON}
+EOF
 
   if mountpoint -q "$MA3_CEPHFS_MOUNT"; then
     log "CephFS mountpoint already mounted: ${MA3_CEPHFS_MOUNT}"

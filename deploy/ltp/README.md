@@ -56,6 +56,7 @@ Render the template with:
 - `MA3_CEPHFS_USER` — CephFS user, for example `chuntao.hong`
 - `MA3_CEPHFS_MOUNT` — default `/mnt/cephfs`
 - `MA3_CEPHFS_FS_NAME` — default `mycephfs`
+- `MA3_CEPHFS_MON` — default `10.100.65.50,10.100.65.51,10.100.160.70`
 - `LTP_VIRTUAL_CLUSTER`
 - `LTP_SKU_TYPE`
 
@@ -88,12 +89,14 @@ commands:
     export MA3_CEPHFS_USER='chuntao.hong'
     export MA3_CEPHFS_MOUNT='/mnt/cephfs'
     export MA3_CEPHFS_FS_NAME='mycephfs'
+    export MA3_CEPHFS_MON='10.100.65.50,10.100.65.51,10.100.160.70'
     export MA3_CEPHFS_KEYRING='<% $secrets.MA3_CEPHFS_KEYRING %>'
 ```
 
 `bootstrap_ma3_ltp.sh` installs `ceph-common`/`ceph-fuse`, writes the keyring to
-`/etc/ceph/$MA3_CEPHFS_USER.keyring`, mounts CephFS with `ceph-fuse`, and only
-then reads `$MA3_BACKUP_DIR/latest.manifest.json`.
+`/etc/ceph/$MA3_CEPHFS_USER.keyring`, writes `/etc/ceph/ceph.conf` with the MON
+hosts, mounts CephFS with `ceph-fuse`, and only then reads
+`$MA3_BACKUP_DIR/latest.manifest.json`.
 
 The job template still keeps `enableLocalStorage` parameterized with
 `LTP_STORAGE_HOSTPATH` and `LTP_STORAGE_MNTPATH` for non-Ceph local scratch.
