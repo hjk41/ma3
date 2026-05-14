@@ -422,21 +422,25 @@ If `persisted` is false:
 
 Avoid sending raw secrets when possible.
 
-ma3 always redacts secrets such as GitHub tokens, AWS keys, long opaque tokens,
-and password/token assignments. Contextual identifiers (Windows/Unix paths,
-emails, IPs) are redacted by default, but they may be important technical content.
+ma3 redacts secrets such as GitHub tokens, AWS keys, long opaque tokens, and
+password/token assignments by default. Contextual identifiers (Windows/Unix paths,
+emails, IPs) are also redacted by default, but they may be important technical
+content. Personal libraries may intentionally store even secret-like values when
+the submitter explicitly chooses non-anonymous submission.
 
-When submitting via the bundled CLI, if contextual identifiers are detected and
-you are in an interactive terminal, the CLI prompts whether to redact them. To
-choose explicitly:
+When submitting via the bundled CLI, if contextual or secret-like values are
+detected and you are in an interactive terminal, the CLI prompts which redaction
+mode to use. To choose explicitly:
 
 ```bash
-python3 ma3_client.py ingest --input report.json --redaction-mode auto  # default
-python3 ma3_client.py ingest --input report.json --redaction-mode none  # keep paths/IPs/emails
+python3 ma3_client.py ingest --input report.json --redaction-mode auto        # redact all
+python3 ma3_client.py ingest --input report.json --redaction-mode contextual  # keep paths/IPs/emails
+python3 ma3_client.py ingest --input report.json --redaction-mode none        # keep secrets only in personal libraries
 ```
 
 `--redaction-mode none` / payload `"redaction_mode": "none"` preserves
-paths/IPs/emails, but still redacts secrets. You should still avoid exposing:
+paths/IPs/emails and preserves secrets only for personal libraries. You should
+still avoid unintentionally exposing:
 
 - tokens
 - passwords

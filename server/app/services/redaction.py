@@ -18,27 +18,43 @@ LONG_HEX_RE = re.compile(r"\b[0-9a-fA-F]{40,}\b")
 
 
 def _mode(value: RedactionMode | None) -> str:
-    return "none" if value == "none" else "auto"
+    return value if value in {"auto", "contextual", "none"} else "auto"
 
 
-def redact_text(text: str, mode: RedactionMode | None = "auto") -> str:
-    if _mode(mode) != "none":
+def redact_text(
+    text: str,
+    mode: RedactionMode | None = "auto",
+    allow_secret_preservation: bool = False,
+) -> str:
+    effective_mode = _mode(mode)
+    if effective_mode == "auto":
         text = WINDOWS_PATH_RE.sub("<redacted_path>", text)
         text = UNIX_PATH_RE.sub("<redacted_path>", text)
         text = EMAIL_RE.sub("<redacted_email>", text)
         text = IPV4_RE.sub("<redacted_ip>", text)
-    text = GITHUB_TOKEN_RE.sub("<redacted_token>", text)
-    text = AWS_KEY_RE.sub("<redacted_aws_key>", text)
-    text = LONG_HEX_RE.sub("<redacted_token>", text)
-    text = SECRET_ASSIGNMENT_RE.sub(r"\1=<redacted_secret>", text)
+    if effective_mode != "none" or not allow_secret_preservation:
+        text = GITHUB_TOKEN_RE.sub("<redacted_token>", text)
+        text = AWS_KEY_RE.sub("<redacted_aws_key>", text)
+        text = LONG_HEX_RE.sub("<redacted_token>", text)
+        text = SECRET_ASSIGNMENT_RE.sub(r"\1=<redacted_secret>", text)
     return text
 
 
-def redact_value(value: Any, mode: RedactionMode | None = "auto") -> Any:
+def redact_value(
+    value: Any,
+    mode: RedactionMode | None = "auto",
+    allow_secret_preservation: bool = False,
+) -> Any:
     if isinstance(value, str):
-        return redact_text(value, mode=mode)
+        return redact_text(value, mode=mode, allow_secret_preservation=allow_secret_preservation)
     if isinstance(value, list):
-        return [redact_value(item, mode=mode) for item in value]
+        return [
+            redact_value(item, mode=mode, allow_secret_preservation=allow_secret_preservation)
+            for item in value
+        ]
     if isinstance(value, dict):
-        return {key: redact_value(item, mode=mode) for key, item in value.items()}
+        return {
+            key: redact_value(item, mode=mode, allow_secret_preservation=allow_secret_preservation)
+            for key, item in value.items()
+        }
     return value

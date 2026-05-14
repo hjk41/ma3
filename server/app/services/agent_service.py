@@ -9,7 +9,7 @@ from app.models.relation import RecordRelationCreate
 from app.core.ids import new_id
 from app.core.time import utc_now_iso
 from app.services.feedback_service import create_feedback
-from app.services.record_service import create_record
+from app.services.record_service import _allow_secret_preservation, create_record
 from app.services.redaction import redact_value
 from app.services.relation_service import create_relation
 from app.services.risk_service import AgentRiskAssessment, assess_agent_ingest_risk
@@ -78,7 +78,13 @@ def _preview_record(
     library_id: str | None = None,
     redaction_mode: str = "auto",
 ) -> Record:
-    sanitized = RecordCreate.model_validate(redact_value(payload.model_dump(), mode=redaction_mode))
+    sanitized = RecordCreate.model_validate(
+        redact_value(
+            payload.model_dump(),
+            mode=redaction_mode,
+            allow_secret_preservation=_allow_secret_preservation(library_id),
+        )
+    )
     now = utc_now_iso()
     return Record(
         record_id=f"preview_{new_id('vk')}",

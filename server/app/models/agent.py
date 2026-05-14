@@ -33,7 +33,7 @@ class AgentIngestRequest(BaseModel):
     tags: list[str] = Field(default_factory=list)
     dry_run: bool = False
     draft_only: bool = False
-    redaction_mode: Literal["auto", "none"] = "auto"
+    redaction_mode: Literal["auto", "contextual", "none"] = "auto"
 
 
 class AgentIngestResponse(BaseModel):

@@ -698,15 +698,18 @@ Write-time redaction must protect secrets without destroying valuable operationa
 
 Redaction is split into two classes:
 
-- Always-redacted secrets: API keys, tokens, passwords, private keys, AWS access keys, long opaque tokens, and explicit secret assignments. These are redacted regardless of user choice.
-- Contextual identifiers: Unix/Windows absolute paths, IPv4 addresses, and email addresses. These are redacted by default, but can be preserved when the submitter explicitly chooses non-anonymous submission.
+- Secret-like values: API keys, tokens, passwords, private keys, AWS access keys, long opaque tokens, and explicit secret assignments.
+- Contextual identifiers: Unix/Windows absolute paths, IPv4 addresses, and email addresses.
+
+Both classes are redacted by default. For personal knowledge libraries, both classes may be preserved when the submitter explicitly chooses non-anonymous submission. For non-personal libraries and the legacy/global-admin namespace, secret-like values remain redacted even if the submitter asks to preserve contextual identifiers.
 
 ### 16.2 API Contract
 
 Submission APIs that create records accept a `redaction_mode` field:
 
-- `auto` (default): preserve existing behavior; redact contextual identifiers and always-redacted secrets.
-- `none`: preserve contextual identifiers but still redact always-redacted secrets.
+- `auto` (default): redact contextual identifiers and secret-like values.
+- `contextual`: preserve contextual identifiers but redact secret-like values.
+- `none`: preserve contextual identifiers and, only for personal libraries, preserve secret-like values. In non-personal libraries, `none` behaves like `contextual` for secret-like values.
 
 Initial coverage:
 
@@ -720,20 +723,22 @@ Stored records do not need to persist `redaction_mode`; it is a submission-time 
 
 ### 16.3 Client Interaction
 
-The bundled CLI should detect contextual identifiers before write operations. If running interactively and no explicit `--redaction-mode` or payload `redaction_mode` is provided, it should prompt:
+The bundled CLI should detect contextual identifiers and secret-like values before write operations. If running interactively and no explicit `--redaction-mode` or payload `redaction_mode` is provided, it should prompt:
 
-- redact contextual identifiers (default, safer), or
-- keep contextual identifiers (more useful for operational knowledge).
+- redact all detected sensitive/contextual values (default, safer),
+- keep contextual identifiers but redact secret-like values, or
+- keep all detected values. The server only honors this last option for personal libraries.
 
-Non-interactive callers keep the default `auto` mode unless they explicitly pass `redaction_mode: "none"` or `--redaction-mode none`.
+Non-interactive callers keep the default `auto` mode unless they explicitly pass `redaction_mode` or `--redaction-mode`.
 
 ### 16.4 Tests
 
 Tests must verify:
 
 - default submissions still redact paths/IPs/emails and secrets
-- `redaction_mode=none` preserves paths/IPs/emails
-- `redaction_mode=none` still redacts secrets
+- `redaction_mode=contextual` preserves paths/IPs/emails and still redacts secrets
+- `redaction_mode=none` in a personal library preserves paths/IPs/emails and secrets
+- `redaction_mode=none` outside a personal library still redacts secrets
 - v1 agent ingest, v2 agent report, and `/knowledge` honor the mode
 
 ### 15.2 Log Format

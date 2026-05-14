@@ -9,6 +9,21 @@ EMAIL = "ops@example.com"
 TOKEN = "token=supersecretvalue"
 
 
+def _personal_writer_headers(authed_client) -> dict[str, str]:
+    lib = authed_client.post("/libraries", json={
+        "name": "personal-redaction-test",
+        "is_public": False,
+        "is_personal": True,
+    })
+    assert lib.status_code == 200, lib.text
+    token = authed_client.post(
+        f"/libraries/{lib.json()['library_id']}/tokens",
+        json={"label": "writer", "role": "writer"},
+    )
+    assert token.status_code == 200, token.text
+    return {"X-API-Key": token.json()["token"]}
+
+
 def test_agent_ingest_default_redacts_contextual_identifiers_and_secrets(authed_client):
     resp = authed_client.post("/agent/ingest", json=make_ingest_payload(
         problem=f"Use {HPCX_PATH} on {HOST_IP}; contact {EMAIL}; {TOKEN}",
@@ -23,7 +38,22 @@ def test_agent_ingest_default_redacts_contextual_identifiers_and_secrets(authed_
     assert HPCX_PATH not in summary
 
 
-def test_agent_ingest_redaction_none_preserves_contextual_identifiers_but_not_secrets(authed_client):
+def test_agent_ingest_redaction_contextual_preserves_contextual_identifiers_but_not_secrets(authed_client):
+    resp = authed_client.post("/agent/ingest", json=make_ingest_payload(
+        problem=f"Use {HPCX_PATH} on {HOST_IP}; contact {EMAIL}; {TOKEN}",
+        result_summary="Documented launch path",
+        redaction_mode="contextual",
+    ))
+    assert resp.status_code == 200, resp.text
+    summary = resp.json()["record"]["summary"]
+    assert HPCX_PATH in summary
+    assert HOST_IP in summary
+    assert EMAIL in summary
+    assert "token=<redacted_secret>" in summary
+    assert "supersecretvalue" not in summary
+
+
+def test_non_personal_redaction_none_preserves_contextual_identifiers_but_not_secrets(authed_client):
     resp = authed_client.post("/agent/ingest", json=make_ingest_payload(
         problem=f"Use {HPCX_PATH} on {HOST_IP}; contact {EMAIL}; {TOKEN}",
         result_summary="Documented launch path",
@@ -38,24 +68,41 @@ def test_agent_ingest_redaction_none_preserves_contextual_identifiers_but_not_se
     assert "supersecretvalue" not in summary
 
 
-def test_knowledge_redaction_none_preserves_contextual_identifiers(authed_client):
+def test_personal_library_redaction_none_preserves_contextual_identifiers_and_secrets(authed_client):
+    headers = _personal_writer_headers(authed_client)
+    resp = authed_client.post("/agent/ingest", headers=headers, json=make_ingest_payload(
+        problem=f"Use {HPCX_PATH} on {HOST_IP}; contact {EMAIL}; {TOKEN}",
+        result_summary="Documented launch path",
+        redaction_mode="none",
+    ))
+    assert resp.status_code == 200, resp.text
+    summary = resp.json()["record"]["summary"]
+    assert HPCX_PATH in summary
+    assert HOST_IP in summary
+    assert EMAIL in summary
+    assert "token=supersecretvalue" in summary
+    assert "<redacted_secret>" not in summary
+
+
+def test_personal_knowledge_redaction_none_preserves_secret(authed_client):
+    headers = _personal_writer_headers(authed_client)
     resp = authed_client.post("/knowledge", json=make_knowledge_payload(
         question="Which mpirun should launch HPC-X OpenMPI jobs?",
         summary=f"Use {HPCX_PATH}; scheduler is at {HOST_IP}; {TOKEN}",
         knowledge_kind="process_protocol",
         tags=["ltp", "mpi", "hpc-x"],
         redaction_mode="none",
-    ))
+    ), headers=headers)
     assert resp.status_code == 200, resp.text
     record = resp.json()
     assert HPCX_PATH in record["summary"]
     assert HOST_IP in record["summary"]
-    assert "token=<redacted_secret>" in record["summary"]
-    assert "supersecretvalue" not in record["summary"]
+    assert "token=supersecretvalue" in record["summary"]
 
 
-def test_v2_agent_report_redaction_none_preserves_contextual_identifiers(authed_client):
-    resp = authed_client.post("/v2/agent/report", json={
+def test_personal_v2_agent_report_redaction_none_preserves_secret(authed_client):
+    headers = _personal_writer_headers(authed_client)
+    resp = authed_client.post("/v2/agent/report", headers=headers, json={
         "problem": f"MPI job must use {HPCX_PATH} from host {HOST_IP}; {TOKEN}",
         "task_type": "ltp mpi documentation",
         "goal": "preserve the useful runtime path",
@@ -69,5 +116,4 @@ def test_v2_agent_report_redaction_none_preserves_contextual_identifiers(authed_
     summary = resp.json()["record"]["summary"]
     assert HPCX_PATH in summary
     assert HOST_IP in summary
-    assert "token=<redacted_secret>" in summary
-    assert "supersecretvalue" not in summary
+    assert "token=supersecretvalue" in summary

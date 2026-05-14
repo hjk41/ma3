@@ -60,6 +60,14 @@ CLIENT_CONTEXTUAL_REDACTION_PATTERNS = {
     "email": re.compile(r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b"),
     "ipv4": re.compile(r"\b(?:\d{1,3}\.){3}\d{1,3}\b"),
 }
+CLIENT_SECRET_REDACTION_PATTERNS = {
+    "secret_assignment": re.compile(
+        r"(?i)\b(api[_-]?key|token|secret|password|session|access[_-]?key|private[_-]?key)\b\s*[:=]\s*([^\s,;\"']+)"
+    ),
+    "github_token": re.compile(r"\bghp_[A-Za-z0-9]{36,}\b"),
+    "aws_key": re.compile(r"\bAKIA[0-9A-Z]{16}\b"),
+    "long_token": re.compile(r"\b[0-9a-fA-F]{40,}\b"),
+}
 
 
 # ── helpers ────────────────────────────────────────────────────────────────
@@ -533,10 +541,13 @@ def _walk_strings(value: Any) -> List[str]:
     return []
 
 
-def contextual_redaction_hits(payload: Any) -> Dict[str, int]:
+def redaction_hits(payload: Any) -> Dict[str, int]:
     hits: Dict[str, int] = {}
     for text in _walk_strings(payload):
-        for name, pattern in CLIENT_CONTEXTUAL_REDACTION_PATTERNS.items():
+        for name, pattern in {
+            **CLIENT_CONTEXTUAL_REDACTION_PATTERNS,
+            **CLIENT_SECRET_REDACTION_PATTERNS,
+        }.items():
             count = len(pattern.findall(text))
             if count:
                 hits[name] = hits.get(name, 0) + count
@@ -550,18 +561,18 @@ def apply_redaction_mode(payload: Any, redaction_mode: Optional[str]) -> Any:
         return payload
     mode = redaction_mode
     if mode is None:
-        hits = contextual_redaction_hits(payload)
+        hits = redaction_hits(payload)
         if hits and sys.stdin.isatty() and sys.stderr.isatty():
             summary = ", ".join(f"{key}={value}" for key, value in sorted(hits.items()))
             print(
-                f"ma3 detected contextual identifiers ({summary}). "
-                "Redact paths/IPs/emails before submission? [Y/n] ",
+                f"ma3 detected contextual/sensitive values ({summary}). Choose redaction mode: "
+                "[a]uto redact all, [c]ontextual keep paths/IPs/emails, [n]one keep all if personal library. [a/c/n] ",
                 end="",
                 file=sys.stderr,
                 flush=True,
             )
             answer = sys.stdin.readline().strip().lower()
-            mode = "none" if answer in {"n", "no", "否", "不", "不要"} else "auto"
+            mode = "none" if answer in {"n", "no", "none", "全保留"} else "contextual" if answer in {"c", "contextual", "上下文"} else "auto"
         else:
             mode = "auto"
     payload = dict(payload)
@@ -857,13 +868,13 @@ def main() -> int:
     ingest_p.add_argument("--payload",  help="Inline JSON payload.")
     ingest_p.add_argument("--endpoint", help="Endpoint name (required when multiple have API keys).")
     ingest_p.add_argument("--library",  help="Target by library_id (alternative to --endpoint).")
-    ingest_p.add_argument("--redaction-mode", choices=["auto", "none"], help="auto redacts paths/IPs/emails; none preserves them but still redacts secrets.")
+    ingest_p.add_argument("--redaction-mode", choices=["auto", "contextual", "none"], help="auto redacts all; contextual keeps paths/IPs/emails; none keeps secrets only for personal libraries.")
 
     know_p = subparsers.add_parser("knowledge", help="POST /knowledge — writes a knowledge record to one endpoint.")
     know_p.add_argument("--input",    help="Path to a JSON payload file.")
     know_p.add_argument("--payload",  help="Inline JSON payload.")
     know_p.add_argument("--endpoint", help="Endpoint name (required when multiple have API keys).")
-    know_p.add_argument("--redaction-mode", choices=["auto", "none"], help="auto redacts paths/IPs/emails; none preserves them but still redacts secrets.")
+    know_p.add_argument("--redaction-mode", choices=["auto", "contextual", "none"], help="auto redacts all; contextual keeps paths/IPs/emails; none keeps secrets only for personal libraries.")
 
     # ── v2 agent/tool workflow wrappers ──
     v2ctx_p = subparsers.add_parser("v2-context", help="POST /v2/agent/context — one-call agent retrieval context.")
@@ -875,7 +886,7 @@ def main() -> int:
     v2rep_p.add_argument("--input", help="Path to a JSON payload file.")
     v2rep_p.add_argument("--payload", help="Inline JSON payload.")
     v2rep_p.add_argument("--endpoint", help="Target endpoint by name.")
-    v2rep_p.add_argument("--redaction-mode", choices=["auto", "none"], help="auto redacts paths/IPs/emails; none preserves them but still redacts secrets.")
+    v2rep_p.add_argument("--redaction-mode", choices=["auto", "contextual", "none"], help="auto redacts all; contextual keeps paths/IPs/emails; none keeps secrets only for personal libraries.")
 
     v2case_p = subparsers.add_parser("v2-case", help="GET /v2/cases/{id} — read a v2 case timeline.")
     v2case_p.add_argument("case_id", help="Case ID to fetch.")
