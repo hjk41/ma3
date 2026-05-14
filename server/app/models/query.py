@@ -15,5 +15,5 @@ class SearchQuery(BaseModel):
     constraints: list[str] = Field(default_factory=list)
     tags: list[str] = Field(default_factory=list)
     config_excerpt: str | None = None
-    max_primary: int = Field(default=3, ge=1, le=20)
+    max_primary: int = Field(default=3, ge=1, le=100)
     max_contrasting: int = Field(default=2, ge=0, le=10)

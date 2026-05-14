@@ -140,18 +140,39 @@ def ui(page: str = "overview") -> str:
         </tr>`).join("");
       const scores = explain.score_breakdown || [];
       const scoreRows = scores.map(item => `
-        <tr><td><code>${{esc(item.record_id)}}</code></td><td><code>${{esc(item.case_id || "")}}</code></td><td>${{Number(item.score || 0).toFixed(3)}}</td><td>${{(item.reasons || []).map(esc).join(", ")}}</td></tr>`).join("");
+        <tr>
+          <td><code>${{esc(item.record_id)}}</code><br><span class="muted">${{esc(item.title || "").slice(0, 120)}}</span></td>
+          <td><code>${{esc(item.case_id || "")}}</code></td>
+          <td>${{Number(item.base_score || 0).toFixed(3)}}</td>
+          <td>${{Number(item.v2_boost || 0).toFixed(3)}}</td>
+          <td>${{Number(item.score || 0).toFixed(3)}}</td>
+          <td>${{(item.matched_query_tags || []).map(t => `<code>${{esc(t)}}</code>`).join(" ")}}</td>
+          <td>${{item.target_product_match ? "product " : ""}}${{item.target_component_match ? "component" : ""}}</td>
+          <td>${{(item.reasons || []).map(esc).join(", ")}}</td>
+        </tr>`).join("");
+      const debugRows = (explain.debug_candidates || []).map(item => `
+        <tr>
+          <td>${{item.returned ? "yes" : "no"}}</td>
+          <td><code>${{esc(item.record_id)}}</code><br><span class="muted">${{esc(item.title || "").slice(0, 120)}}</span></td>
+          <td><code>${{esc(item.case_id || "")}}</code></td>
+          <td>${{Number(item.score || 0).toFixed(3)}}</td>
+          <td>${{Number(item.v2_boost || 0).toFixed(3)}}</td>
+          <td>${{(item.matched_query_tags || []).map(t => `<code>${{esc(t)}}</code>`).join(" ")}}</td>
+        </tr>`).join("");
       document.getElementById("search-result").innerHTML = `
         <h2>Results</h2>
         <p><strong>Query hash:</strong> <code id="query-hash">${{esc(explain.query_hash || "")}}</code>
         <strong>Ranking:</strong> ${{esc(explain.ranking_config_version || "")}}
         <strong>Candidates:</strong> ${{explain.candidate_count ?? 0}}
+        <strong>Pool limit:</strong> ${{explain.candidate_pool_limit ?? 0}}
         <strong>Cases:</strong> ${{explain.returned_case_count ?? groups.length}}</p>
         <h3>Matched Cases</h3>
         <table><thead><tr><th>Case</th><th>Title / Summary</th><th>Score</th><th>Why</th><th>Records</th><th>Feedback</th></tr></thead><tbody>${{groupRows || `<tr><td colspan="6">No matched cases.</td></tr>`}}</tbody></table>
         <h3>Explain stages</h3><pre>${{esc(JSON.stringify(explain.stages || [], null, 2))}}</pre>
+        <h3>Debug candidates</h3>
+        <table><thead><tr><th>Returned</th><th>Record</th><th>Case</th><th>Final</th><th>Boost</th><th>Matched tags</th></tr></thead><tbody>${{debugRows || `<tr><td colspan="6">No debug candidates.</td></tr>`}}</tbody></table>
         <h3>Score breakdown</h3>
-        <table><thead><tr><th>Record</th><th>Case</th><th>Score</th><th>Reasons</th></tr></thead><tbody>${{scoreRows || `<tr><td colspan="4">No score breakdown.</td></tr>`}}</tbody></table>
+        <table><thead><tr><th>Record</th><th>Case</th><th>Base</th><th>Boost</th><th>Final</th><th>Tags</th><th>Target</th><th>Reasons</th></tr></thead><tbody>${{scoreRows || `<tr><td colspan="8">No score breakdown.</td></tr>`}}</tbody></table>
         <h3>Raw response</h3><pre>${{esc(JSON.stringify(data, null, 2))}}</pre>`;
       document.querySelectorAll("button[data-judgment]").forEach(button => {{
         button.addEventListener("click", () => submitSearchFeedback(button.dataset.judgment, button.dataset.caseId));

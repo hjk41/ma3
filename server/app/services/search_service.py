@@ -32,7 +32,20 @@ def search_records(payload: SearchQuery, accessible_library_ids: set[str]) -> Se
 
     # Explicit tag filter on the query (SearchQuery.tags) — direct record_id
     # boost even when tags don't appear verbatim in the problem text.
+    exact_tag_match_counts: dict[str, int] = {}
     if payload.tags:
+        exact_tag_hits = record_repo.find_ids_by_exact_tags_accessible(
+            payload.tags,
+            accessible_library_ids,
+            limit=max(80, payload.max_primary * 2),
+        )
+        if exact_tag_hits:
+            exact_tag_match_counts = dict(exact_tag_hits)
+            exact_ids = {record_id for record_id, _ in exact_tag_hits}
+            candidate_ids = (candidate_ids or set()) | exact_ids
+            for record_id, match_count in exact_tag_hits:
+                fts_tag_scores[record_id] = max(fts_tag_scores.get(record_id, 0.0), float(match_count))
+
         tag_query = " ".join(payload.tags)
         extra_hits = fts_tag_search(tag_query, accessible_library_ids, limit=40)
         if extra_hits:
@@ -60,7 +73,8 @@ def search_records(payload: SearchQuery, accessible_library_ids: set[str]) -> Se
     for record in records:
         if record.status != RecordStatus.active:
             continue
-        if record.verification_level == VerificationLevel.l0:
+        exact_tag_count = exact_tag_match_counts.get(record.record_id, 0)
+        if record.verification_level == VerificationLevel.l0 and exact_tag_count < 3:
             continue
         if record.risk_level == RiskLevel.critical:
             continue
@@ -77,6 +91,8 @@ def search_records(payload: SearchQuery, accessible_library_ids: set[str]) -> Se
             query_embedding=query_embedding,
             record_embeddings=record_embeddings,
         )
+        if record.verification_level == VerificationLevel.l0 and exact_tag_count >= 3:
+            reasons.append(f"low verification returned due {exact_tag_count} exact query tag matches")
 
         match = SearchMatch(
             record=record,

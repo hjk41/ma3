@@ -170,6 +170,8 @@ def test_search_explain_interactive_ui_and_feedback(authed_client):
     assert "localStorage" in page.text
     assert "/v2/search/explain" in page.text
     assert "score_breakdown" in page.text
+    assert "debug_candidates" in page.text
+    assert "candidate_pool_limit" in page.text
     assert "/v2/search/feedback" in page.text
 
     explain = authed_client.post("/v2/search/explain", json={
@@ -186,6 +188,8 @@ def test_search_explain_interactive_ui_and_feedback(authed_client):
     body = explain.json()
     assert body["explain"]["query_hash"]
     assert body["explain"]["score_breakdown"]
+    assert body["explain"]["candidate_pool_limit"] >= 50
+    assert "debug_candidates" in body["explain"]
 
     feedback = authed_client.post("/v2/search/feedback", json={
         "query_hash": body["explain"]["query_hash"],
@@ -194,6 +198,80 @@ def test_search_explain_interactive_ui_and_feedback(authed_client):
     })
     assert feedback.status_code == 200
     assert feedback.json()["feedback_id"].startswith("sf_")
+
+
+def test_search_explain_metadata_rerank_prioritizes_rare_tags_and_target(authed_client):
+    broad = authed_client.post("/v2/agent/report", json=_v2_report_payload(
+        problem="LTP job failed during generic deployment",
+        target={"product": "auth-gateway", "component": "ltp runner"},
+        task_type="ltp job troubleshooting",
+        goal="fix generic ltp job failure",
+        tags=["ltp", "job"],
+        result_summary="Generic LTP job fix",
+    ))
+    assert broad.status_code == 200, broad.text
+
+    exact = authed_client.post("/v2/agent/report", json=_v2_report_payload(
+        problem="LTP MPI RDMA UCX HPC-X jobssh taskrole issue",
+        target={"product": "knowledge", "component": "process_protocol"},
+        task_type="ltp mpi job submission troubleshooting",
+        goal="fix mpi dedup job when rdma is unavailable",
+        tags=["ltp", "mpi", "openmpi", "hpc-x", "jobssh", "taskrole", "rdma", "ucx", "infiniband", "cephfs"],
+        result_summary="Use the MPI LTP template with correct taskrole/jobssh/UCX/RDMA settings",
+    ))
+    assert exact.status_code == 200, exact.text
+    exact_case_id = exact.json()["case_assignment"]["case"]["case_id"]
+    exact_record_id = exact.json()["record"]["record_id"]
+
+    explain = authed_client.post("/v2/search/explain", json={
+        "problem": "ltp mpi dedup job fail rdma unavailable openmpi hpc-x jobssh taskrole ucx infiniband cephfs",
+        "task_type": "ltp mpi job submission troubleshooting",
+        "goal": "find prior MPI/RDMA LTP troubleshooting knowledge",
+        "target": {"product": "knowledge", "component": "process_protocol"},
+        "tags": ["ltp", "mpi", "openmpi", "hpc-x", "jobssh", "taskrole", "rdma", "ucx", "infiniband", "cephfs"],
+        "max_cases": 1,
+        "max_records_per_case": 1,
+        "include_explain": True,
+    })
+    assert explain.status_code == 200, explain.text
+    body = explain.json()
+    assert body["cases"][0]["case"]["case_id"] == exact_case_id
+
+    exact_score = next(item for item in body["explain"]["score_breakdown"] if item["record_id"] == exact_record_id)
+    assert exact_score["v2_boost"] > 0
+    assert {"rdma", "ucx", "hpc-x", "jobssh", "taskrole"}.issubset(set(exact_score["matched_query_tags"]))
+    assert exact_score["target_product_match"] is True
+    assert exact_score["target_component_match"] is True
+    assert any(stage["name"] == "v2_metadata_rerank" for stage in body["explain"]["stages"])
+    assert body["explain"]["debug_candidates"][0]["record_id"] == exact_record_id
+
+
+def test_search_explain_can_surface_l0_knowledge_with_strong_exact_tags(authed_client):
+    knowledge = authed_client.post("/knowledge", json={
+        "question": "How should LTP MPI RDMA UCX jobs be launched?",
+        "summary": "Use the LTP MPI template with matching taskrole/jobssh/HPC-X/UCX/RDMA settings.",
+        "source_type": "derived",
+        "knowledge_kind": "process_protocol",
+        "tags": ["ltp", "mpi", "hpc-x", "jobssh", "taskrole", "rdma", "ucx"],
+    })
+    assert knowledge.status_code == 200, knowledge.text
+    record_id = knowledge.json()["record_id"]
+    assert knowledge.json()["verification_level"] == "L0"
+
+    explain = authed_client.post("/v2/search/explain", json={
+        "problem": "ltp mpi rdma ucx hpc-x jobssh taskrole launch problem",
+        "task_type": "ltp mpi job submission troubleshooting",
+        "goal": "find protocol knowledge even if low verification",
+        "target": {"product": "knowledge", "component": "process_protocol"},
+        "tags": ["ltp", "mpi", "hpc-x", "jobssh", "taskrole", "rdma", "ucx"],
+        "max_cases": 5,
+        "max_records_per_case": 3,
+        "include_explain": True,
+    })
+    assert explain.status_code == 200, explain.text
+    score = next(item for item in explain.json()["explain"]["score_breakdown"] if item["record_id"] == record_id)
+    assert score["v2_boost"] > 0
+    assert "low verification returned due" in " ".join(score["reasons"])
 
 
 def test_public_base_url_renders_agents_and_doctor(authed_client):

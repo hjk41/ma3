@@ -283,6 +283,62 @@ class RecordRepository:
             rows = conn.execute(sql, list(record_ids) + lib_params).fetchall()
         return [Record.model_validate(_load_json_payload(row["payload_json"])) for row in rows]
 
+    def find_ids_by_exact_tags_accessible(
+        self,
+        tags: list[str],
+        library_ids: set[str],
+        status: str = "active",
+        limit: int = 200,
+    ) -> list[tuple[str, int]]:
+        """Return record IDs with exact case-insensitive tag matches.
+
+        This is a metadata candidate-expansion path, not final authorization or
+        ranking. It intentionally does not rely on FTS tokenization so rare tags
+        containing punctuation such as ``hpc-x`` and ``jobssh`` are not lost.
+        """
+        normalized_tags = sorted({tag.strip().lower() for tag in tags if tag and tag.strip()})
+        if not normalized_tags:
+            return []
+
+        tag_placeholders = ",".join("?" * len(normalized_tags))
+        params: list = list(normalized_tags)
+        if not library_ids:
+            lib_clause = "AND r.library_id IS NULL"
+            lib_params: list = []
+        else:
+            lib_placeholders = ",".join("?" * len(library_ids))
+            lib_clause = f"AND (r.library_id IS NULL OR r.library_id IN ({lib_placeholders}))"
+            lib_params = list(library_ids)
+
+        if is_postgres():
+            sql = f"""
+                SELECT r.record_id, COUNT(*) AS match_count
+                FROM records r
+                JOIN LATERAL jsonb_array_elements_text(COALESCE(r.payload_json->'tags', '[]'::jsonb)) AS tag(value) ON TRUE
+                WHERE lower(tag.value) IN ({tag_placeholders})
+                  {lib_clause}
+                  AND r.status = ?
+                GROUP BY r.record_id
+                ORDER BY match_count DESC, r.record_id ASC
+                LIMIT ?
+            """
+        else:
+            sql = f"""
+                SELECT r.record_id, COUNT(*) AS match_count
+                FROM records r
+                JOIN json_each(r.payload_json, '$.tags') AS tag
+                WHERE lower(tag.value) IN ({tag_placeholders})
+                  {lib_clause}
+                  AND r.status = ?
+                GROUP BY r.record_id
+                ORDER BY match_count DESC, r.record_id ASC
+                LIMIT ?
+            """
+
+        with get_connection() as conn:
+            rows = conn.execute(sql, params + lib_params + [status, limit]).fetchall()
+        return [(row["record_id"], int(row["match_count"])) for row in rows]
+
     def get_embeddings_batch(
         self, record_ids: set[str]
     ) -> dict:

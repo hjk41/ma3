@@ -53,11 +53,13 @@ class V2SearchExplain(BaseModel):
     query_hash: str
     ranking_config_version: str
     candidate_count: int = 0
+    candidate_pool_limit: int = 0
     returned_record_count: int = 0
     returned_case_count: int = 0
     full_scan: bool = False
     stages: list[dict] = Field(default_factory=list)
     score_breakdown: list[dict] = Field(default_factory=list)
+    debug_candidates: list[dict] = Field(default_factory=list)
 
 
 class V2AgentContextRequest(BaseModel):

@@ -259,6 +259,8 @@ The v2 search service should:
 - group final records by case
 - surface conflicts and supersession status in response warnings
 - optionally return explain data
+- retrieve a larger internal candidate pool than the final UI/API limit so later v2 reranking does not discard exact metadata matches too early
+- apply deterministic v2 reranking after v1 candidate generation so explicit user-selected metadata can override noisy broad lexical matches
 
 Ranking signals:
 
@@ -274,6 +276,40 @@ Ranking signals:
 - relation penalties and boosts
 - case canonical record boost
 - stale/superseded penalties
+
+### 5.1 Deterministic Metadata Reranking
+
+Observed failure mode: a query with exact rare tags such as `rdma`, `ucx`, `hpc-x`, `jobssh`, and `taskrole`
+can return broad `ltp`/`job` matches while missing the intended record. This happens when high-frequency terms dominate
+the v1 candidate order or when the requested `max_cases * max_records_per_case` truncates candidates before case grouping.
+
+v2 reranking must therefore add an explainable deterministic boost on top of the v1 match score:
+
+- exact tag overlap: boost every query tag that exactly matches a record tag, case-insensitively
+- rare tag boost: additional boost for longer/specific tags and tags containing digits, `-`, `_`, or `+`
+- multi-tag synergy: additional boost when three or more query tags match the same record
+- target boost: exact product and component matches add score; partial product/component mismatch should not suppress exact rare-tag matches but must be visible in explain
+- title/problem text exact term boost: rare query tags appearing in record title/summary/claim receive a smaller boost even if the record tags are incomplete
+- candidate expansion: `/v2/agent/context` should ask v1 search for at least 50 internal primary candidates, capped at a safe upper bound, while returning only the requested case/record limits
+- exact metadata candidate generation: explicit query tags should add candidates through exact tag lookup independent of FTS tokenization, so punctuation-heavy rare tags such as `hpc-x` are not lost before reranking
+- low-verification knowledge handling: `L0` records remain filtered by default, but may be returned when they match at least three explicit query tags; explain must show that they are low-verification so users can treat them as candidates for review rather than fully trusted fixes
+
+The reranking config is versioned. Any weight changes must update `ranking_config_version`, update this document, and add/adjust tests.
+
+### 5.2 Search Explain Debug Output
+
+`/v2/search/explain` should make ranking mistakes diagnosable without storing raw sensitive prompts.
+
+When `include_explain=true`, the response should include:
+
+- `score_breakdown`: final ordered candidates with base score, v2 boost score, final score, reasons, matched query tags, and target-match flags
+- `stages`: candidate generation, v2 reranking, and case grouping counts
+- `debug_candidates`: top reranked candidates, including candidates that did not make the final returned case list
+- `candidate_pool_limit`: the internal candidate limit used for v1 retrieval
+
+The UI should display these fields so a user can see why an expected case was below the returned cut line.
+
+Raw problem text remains excluded from persistent operation logs by default. Query replay may store normalized tags/target/task type/result IDs and score summaries, but raw prompt retention must remain explicit and visible in `/v2/doctor`.
 
 ## 6. MCP / Tool Service
 
@@ -469,6 +505,9 @@ A change is not complete until tests or an explicit manual acceptance checklist 
 - `/v2/agent/context` returns grouped cases and records
 - `/v2/agent/report` creates record and assigns case
 - `/v2/search/explain` returns candidate and scoring diagnostics
+- `/v2/search/explain` ranks exact rare-tag and target matches above broad high-frequency lexical matches
+- `/v2/search/explain` exposes base score, v2 boost score, final score, matched tags, target-match flags, internal candidate pool limit, and debug candidates
+- Search returns `L0` knowledge only when it has strong explicit metadata evidence, such as three or more exact query tag matches, and explains the low-verification reason
 - `/v2/stats/*` returns consistent aggregate counts
 - `/v2/cases` topic filters return only matching cases and support offset/limit pagination
 - `/ui/topics` renders topic drill-down links and `/ui/cases` consumes query parameters for filtered pagination
