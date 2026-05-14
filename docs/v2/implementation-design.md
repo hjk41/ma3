@@ -470,6 +470,8 @@ A change is not complete until tests or an explicit manual acceptance checklist 
 - `/v2/agent/report` creates record and assigns case
 - `/v2/search/explain` returns candidate and scoring diagnostics
 - `/v2/stats/*` returns consistent aggregate counts
+- `/v2/cases` topic filters return only matching cases and support offset/limit pagination
+- `/ui/topics` renders topic drill-down links and `/ui/cases` consumes query parameters for filtered pagination
 - `/metrics` exposes expected metric names
 
 ### Migration tests
@@ -585,8 +587,8 @@ The first web UI should be a lightweight static frontend served by FastAPI under
 ### 14.1 MVP Pages
 
 - `/ui/overview`: consumes `/v2/stats/overview`, `/v2/stats/search`, and `/v2/stats/knowledge-quality`.
-- `/ui/topics`: consumes a new `/v2/topics` API that aggregates records/cases by product, component, tags, problem family, and case clusters.
-- `/ui/cases`: consumes `/v2/cases` and `/v2/cases/{case_id}`.
+- `/ui/topics`: consumes a new `/v2/topics` API that aggregates records/cases by product, component, tags, problem family, and case clusters. Every topic bucket is a drill-down link to `/ui/cases?topic_kind=...&topic=...`.
+- `/ui/cases`: consumes `/v2/cases` and `/v2/cases/{case_id}`. It accepts optional `topic_kind`/`topic` query parameters and paginates the filtered case list with `limit`/`offset`.
 - `/ui/search-explain`: submits to `/v2/search/explain` and writes judgments to `/v2/search/feedback`.
 - `/ui/quality-actions`: consumes `/v2/stats/quality-actions`.
 
@@ -595,6 +597,7 @@ The first web UI should be a lightweight static frontend served by FastAPI under
 Add these APIs before or alongside the UI:
 
 - `GET /v2/topics`: topic distribution and coverage metrics.
+- `GET /v2/cases?topic_kind=product|component|tag|problem_family&topic=...&limit=...&offset=...`: filtered case list for topic drill-down. The filter is applied to case metadata and to records assigned to each case, so migrated cases remain discoverable even if the case-level tags are sparse.
 - `GET /v2/graph?case_id=...|record_id=...|q=...`: 1-2 hop knowledge graph for selected objects.
 - `PATCH /v2/records/{record_id}/review`: curation actions such as stale, verification level, tags, and summary edits.
 - `PATCH /v2/cases/{case_id}/canonical-record`: set the canonical record.

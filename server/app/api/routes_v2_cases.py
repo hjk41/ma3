@@ -4,7 +4,7 @@ from app.core.security import _extract_raw, _is_admin_key, require_write_library
 from app.models.v2 import Case, CaseUpdate, V2CaseRecordGroup
 from app.services.case_service import assert_case_writeable, update_case
 from app.services.library_service import accessible_library_ids
-from app.storage.v2_repositories import CaseRepository, V2GraphRepository, V2RecordRepository
+from app.storage.v2_repositories import CaseRepository, V2GraphRepository, V2RecordRepository, filter_cases_by_topic
 
 
 router = APIRouter(prefix="/v2/cases", tags=["v2-cases"])
@@ -20,12 +20,29 @@ def list_cases(
     state: str | None = Query(default=None),
     limit: int = Query(default=50, ge=1, le=200),
     offset: int = Query(default=0, ge=0),
+    topic_kind: str | None = Query(default=None, pattern="^(product|component|tag|problem_family)$"),
+    topic: str | None = Query(default=None),
     token: ResolvedToken | None = Depends(resolve_optional_token),
     x_api_key: str | None = Header(default=None, alias="X-API-Key"),
     authorization: str | None = Header(default=None),
 ) -> list[Case]:
+    lib_ids = accessible_library_ids(token, is_admin=_admin(x_api_key, authorization))
+    if topic_kind and topic:
+        candidates = CaseRepository().list_accessible(
+            lib_ids,
+            state=state,
+            limit=10000,
+            offset=0,
+        )
+        return filter_cases_by_topic(
+            candidates,
+            topic_kind=topic_kind,
+            topic=topic,
+            offset=offset,
+            limit=limit,
+        )
     return CaseRepository().list_accessible(
-        accessible_library_ids(token, is_admin=_admin(x_api_key, authorization)),
+        lib_ids,
         state=state,
         limit=limit,
         offset=offset,

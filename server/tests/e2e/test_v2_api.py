@@ -108,6 +108,53 @@ def test_v2_stats_doctor_metrics_and_feedback(authed_client):
     assert "ma3 Knowledge Observatory" in ui.text
 
 
+def test_topics_link_to_filtered_cases_with_pagination(authed_client):
+    first = authed_client.post("/v2/agent/report", json=_v2_report_payload(
+        target={"product": "topic-api", "component": "client"},
+        task_type="topic drilldown alpha",
+        tags=["topic-filter", "shared"],
+        result_summary="First topic case",
+    )).json()
+    second = authed_client.post("/v2/agent/report", json=_v2_report_payload(
+        target={"product": "topic-api", "component": "server"},
+        task_type="topic drilldown beta",
+        tags=["topic-filter"],
+        result_summary="Second topic case",
+    )).json()
+    other = authed_client.post("/v2/agent/report", json=_v2_report_payload(
+        target={"product": "other-api", "component": "client"},
+        task_type="other",
+        tags=["other-tag"],
+        result_summary="Other case",
+    )).json()
+
+    by_product = authed_client.get("/v2/cases", params={"topic_kind": "product", "topic": "topic-api", "limit": 10})
+    assert by_product.status_code == 200, by_product.text
+    product_ids = {case["case_id"] for case in by_product.json()}
+    assert first["case_assignment"]["case"]["case_id"] in product_ids
+    assert second["case_assignment"]["case"]["case_id"] in product_ids
+    assert other["case_assignment"]["case"]["case_id"] not in product_ids
+
+    by_tag_page_1 = authed_client.get("/v2/cases", params={"topic_kind": "tag", "topic": "topic-filter", "limit": 1, "offset": 0})
+    by_tag_page_2 = authed_client.get("/v2/cases", params={"topic_kind": "tag", "topic": "topic-filter", "limit": 1, "offset": 1})
+    assert len(by_tag_page_1.json()) == 1
+    assert len(by_tag_page_2.json()) == 1
+    assert by_tag_page_1.json()[0]["case_id"] != by_tag_page_2.json()[0]["case_id"]
+
+    by_component = authed_client.get("/v2/cases", params={"topic_kind": "component", "topic": "topic-api/client", "limit": 10})
+    component_ids = {case["case_id"] for case in by_component.json()}
+    assert first["case_assignment"]["case"]["case_id"] in component_ids
+    assert second["case_assignment"]["case"]["case_id"] not in component_ids
+
+    topics_page = authed_client.get("/ui/topics")
+    assert topics_page.status_code == 200
+    assert "/ui/cases?topic_kind=" in topics_page.text
+    cases_page = authed_client.get("/ui/cases?topic_kind=tag&topic=topic-filter&limit=1&offset=0")
+    assert cases_page.status_code == 200
+    assert "topic_kind" in cases_page.text
+    assert "Next" in cases_page.text
+
+
 def test_public_base_url_renders_agents_and_doctor(authed_client):
     from app.core import config
 

@@ -58,6 +58,7 @@ class CaseRepository:
         state: str | None = None,
         limit: int = 100,
         offset: int = 0,
+        fetch_limit: int | None = None,
     ) -> list[Case]:
         clauses: list[str] = []
         params: list[Any] = []
@@ -71,10 +72,11 @@ class CaseRepository:
             clauses.append("state = ?")
             params.append(state)
         where = "WHERE " + " AND ".join(clauses)
+        effective_limit = fetch_limit if fetch_limit is not None else limit
         with get_connection() as conn:
             rows = conn.execute(
                 f"SELECT payload_json FROM cases {where} ORDER BY updated_at DESC LIMIT ? OFFSET ?",
-                params + [limit, offset],
+                params + [effective_limit, offset],
             ).fetchall()
         return [_row_to_case(row) for row in rows]
 
@@ -176,6 +178,59 @@ class V2GraphRepository:
             grouped[row["from_record_id"]].append(rel)
             grouped[row["to_record_id"]].append(rel)
         return dict(grouped)
+
+
+def _norm_topic(value: str | None) -> str:
+    return (value or "").strip().lower()
+
+def _case_matches_topic(case: Case, records: list[Record], topic_kind: str, topic: str) -> bool:
+    wanted = _norm_topic(topic)
+    if not wanted:
+        return True
+
+    def component_value(product: str | None, component: str | None) -> str:
+        return f"{product or ''}/{component or ''}"
+
+    candidates: list[str] = []
+    if topic_kind == "product":
+        candidates.append(case.target.product)
+        candidates.extend(record.target.product for record in records)
+    elif topic_kind == "component":
+        candidates.append(component_value(case.target.product, case.target.component))
+        candidates.append(case.target.component or "")
+        for record in records:
+            candidates.append(component_value(record.target.product, record.target.component))
+            candidates.append(record.target.component or "")
+    elif topic_kind == "tag":
+        candidates.extend(case.tags)
+        for record in records:
+            candidates.extend(record.tags)
+    elif topic_kind == "problem_family":
+        candidates.append(case.problem_family)
+        candidates.extend(record.problem_family for record in records)
+    else:
+        return True
+    return any(_norm_topic(candidate) == wanted for candidate in candidates)
+
+def filter_cases_by_topic(
+    cases: list[Case],
+    *,
+    topic_kind: str | None,
+    topic: str | None,
+    offset: int,
+    limit: int,
+) -> list[Case]:
+    if not topic_kind or not topic:
+        return cases[offset: offset + limit]
+    allowed = {"product", "component", "tag", "problem_family"}
+    if topic_kind not in allowed:
+        return cases[offset: offset + limit]
+    records_by_case = V2RecordRepository().records_for_cases({case.case_id for case in cases}, limit_per_case=1000)
+    matched = [
+        case for case in cases
+        if _case_matches_topic(case, records_by_case.get(case.case_id, []), topic_kind, topic)
+    ]
+    return matched[offset: offset + limit]
 
 
 class SearchEventRepository:
