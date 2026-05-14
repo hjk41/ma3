@@ -604,6 +604,14 @@ The manifest records dump checksum, dump size, database name, git commit, public
 
 The template should be rendered with a pinned code ref and deployment parameters before submission. The Docker image should contain system dependencies such as Git, curl, Python venv support, PostgreSQL server/client, and any storage mount tooling required by the cluster. `bootstrap_ma3_ltp.sh` makes a best-effort `apt-get` install of missing Git/curl/Python/PostgreSQL packages on Debian/Ubuntu images, but a prebuilt internal image remains preferred for reproducibility.
 
+If `MA3_BACKUP_DIR` points at a CephFS/3FS path such as
+`/mnt/cephfs/home/...`, the submitted LTP job must mount that same shared
+storage path into the container. Otherwise the bootstrap will create an empty
+local directory at the backup path and `restore_postgres.sh` will fail because
+`latest.manifest.json` is missing. The default template mounts
+`/mnt/cephfs` to `/mnt/cephfs` so backup and instance manifest paths are the
+same inside and outside the container.
+
 LTP bootstrap should default to a lightweight server dependency file, `server/requirements-ltp.txt`, controlled by `MA3_REQUIREMENTS_FILE`. The LTP file excludes `sentence-transformers`/torch and sets `MA3_DISABLE_EMBEDDINGS=1`; ma3 already degrades to lexical/search-only behavior when embeddings are disabled. Full embedding dependencies can be enabled later by using `server/requirements.txt` in an image with cached wheels. This avoids CPU job startup failures and long pip installs.
 
 The restore path must tolerate environment-specific backup paths. If a manifest's `dump_path` is an absolute path from another host, `restore_postgres.sh` should fall back to a dump with the same basename in the manifest directory, then to `dump_file`. Bootstrap must also detect the actual PostgreSQL cluster port with `pg_lsclusters` when the default `PGPORT` is not ready; LTP images may initialize PostgreSQL on a non-5432 port.

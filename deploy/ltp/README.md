@@ -71,7 +71,8 @@ falling back to a same-basename dump in the manifest directory. The bootstrap al
 auto-detects the running PostgreSQL cluster port when the default `PGPORT` is not
 ready. Ensure `MA3_BACKUP_DIR` points to a path actually mounted inside the LTP
 container; a host-only CephFS path will otherwise be created as an empty local
-directory.
+directory. The default job template mounts `/mnt/cephfs` to `/mnt/cephfs`; keep
+that mount when `MA3_BACKUP_DIR` uses `/mnt/cephfs/home/...`.
 
 ## Backup format
 
