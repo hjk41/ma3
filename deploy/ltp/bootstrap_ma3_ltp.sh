@@ -151,11 +151,20 @@ if command -v pg_ctlcluster >/dev/null 2>&1; then
 fi
 
 if [[ -z "$PGPORT_EXPLICIT" ]] && command -v pg_lsclusters >/dev/null 2>&1; then
-  DETECTED_PGPORT="$(pg_lsclusters --no-header 2>/dev/null | awk '$4 == "online" {print $3; exit}')"
+  DETECTED_PGPORT=""
+  for _ in $(seq 1 30); do
+    DETECTED_PGPORT="$(pg_lsclusters --no-header 2>/dev/null | awk '$4 == "online" {print $3; exit}')"
+    if [[ -n "$DETECTED_PGPORT" ]]; then
+      break
+    fi
+    sleep 1
+  done
   if [[ -n "$DETECTED_PGPORT" ]]; then
     log "detected PostgreSQL cluster port=${DETECTED_PGPORT}"
     PGPORT="$DETECTED_PGPORT"
     export PGPORT
+  else
+    die "could not detect an online job-local PostgreSQL cluster port with pg_lsclusters"
   fi
 fi
 
