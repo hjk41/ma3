@@ -589,11 +589,12 @@ The manifest records dump checksum, dump size, database name, git commit, public
 5. Checkout `MA3_GIT_REF` and optionally pin to `MA3_GIT_COMMIT`.
 6. Create Python virtualenv and install server requirements.
 7. Restore the backup via `restore_postgres.sh`.
-8. Run `server/scripts/migrate_v1_to_v2_cases.py --apply` by default, writing a migration report under the instance workdir. `MA3_RUN_V1_TO_V2_MIGRATION=0` may disable this only for debugging.
-9. Write a root-only runtime env file with `MA3_DATABASE_URL`, `MA3_API_KEY`, `MA3_PUBLIC_BASE_URL`, `MA3_INSTANCE_ID`, `MA3_GIT_COMMIT`, operation-log settings, and migration report path.
-10. Start uvicorn and verify `/healthz` plus `/v2/doctor`.
-11. Write an instance manifest to shared storage, including migration status/report path and excluding all secrets.
-12. Tail logs to keep the LTP job alive.
+8. Normalize restored PostgreSQL JSON payload columns (`records`, `feedback`, `relations`) from legacy `TEXT` to `JSONB` before any JSONB operator is used.
+9. Run `server/scripts/migrate_v1_to_v2_cases.py --apply` by default, writing a migration report under the instance workdir. `MA3_RUN_V1_TO_V2_MIGRATION=0` may disable this only for debugging.
+10. Write a root-only runtime env file with `MA3_DATABASE_URL`, `MA3_API_KEY`, `MA3_PUBLIC_BASE_URL`, `MA3_INSTANCE_ID`, `MA3_GIT_COMMIT`, operation-log settings, and migration report path.
+11. Start uvicorn and verify `/healthz` plus `/v2/doctor`.
+12. Write an instance manifest to shared storage, including migration status/report path and excluding all secrets.
+13. Tail logs to keep the LTP job alive.
 
 ### 13.3 LTP Job Template
 
@@ -642,6 +643,13 @@ The restore path must tolerate environment-specific backup paths. If a manifest'
 
 The template passes `MA3_RUN_V1_TO_V2_MIGRATION` to the bootstrap script. The default submitted v2 instance should keep it enabled so a restored v1 dump becomes v2-native before agents start using the instance.
 
+Restored v1 PostgreSQL dumps may contain `payload_json` columns as `TEXT`
+because v1 schema and SQLite-compatible code stored JSON as serialized strings.
+The v2 PostgreSQL initializer must run `ALTER TABLE ... ALTER COLUMN
+payload_json TYPE JSONB USING payload_json::jsonb` for existing `records`,
+`feedback`, and `relations` tables before running status backfills, FTS, or v2
+case migration. This conversion is idempotent for already-JSONB columns.
+
 Because LTP CPU jobs may share the node network namespace with existing
 services, the submitted `MA3_PORT` must be a high, job-specific port instead of
 assuming `8000` is free. Bootstrap must not treat a generic `/healthz` response
@@ -666,6 +674,8 @@ Deployment changes must be checked with:
 - a unit/static check that PostgreSQL setup uses the detected `PGPORT` for
   `psql`/`createdb`, uses `--set=ma3_password` rather than embedding the secret
   in SQL, and does not hide role/database setup errors
+- a unit check that the PostgreSQL initializer emits JSONB normalization SQL for
+  legacy `payload_json` columns before JSONB operators are used
 - one fresh LTP submission using a pinned commit, no `deliver_assets`, and a real
   CephFS keyring secret; success requires `/healthz` and `/v2/doctor` to pass
   from inside the container before any SSH hot patching

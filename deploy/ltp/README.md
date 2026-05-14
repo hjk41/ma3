@@ -87,6 +87,11 @@ Ensure `MA3_BACKUP_DIR` points to a path actually mounted inside the LTP
 container; a host-only CephFS path will otherwise be created as an empty local
 directory.
 
+Restored v1 dumps can have JSON payload columns stored as `TEXT`; the server's
+PostgreSQL initializer converts legacy `records`/`feedback`/`relations`
+`payload_json` columns to `JSONB` before v2 migration and search code use JSONB
+operators.
+
 For CephFS backups, do **not** rely on `enableLocalStorage.hostpath=/mnt/cephfs`.
 The LTP worker may mount an empty worker-local filesystem there. Instead, enable
 the bootstrap CephFS path and pass the keyring via LTP secrets:

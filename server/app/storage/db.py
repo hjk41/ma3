@@ -261,6 +261,7 @@ def _initialize_postgres() -> None:
             )
             """
         )
+        _ensure_postgres_jsonb_payload(conn, "records")
         conn.execute("ALTER TABLE records ADD COLUMN IF NOT EXISTS library_id TEXT")
         conn.execute("ALTER TABLE records ADD COLUMN IF NOT EXISTS status TEXT")
         conn.execute(
@@ -287,6 +288,7 @@ def _initialize_postgres() -> None:
             )
             """
         )
+        _ensure_postgres_jsonb_payload(conn, "feedback")
         conn.execute(
             """
             CREATE TABLE IF NOT EXISTS relations (
@@ -297,7 +299,23 @@ def _initialize_postgres() -> None:
             )
             """
         )
+        _ensure_postgres_jsonb_payload(conn, "relations")
         _initialize_v2_postgres(conn)
+
+
+def _ensure_postgres_jsonb_payload(conn: DatabaseConnection, table: str) -> None:
+    """Normalize legacy PostgreSQL JSON payload columns to JSONB.
+
+    v1 dumps may contain payload_json TEXT because the shared repository code
+    stored JSON as strings for SQLite compatibility. v2 PostgreSQL queries use
+    JSONB operators, so normalize before any -> or ->> expression runs. The cast
+    is idempotent when the column is already JSONB.
+    """
+    if table not in {"records", "feedback", "relations"}:
+        raise ValueError(f"unexpected payload table: {table}")
+    conn.execute(
+        f"ALTER TABLE {table} ALTER COLUMN payload_json TYPE JSONB USING payload_json::jsonb"
+    )
 
 
 def _initialize_v2_sqlite(conn) -> None:
