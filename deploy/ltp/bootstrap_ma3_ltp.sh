@@ -176,16 +176,24 @@ log "ensuring database/user exist"
 [[ "$PGUSER" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]] || die "PGUSER must be a simple PostgreSQL identifier"
 [[ "$PGDATABASE" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]] || die "PGDATABASE must be a simple PostgreSQL identifier"
 if command -v runuser >/dev/null 2>&1 && id postgres >/dev/null 2>&1; then
-  if ! runuser -u postgres -- psql -p "$PGPORT" -Atc "SELECT 1 FROM pg_roles WHERE rolname='${PGUSER}'" | grep -q 1; then
-    runuser -u postgres -- psql -p "$PGPORT" -v ON_ERROR_STOP=1 -c "CREATE USER ${PGUSER};"
+  postgres_psql() {
+    runuser -u postgres -- env -u PGUSER -u PGHOST -u PGPASSWORD -u PGDATABASE \
+      psql -h /var/run/postgresql -U postgres -p "$PGPORT" "$@"
+  }
+  postgres_createdb() {
+    runuser -u postgres -- env -u PGUSER -u PGHOST -u PGPASSWORD -u PGDATABASE \
+      createdb -h /var/run/postgresql -U postgres -p "$PGPORT" "$@"
+  }
+  if ! postgres_psql -Atc "SELECT 1 FROM pg_roles WHERE rolname='${PGUSER}'" | grep -q 1; then
+    postgres_psql -v ON_ERROR_STOP=1 -c "CREATE USER ${PGUSER};"
   fi
-  runuser -u postgres -- psql -p "$PGPORT" -v ON_ERROR_STOP=1 --set=ma3_password="$PGPASSWORD" <<SQL
+  postgres_psql -v ON_ERROR_STOP=1 --set=ma3_password="$PGPASSWORD" <<SQL
 ALTER USER ${PGUSER} WITH PASSWORD :'ma3_password';
 SQL
-  if ! runuser -u postgres -- psql -p "$PGPORT" -Atc "SELECT 1 FROM pg_database WHERE datname='${PGDATABASE}'" | grep -q 1; then
-    runuser -u postgres -- createdb -p "$PGPORT" -O "$PGUSER" "$PGDATABASE"
+  if ! postgres_psql -Atc "SELECT 1 FROM pg_database WHERE datname='${PGDATABASE}'" | grep -q 1; then
+    postgres_createdb -O "$PGUSER" "$PGDATABASE"
   fi
-  runuser -u postgres -- psql -p "$PGPORT" -v ON_ERROR_STOP=1 -d "$PGDATABASE" <<SQL
+  postgres_psql -v ON_ERROR_STOP=1 -d "$PGDATABASE" <<SQL
 ALTER DATABASE ${PGDATABASE} OWNER TO ${PGUSER};
 GRANT ALL ON SCHEMA public TO ${PGUSER};
 SQL

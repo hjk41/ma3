@@ -80,8 +80,9 @@ explicitly supplied. This detection is required on shared-node LTP jobs because
 another node-local PostgreSQL service may already answer on `127.0.0.1:5432`.
 Detection retries briefly after starting PostgreSQL and fails fast if no
 job-local cluster is visible. Database/user setup then runs against the detected
-port and passes the password via psql variables rather than embedding the secret
-in shell-interpolated SQL.
+port, clears inherited `PGUSER`/`PGHOST`/`PGPASSWORD` for postgres-admin psql
+commands, and passes the password via psql variables rather than embedding the
+secret in shell-interpolated SQL.
 Ensure `MA3_BACKUP_DIR` points to a path actually mounted inside the LTP
 container; a host-only CephFS path will otherwise be created as an empty local
 directory.
