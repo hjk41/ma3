@@ -75,8 +75,10 @@ be enabled later with a prebuilt image and `server/requirements.txt`.
 
 `restore_postgres.sh` accepts manifests whose `dump_path` is from another host by
 falling back to a same-basename dump in the manifest directory. The bootstrap also
-auto-detects the running PostgreSQL cluster port when the default `PGPORT` is not
-ready. Ensure `MA3_BACKUP_DIR` points to a path actually mounted inside the LTP
+auto-detects the job-local PostgreSQL cluster port when `PGPORT` is not
+explicitly supplied. This detection is required on shared-node LTP jobs because
+another node-local PostgreSQL service may already answer on `127.0.0.1:5432`.
+Ensure `MA3_BACKUP_DIR` points to a path actually mounted inside the LTP
 container; a host-only CephFS path will otherwise be created as an empty local
 directory.
 

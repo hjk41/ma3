@@ -62,6 +62,7 @@ MA3_CEPHFS_FS_NAME="${MA3_CEPHFS_FS_NAME:-mycephfs}"
 MA3_CEPHFS_MON="${MA3_CEPHFS_MON:-10.100.65.50,10.100.65.51,10.100.160.70}"
 
 PGHOST="${PGHOST:-localhost}"
+PGPORT_EXPLICIT="${PGPORT+x}"
 PGPORT="${PGPORT:-5432}"
 PGDATABASE="${PGDATABASE:-ma3db}"
 PGUSER="${PGUSER:-ma3user}"
@@ -149,7 +150,7 @@ if command -v pg_ctlcluster >/dev/null 2>&1; then
   pg_ctlcluster 16 main start 2>/dev/null || pg_ctlcluster 15 main start 2>/dev/null || true
 fi
 
-if ! pg_isready -h "$PGHOST" -p "$PGPORT" >/dev/null 2>&1 && command -v pg_lsclusters >/dev/null 2>&1; then
+if [[ -z "$PGPORT_EXPLICIT" ]] && command -v pg_lsclusters >/dev/null 2>&1; then
   DETECTED_PGPORT="$(pg_lsclusters --no-header 2>/dev/null | awk '$4 == "online" {print $3; exit}')"
   if [[ -n "$DETECTED_PGPORT" ]]; then
     log "detected PostgreSQL cluster port=${DETECTED_PGPORT}"
@@ -164,9 +165,9 @@ fi
 
 log "ensuring database/user exist"
 if command -v su >/dev/null 2>&1 && id postgres >/dev/null 2>&1; then
-  su -c "psql -tc \"SELECT 1 FROM pg_roles WHERE rolname='${PGUSER}'\" | grep -q 1 || psql -c \"CREATE USER ${PGUSER} WITH PASSWORD '${PGPASSWORD}';\"" postgres || true
-  su -c "psql -tc \"SELECT 1 FROM pg_database WHERE datname='${PGDATABASE}'\" | grep -q 1 || createdb -O ${PGUSER} ${PGDATABASE}" postgres || true
-  su -c "psql -d ${PGDATABASE} -c \"GRANT ALL ON SCHEMA public TO ${PGUSER};\"" postgres || true
+  su -c "psql -p '${PGPORT}' -tc \"SELECT 1 FROM pg_roles WHERE rolname='${PGUSER}'\" | grep -q 1 || psql -p '${PGPORT}' -c \"CREATE USER ${PGUSER} WITH PASSWORD '${PGPASSWORD}';\"" postgres || true
+  su -c "psql -p '${PGPORT}' -tc \"SELECT 1 FROM pg_database WHERE datname='${PGDATABASE}'\" | grep -q 1 || createdb -p '${PGPORT}' -O ${PGUSER} ${PGDATABASE}" postgres || true
+  su -c "psql -p '${PGPORT}' -d ${PGDATABASE} -c \"GRANT ALL ON SCHEMA public TO ${PGUSER};\"" postgres || true
 fi
 
 log "cloning code"

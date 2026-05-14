@@ -638,7 +638,7 @@ storage mapping does not silently start an empty instance.
 
 LTP bootstrap should default to a lightweight server dependency file, `server/requirements-ltp.txt`, controlled by `MA3_REQUIREMENTS_FILE`. The LTP file excludes `sentence-transformers`/torch and sets `MA3_DISABLE_EMBEDDINGS=1`; ma3 already degrades to lexical/search-only behavior when embeddings are disabled. Full embedding dependencies can be enabled later by using `server/requirements.txt` in an image with cached wheels. This avoids CPU job startup failures and long pip installs.
 
-The restore path must tolerate environment-specific backup paths. If a manifest's `dump_path` is an absolute path from another host, `restore_postgres.sh` should fall back to a dump with the same basename in the manifest directory, then to `dump_file`. Bootstrap must also detect the actual PostgreSQL cluster port with `pg_lsclusters` when the default `PGPORT` is not ready; LTP images may initialize PostgreSQL on a non-5432 port.
+The restore path must tolerate environment-specific backup paths. If a manifest's `dump_path` is an absolute path from another host, `restore_postgres.sh` should fall back to a dump with the same basename in the manifest directory, then to `dump_file`. Bootstrap must also detect the actual PostgreSQL cluster port with `pg_lsclusters` when `PGPORT` was not explicitly supplied; LTP shared-node jobs can have another service already listening on `127.0.0.1:5432`, so `pg_isready localhost:5432` is not sufficient proof that the job-local PostgreSQL cluster is the one being used.
 
 The template passes `MA3_RUN_V1_TO_V2_MIGRATION` to the bootstrap script. The default submitted v2 instance should keep it enabled so a restored v1 dump becomes v2-native before agents start using the instance.
 
@@ -663,6 +663,8 @@ Deployment changes must be checked with:
 - a unit/static check that LTP health validation requires the uvicorn process to
   be alive and `/v2/doctor.instance_id == MA3_INSTANCE_ID` before writing the
   instance manifest
+- a unit/static check that PostgreSQL setup uses the detected `PGPORT` for
+  `psql`/`createdb` when `PGPORT` was not explicitly supplied
 - one fresh LTP submission using a pinned commit, no `deliver_assets`, and a real
   CephFS keyring secret; success requires `/healthz` and `/v2/doctor` to pass
   from inside the container before any SSH hot patching
