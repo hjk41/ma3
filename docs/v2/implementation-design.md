@@ -604,13 +604,21 @@ The manifest records dump checksum, dump size, database name, git commit, public
 
 The template should be rendered with a pinned code ref and deployment parameters before submission. The Docker image should contain system dependencies such as Git, curl, Python venv support, PostgreSQL server/client, and any storage mount tooling required by the cluster. `bootstrap_ma3_ltp.sh` makes a best-effort `apt-get` install of missing Git/curl/Python/PostgreSQL packages on Debian/Ubuntu images, but a prebuilt internal image remains preferred for reproducibility.
 
-If `MA3_BACKUP_DIR` points at a CephFS/3FS path such as
-`/mnt/cephfs/home/...`, the submitted LTP job must mount that same shared
-storage path into the container. Otherwise the bootstrap will create an empty
-local directory at the backup path and `restore_postgres.sh` will fail because
-`latest.manifest.json` is missing. The default template mounts
-`/mnt/cephfs` to `/mnt/cephfs` so backup and instance manifest paths are the
-same inside and outside the container.
+If `MA3_BACKUP_DIR` points at a shared-storage path such as
+`/mnt/cephfs/home/...`, that path must be visible inside the LTP container with
+the backup files already present. Do not assume a path that exists on the submit
+host exists on LTP worker nodes: a validation run on 2026-05-14 showed that
+mounting hostpath `/mnt/cephfs` in LTP produced an empty worker-local XFS path,
+not the submit host's CephFS backup directory. The job template therefore keeps
+the storage hostpath/mount path parameterized. A rendered job must choose one of:
+
+- an LTP-worker-visible shared storage path that already contains
+  `latest.manifest.json` and the dump file;
+- a pre-job backup replication step into such storage; or
+- an authenticated backup download URL handled by bootstrap before restore.
+
+`restore_postgres.sh` must fail fast when the manifest is missing so a broken
+storage mapping does not silently start an empty instance.
 
 LTP bootstrap should default to a lightweight server dependency file, `server/requirements-ltp.txt`, controlled by `MA3_REQUIREMENTS_FILE`. The LTP file excludes `sentence-transformers`/torch and sets `MA3_DISABLE_EMBEDDINGS=1`; ma3 already degrades to lexical/search-only behavior when embeddings are disabled. Full embedding dependencies can be enabled later by using `server/requirements.txt` in an image with cached wheels. This avoids CPU job startup failures and long pip installs.
 

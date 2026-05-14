@@ -82,8 +82,8 @@ extras:
         skuType: ${LTP_SKU_TYPE}
   enableLocalStorage:
     enabled: true
-    hostpath: /mnt/cephfs
-    mntpath: /mnt/cephfs
+    hostpath: ${LTP_STORAGE_HOSTPATH}
+    mntpath: ${LTP_STORAGE_MNTPATH}
 
 secrets:
   MA3_ADMIN_KEY: '${MA3_ADMIN_KEY}'
