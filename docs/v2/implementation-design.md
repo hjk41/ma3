@@ -583,16 +583,17 @@ The manifest records dump checksum, dump size, database name, git commit, public
 `deploy/ltp/bootstrap_ma3_ltp.sh` runs inside the LTP container and performs:
 
 1. Validate required secrets and parameters.
-2. Start or verify PostgreSQL.
-3. Clone ma3 from `MA3_GIT_REPO`.
-4. Checkout `MA3_GIT_REF` and optionally pin to `MA3_GIT_COMMIT`.
-5. Create Python virtualenv and install server requirements.
-6. Restore the backup via `restore_postgres.sh`.
-7. Run `server/scripts/migrate_v1_to_v2_cases.py --apply` by default, writing a migration report under the instance workdir. `MA3_RUN_V1_TO_V2_MIGRATION=0` may disable this only for debugging.
-8. Write a root-only runtime env file with `MA3_DATABASE_URL`, `MA3_API_KEY`, `MA3_PUBLIC_BASE_URL`, `MA3_INSTANCE_ID`, `MA3_GIT_COMMIT`, operation-log settings, and migration report path.
-9. Start uvicorn and verify `/healthz` plus `/v2/doctor`.
-10. Write an instance manifest to shared storage, including migration status/report path and excluding all secrets.
-11. Tail logs to keep the LTP job alive.
+2. Optionally mount CephFS with `ceph-fuse` before touching backup or instance-manifest paths.
+3. Start or verify PostgreSQL.
+4. Clone ma3 from `MA3_GIT_REPO`.
+5. Checkout `MA3_GIT_REF` and optionally pin to `MA3_GIT_COMMIT`.
+6. Create Python virtualenv and install server requirements.
+7. Restore the backup via `restore_postgres.sh`.
+8. Run `server/scripts/migrate_v1_to_v2_cases.py --apply` by default, writing a migration report under the instance workdir. `MA3_RUN_V1_TO_V2_MIGRATION=0` may disable this only for debugging.
+9. Write a root-only runtime env file with `MA3_DATABASE_URL`, `MA3_API_KEY`, `MA3_PUBLIC_BASE_URL`, `MA3_INSTANCE_ID`, `MA3_GIT_COMMIT`, operation-log settings, and migration report path.
+10. Start uvicorn and verify `/healthz` plus `/v2/doctor`.
+11. Write an instance manifest to shared storage, including migration status/report path and excluding all secrets.
+12. Tail logs to keep the LTP job alive.
 
 ### 13.3 LTP Job Template
 
@@ -604,18 +605,24 @@ The manifest records dump checksum, dump size, database name, git commit, public
 
 The template should be rendered with a pinned code ref and deployment parameters before submission. The Docker image should contain system dependencies such as Git, curl, Python venv support, PostgreSQL server/client, and any storage mount tooling required by the cluster. `bootstrap_ma3_ltp.sh` makes a best-effort `apt-get` install of missing Git/curl/Python/PostgreSQL packages on Debian/Ubuntu images, but a prebuilt internal image remains preferred for reproducibility.
 
-If `MA3_BACKUP_DIR` points at a shared-storage path such as
-`/mnt/cephfs/home/...`, that path must be visible inside the LTP container with
-the backup files already present. Do not assume a path that exists on the submit
-host exists on LTP worker nodes: a validation run on 2026-05-14 showed that
-mounting hostpath `/mnt/cephfs` in LTP produced an empty worker-local XFS path,
-not the submit host's CephFS backup directory. The job template therefore keeps
-the storage hostpath/mount path parameterized. A rendered job must choose one of:
+If `MA3_BACKUP_DIR` points at CephFS, the LTP job must explicitly mount CephFS
+inside the container. Do not use `enableLocalStorage.hostpath=/mnt/cephfs` for
+this: a validation run on 2026-05-14 showed that this produced an empty
+worker-local XFS path, not the submit host's CephFS backup directory.
 
-- an LTP-worker-visible shared storage path that already contains
-  `latest.manifest.json` and the dump file;
-- a pre-job backup replication step into such storage; or
-- an authenticated backup download URL handled by bootstrap before restore.
+The supported CephFS path is:
+
+- `MA3_CEPHFS_ENABLE=1`
+- `MA3_CEPHFS_USER=<ceph user>`
+- `MA3_CEPHFS_KEYRING=<full keyring from LTP secret>`
+- `MA3_CEPHFS_MOUNT=/mnt/cephfs`
+- `MA3_CEPHFS_FS_NAME=mycephfs`
+
+`bootstrap_ma3_ltp.sh` should run the internal Ceph bootstrap helper, install
+`ceph-common`/`ceph-fuse`, write the keyring to `/etc/ceph`, mount with
+`ceph-fuse`, and only then create `$MA3_BACKUP_DIR/instances` or call
+`restore_postgres.sh`. This ensures `latest.manifest.json` and the dump file are
+read from real CephFS rather than from an accidentally-created local directory.
 
 `restore_postgres.sh` must fail fast when the manifest is missing so a broken
 storage mapping does not silently start an empty instance.
@@ -625,6 +632,18 @@ LTP bootstrap should default to a lightweight server dependency file, `server/re
 The restore path must tolerate environment-specific backup paths. If a manifest's `dump_path` is an absolute path from another host, `restore_postgres.sh` should fall back to a dump with the same basename in the manifest directory, then to `dump_file`. Bootstrap must also detect the actual PostgreSQL cluster port with `pg_lsclusters` when the default `PGPORT` is not ready; LTP images may initialize PostgreSQL on a non-5432 port.
 
 The template passes `MA3_RUN_V1_TO_V2_MIGRATION` to the bootstrap script. The default submitted v2 instance should keep it enabled so a restored v1 dump becomes v2-native before agents start using the instance.
+
+### 13.3.1 LTP Deployment Tests
+
+Deployment changes must be checked with:
+
+- `bash -n deploy/ltp/bootstrap_ma3_ltp.sh`
+- static inspection that `ma3_ltp_job.yaml.template` passes
+  `MA3_CEPHFS_ENABLE`, `MA3_CEPHFS_USER`, and the secret-backed
+  `MA3_CEPHFS_KEYRING`
+- one fresh LTP submission using a pinned commit, no `deliver_assets`, and a real
+  CephFS keyring secret; success requires `/healthz` and `/v2/doctor` to pass
+  from inside the container before any SSH hot patching
 
 ### 13.4 Dynamic agents.md Base URL
 
