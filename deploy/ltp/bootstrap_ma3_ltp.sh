@@ -164,10 +164,24 @@ if ! pg_isready -h "$PGHOST" -p "$PGPORT" >/dev/null 2>&1; then
 fi
 
 log "ensuring database/user exist"
-if command -v su >/dev/null 2>&1 && id postgres >/dev/null 2>&1; then
-  su -c "psql -p '${PGPORT}' -tc \"SELECT 1 FROM pg_roles WHERE rolname='${PGUSER}'\" | grep -q 1 || psql -p '${PGPORT}' -c \"CREATE USER ${PGUSER} WITH PASSWORD '${PGPASSWORD}';\"" postgres || true
-  su -c "psql -p '${PGPORT}' -tc \"SELECT 1 FROM pg_database WHERE datname='${PGDATABASE}'\" | grep -q 1 || createdb -p '${PGPORT}' -O ${PGUSER} ${PGDATABASE}" postgres || true
-  su -c "psql -p '${PGPORT}' -d ${PGDATABASE} -c \"GRANT ALL ON SCHEMA public TO ${PGUSER};\"" postgres || true
+[[ "$PGUSER" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]] || die "PGUSER must be a simple PostgreSQL identifier"
+[[ "$PGDATABASE" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]] || die "PGDATABASE must be a simple PostgreSQL identifier"
+if command -v runuser >/dev/null 2>&1 && id postgres >/dev/null 2>&1; then
+  if ! runuser -u postgres -- psql -p "$PGPORT" -Atc "SELECT 1 FROM pg_roles WHERE rolname='${PGUSER}'" | grep -q 1; then
+    runuser -u postgres -- psql -p "$PGPORT" -v ON_ERROR_STOP=1 -c "CREATE USER ${PGUSER};"
+  fi
+  runuser -u postgres -- psql -p "$PGPORT" -v ON_ERROR_STOP=1 --set=ma3_password="$PGPASSWORD" <<SQL
+ALTER USER ${PGUSER} WITH PASSWORD :'ma3_password';
+SQL
+  if ! runuser -u postgres -- psql -p "$PGPORT" -Atc "SELECT 1 FROM pg_database WHERE datname='${PGDATABASE}'" | grep -q 1; then
+    runuser -u postgres -- createdb -p "$PGPORT" -O "$PGUSER" "$PGDATABASE"
+  fi
+  runuser -u postgres -- psql -p "$PGPORT" -v ON_ERROR_STOP=1 -d "$PGDATABASE" <<SQL
+ALTER DATABASE ${PGDATABASE} OWNER TO ${PGUSER};
+GRANT ALL ON SCHEMA public TO ${PGUSER};
+SQL
+else
+  die "runuser/postgres unavailable; cannot initialize PostgreSQL role/database safely"
 fi
 
 log "cloning code"
