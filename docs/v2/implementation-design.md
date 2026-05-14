@@ -734,6 +734,59 @@ Tests must verify:
 - `redaction_mode=none` preserves paths/IPs/emails and secrets
 - v1 agent ingest, v2 agent report, and `/knowledge` honor the mode
 
+## 17. Client/Skill Upgrade Detection and Auto-Update
+
+ma3 is an agent tool, so an already-installed v1/v2 client skill should be able to
+notice that the server has moved forward and update itself before the agent depends
+on stale instructions or an incompatible CLI.
+
+### 17.1 Server Contract
+
+`GET /healthz` advertises the client compatibility envelope:
+
+- `min_client_version`: hard compatibility floor. Clients older than this must update before use.
+- `recommended_client_version`: soft desired client version. Clients older than this should update at warmup.
+- `client_manifest_url`: canonical URL path for the server-published client file manifest.
+
+`GET /client/manifest.json` returns the files that make up the installable skill package:
+
+- `client_version`
+- `min_client_version`
+- `recommended_client_version`
+- `files[]` with `path`, `url`, `sha256`, and `size`
+
+The manifest uses plugin-relative paths such as `skills/ma3/scripts/ma3_client.py`
+so the same update flow works for Codex, Claude Code, and direct script installs.
+
+### 17.2 Client Behavior
+
+- `healthz` remains non-mutating: it reports `version_warning` or
+  `recommended_version_warning` when the server says the local client is old.
+- `self-update` first downloads `/client/manifest.json`, verifies each downloaded
+  file's SHA256 when provided, and writes the manifest paths into the local plugin
+  root. If the manifest is unavailable it falls back to the legacy hard-coded file
+  list, then to `git pull`.
+- `warmup` is the automatic detection point. It checks `/healthz`; when the local
+  `CLIENT_VERSION` is below `min_client_version` or `recommended_client_version`,
+  it runs `self-update` once, reports `self_update_performed: true`, and asks the
+  agent to rerun warmup before continuing. The current process does not re-exec
+  because the Python code already loaded may be the old version.
+- `MA3_DISABLE_AUTO_UPDATE=1` disables the `warmup` mutation path for debugging
+  and hermetic tests.
+
+Agent-facing docs must instruct agents to run `warmup` before the first ma3
+operation in a turn. If warmup updates the local skill, rerun warmup once and then
+continue with search/ingest.
+
+### 17.3 Tests
+
+Tests must verify:
+
+- `/healthz` exposes `recommended_client_version` and `client_manifest_url`.
+- `/client/manifest.json` includes the CLI, skill docs, agent docs, and examples
+  with valid `sha256` and `size`.
+- Client code still compiles after self-update changes.
+
 ### 15.2 Log Format
 
 Use JSONL with one event per line. Suggested fields:

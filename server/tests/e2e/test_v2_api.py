@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import hashlib
+
 from tests.conftest import make_ingest_payload
 
 
@@ -28,6 +30,39 @@ def _v2_context_payload(**overrides):
     }
     payload.update(overrides)
     return payload
+
+
+def test_client_upgrade_contract_and_manifest(client):
+    health = client.get("/healthz")
+    assert health.status_code == 200
+    health_body = health.json()
+    assert health_body["min_client_version"]
+    assert health_body["recommended_client_version"]
+    assert health_body["client_manifest_url"] == "/client/manifest.json"
+
+    manifest = client.get(health_body["client_manifest_url"])
+    assert manifest.status_code == 200
+    body = manifest.json()
+    assert body["client_version"] == health_body["recommended_client_version"]
+    assert body["min_client_version"] == health_body["min_client_version"]
+    assert body["recommended_client_version"] == health_body["recommended_client_version"]
+    files = {item["path"]: item for item in body["files"]}
+    required = {
+        "skills/ma3/scripts/ma3_client.py",
+        "skills/ma3/SKILL.md",
+        "AGENTS.md",
+        "examples/search-payload.example.json",
+        "examples/ingest-payload.example.json",
+    }
+    assert required <= set(files)
+    for rel_path, meta in files.items():
+        assert meta["url"].startswith("/")
+        assert isinstance(meta["size"], int) and meta["size"] > 0
+        assert len(meta["sha256"]) == 64
+        downloaded = client.get(meta["url"])
+        assert downloaded.status_code == 200, rel_path
+        assert len(downloaded.content) == meta["size"]
+        assert hashlib.sha256(downloaded.content).hexdigest() == meta["sha256"]
 
 
 def test_v2_report_creates_case_and_context_returns_group(authed_client):

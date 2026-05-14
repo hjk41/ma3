@@ -156,19 +156,18 @@ Bundled format references:
 
 ## Operating Loop
 
-### 0. Check service reachability
+### 0. Warm up and auto-update
 
 ```bash
-python3 "$MA3_CLIENT_SCRIPT" healthz
+python3 "$MA3_CLIENT_SCRIPT" warmup
 ```
 
 If unavailable: continue the task normally and inform the user. Do not block on this.
 
-If the output contains `version_warning`: run `self-update` before proceeding.
-
-```bash
-python3 "$MA3_CLIENT_SCRIPT" self-update
-```
+`warmup` checks `/healthz`, auto-runs `self-update` when the server requires or
+recommends a newer client/skill, and then reports `rerun_required`. If that
+happens, run `warmup` one more time before proceeding so this agent uses the
+refreshed instructions and CLI.
 
 ### 1. Search — do this before anything else
 

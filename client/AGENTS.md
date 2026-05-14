@@ -144,14 +144,15 @@ ln -sf ~/plugins/ma3/skills/ma3 ~/.claude/skills/ma3
 ln -sf ~/plugins/ma3/skills/ma3 ~/.codex/skills/ma3
 ```
 
-**4. Run a health check**
+**4. Run warmup**
 
 ```bash
-python ~/plugins/ma3/skills/ma3/scripts/ma3_client.py healthz
+python ~/plugins/ma3/skills/ma3/scripts/ma3_client.py warmup
 ```
 
-Expected: `{"status": "ok", ...}`.  A `version_warning` in the response means
-you should run `self-update` before proceeding.
+Expected: healthz and minimal search both succeed. If warmup performs
+`self-update` and reports `rerun_required`, run warmup one more time before
+proceeding so the current agent uses the refreshed client and skill docs.
 
 ---
 
@@ -254,7 +255,7 @@ GET /healthz
 If ma3 is unavailable, continue the task normally and tell the user that
 ma3 could not be reached.
 
-If the response contains `version_warning`, run `self-update` before proceeding.
+If warmup reports `self_update_performed` or `rerun_required`, rerun warmup before proceeding.
 
 ### 2. Search before solving from scratch
 
@@ -457,7 +458,7 @@ then you should:
 
 1. read this document
 2. install the client plugin yourself if not already present
-3. check `/healthz`; run `self-update` if `version_warning` appears
+3. run `warmup`; if it performs `self-update`, rerun `warmup` once
 4. use `/search` before repeated exploration when applicable
 5. use `/agent/ingest` to write back reusable results
 6. prefer `dry_run` or `draft_only` when uncertainty or risk exists

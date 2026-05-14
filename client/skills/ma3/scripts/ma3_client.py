@@ -15,7 +15,7 @@ Multiple endpoints: create an endpoints.json file in the plugin root:
 
 Read/write commands (use MA3_API_KEY / api_key — library token on current hjk41.cc deployment):
   healthz                              -- probe all endpoints
-  self-update                          -- pull latest client from origin/main
+  self-update                          -- download latest client/skill from server, or git pull fallback
   list      [--offset N] [--limit N] [--status active|draft|invalid|all] [--endpoint name]
   search    --input|--payload <json>   -- fan out to all, merge results
   get-record <id>                      -- fetch from first endpoint that has it
@@ -32,6 +32,7 @@ Admin commands (use MA3_ADMIN_KEY / admin_key):
   delete-record   <record_id>                         [--endpoint name]
 """
 import argparse
+import hashlib
 import io
 import json
 import os
@@ -282,6 +283,17 @@ def _parse_version(v: str) -> tuple:
     return tuple(parts)
 
 
+def _version_update_reason(body: Dict[str, Any], include_recommended: bool = True) -> Optional[str]:
+    """Return a human-readable update reason when this client is older than server policy."""
+    min_v = body.get("min_client_version")
+    if min_v and _parse_version(CLIENT_VERSION) < _parse_version(str(min_v)):
+        return f"client {CLIENT_VERSION} < server requires {min_v}"
+    rec_v = body.get("recommended_client_version")
+    if include_recommended and rec_v and _parse_version(CLIENT_VERSION) < _parse_version(str(rec_v)):
+        return f"client {CLIENT_VERSION} < server recommends {rec_v}"
+    return None
+
+
 def _request_with_retry(
     ep: "Endpoint",
     method: str,
@@ -322,15 +334,16 @@ def cmd_healthz(endpoints: List[Endpoint]) -> int:
         if 200 <= status < 300:
             if "features" in body:
                 ep_result["features"] = body["features"]
-            min_v = body.get("min_client_version")
-            if min_v and _parse_version(CLIENT_VERSION) < _parse_version(min_v):
-                ep_result["version_warning"] = (
-                    f"client {CLIENT_VERSION} < server requires {min_v}"
-                    f" — run: ma3_client.py self-update"
+            ep_result["client_version"] = CLIENT_VERSION
+            update_reason = _version_update_reason(body, include_recommended=True)
+            if update_reason:
+                key = (
+                    "version_warning"
+                    if "requires" in update_reason
+                    else "recommended_version_warning"
                 )
+                ep_result[key] = f"{update_reason} — run: ma3_client.py self-update"
                 overall_ok = False
-            else:
-                ep_result["client_version"] = CLIENT_VERSION
         else:
             overall_ok = False
         results[ep.name] = ep_result
@@ -339,43 +352,72 @@ def cmd_healthz(endpoints: List[Endpoint]) -> int:
     return 0 if overall_ok else 1
 
 
-def cmd_self_update(endpoints: List[Endpoint]) -> int:
+def cmd_self_update(endpoints: List[Endpoint], quiet: bool = False) -> int:
     """Update all client files from the server, or fall back to git pull."""
     # Try HTTP download from the first configured endpoint
     ep = endpoints[0]
     plugin_root = Path(_plugin_root())
-    client_files = [
-        ("skills/ma3/scripts/ma3_client.py", "/client/ma3_client.py"),
-        ("skills/ma3/SKILL.md",              "/client/SKILL.md"),
-        ("AGENTS.md",                         "/client/AGENTS.md"),
-        ("examples/search-payload.example.json", "/client/examples/search-payload.example.json"),
-        ("examples/ingest-payload.example.json",  "/client/examples/ingest-payload.example.json"),
-    ]
+    client_files: List[Tuple[str, str, Optional[str]]] = []
+    manifest_status, manifest = ep.request("GET", "/client/manifest.json")
+    if 200 <= manifest_status < 300 and isinstance(manifest, dict):
+        for item in manifest.get("files", []):
+            if not isinstance(item, dict):
+                continue
+            rel_path = str(item.get("path") or "")
+            server_path = str(item.get("url") or "")
+            sha256 = item.get("sha256")
+            if (
+                rel_path
+                and server_path.startswith("/")
+                and not rel_path.startswith("/")
+                and ".." not in Path(rel_path).parts
+            ):
+                client_files.append((rel_path, server_path, str(sha256) if sha256 else None))
+
+    if not client_files:
+        client_files = [
+            ("skills/ma3/scripts/ma3_client.py", "/client/ma3_client.py", None),
+            ("skills/ma3/SKILL.md",              "/client/SKILL.md", None),
+            ("AGENTS.md",                         "/client/AGENTS.md", None),
+            ("examples/search-payload.example.json", "/client/examples/search-payload.example.json", None),
+            ("examples/ingest-payload.example.json",  "/client/examples/ingest-payload.example.json", None),
+        ]
+
     downloaded = 0
     errors = []
-    for rel_path, server_path in client_files:
+    for rel_path, server_path, expected_sha256 in client_files:
         dest = plugin_root / rel_path
         url = ep.base_url.rstrip("/") + server_path
         req = urllib.request.Request(url, headers={"User-Agent": "ma3-self-update/1.0"})
         try:
             with urllib.request.urlopen(req, timeout=20) as resp:
+                content = resp.read()
+                if expected_sha256:
+                    actual_sha256 = hashlib.sha256(content).hexdigest()
+                    if actual_sha256 != expected_sha256:
+                        raise RuntimeError(
+                            f"sha256 mismatch: expected {expected_sha256}, got {actual_sha256}"
+                        )
                 dest.parent.mkdir(parents=True, exist_ok=True)
-                dest.write_bytes(resp.read())
-                print(f"  updated: {dest}")
+                dest.write_bytes(content)
+                if not quiet:
+                    print(f"  updated: {dest}")
                 downloaded += 1
         except Exception as exc:
             errors.append(f"  WARN: {rel_path}: {exc}")
 
-    if errors:
+    if errors and not quiet:
         for msg in errors:
             print(msg, file=sys.stderr)
 
     if downloaded > 0:
-        print(f"self-update complete ({downloaded} files refreshed from {ep.base_url})")
+        if not quiet:
+            print(f"self-update complete ({downloaded} files refreshed from {ep.base_url})")
         return 0
 
     # Nothing downloaded from server — fall back to git pull
-    print("Could not reach server; trying git pull ...", file=sys.stderr)
+    if not quiet:
+        print("Could not reach server; trying git pull ...", file=sys.stderr)
     result = subprocess.run(
         ["git", "rev-parse", "--show-toplevel"],
         cwd=str(Path(__file__).resolve().parent),
@@ -383,11 +425,18 @@ def cmd_self_update(endpoints: List[Endpoint]) -> int:
         text=True,
     )
     if result.returncode != 0:
-        print("ERROR: not a git repository either — cannot self-update.", file=sys.stderr)
+        if not quiet:
+            print("ERROR: not a git repository either — cannot self-update.", file=sys.stderr)
         return 1
     repo_root = result.stdout.strip()
-    print(f"Updating ma3 at {repo_root} ...")
-    pull = subprocess.run(["git", "pull", "origin", "main"], cwd=repo_root)
+    if not quiet:
+        print(f"Updating ma3 at {repo_root} ...")
+    pull = subprocess.run(
+        ["git", "pull", "origin", "main"],
+        cwd=repo_root,
+        capture_output=quiet,
+        text=quiet,
+    )
     return pull.returncode
 
 
@@ -476,13 +525,24 @@ def cmd_warmup(endpoints: List[Endpoint]) -> int:
         if "features" in body:
             ep_result["features"] = body["features"]
 
-        min_v = body.get("min_client_version")
-        if min_v and _parse_version(CLIENT_VERSION) < _parse_version(min_v):
-            ep_result["version_warning"] = (
-                f"client {CLIENT_VERSION} < server requires {min_v}"
-                " — run: ma3_client.py self-update"
-            )
+        update_reason = _version_update_reason(body, include_recommended=True)
+        if update_reason:
+            key = "version_warning" if "requires" in update_reason else "recommended_version_warning"
+            ep_result[key] = update_reason
+            if os.environ.get("MA3_DISABLE_AUTO_UPDATE") == "1":
+                ep_result["self_update_skipped"] = "MA3_DISABLE_AUTO_UPDATE=1"
+            else:
+                update_rc = cmd_self_update([ep], quiet=True)
+                ep_result["self_update_performed"] = update_rc == 0
+                ep_result["self_update_returncode"] = update_rc
+                ep_result["rerun_required"] = update_rc == 0
+                if update_rc == 0:
+                    ep_result["next_step"] = (
+                        "Rerun warmup so the agent uses the refreshed client/skill files."
+                    )
             overall_ok = False
+            results[ep.name] = ep_result
+            continue
 
         # minimal search
         minimal_payload = {

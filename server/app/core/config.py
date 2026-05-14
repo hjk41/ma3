@@ -7,7 +7,8 @@ from pathlib import Path
 class Settings:
     service_name: str = "马妈妈 (ma3)"
     service_version: str = "0.4.0"
-    min_client_version: str = "0.3.0"  # oldest client version still fully compatible
+    min_client_version: str = "0.4.0"  # oldest client version still fully compatible
+    recommended_client_version: str = "0.4.0"  # preferred bundled client/skill version
     feature_flags: tuple[str, ...] = (
         "immediate_visibility",
         "delete_record",
