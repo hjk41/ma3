@@ -17,6 +17,7 @@ from app.services.feedback_service import create_feedback
 from app.services.metrics_service import metrics
 from app.services.op_log_service import write_op_log
 from app.services.record_service import create_record
+from app.services.redaction import redact_value
 from app.services.relation_service import create_relation
 from app.services.risk_service import assess_agent_ingest_risk
 from app.models.agent import AgentIngestRequest
@@ -41,6 +42,7 @@ def _agent_risk_payload(payload: V2AgentReportRequest) -> AgentIngestRequest:
         not_applicable_if=payload.not_applicable_if,
         tags=payload.tags,
         dry_run=payload.dry_run,
+        redaction_mode=payload.redaction_mode,
     )
 
 
@@ -75,14 +77,19 @@ def _record_payload(payload: V2AgentReportRequest, assessment, case_id: str | No
     )
 
 
-def _preview_record(payload: RecordCreate, library_id: str | None) -> Record:
+def _preview_record(
+    payload: RecordCreate,
+    library_id: str | None,
+    redaction_mode: str = "auto",
+) -> Record:
+    sanitized = RecordCreate.model_validate(redact_value(payload.model_dump(), mode=redaction_mode))
     now = utc_now_iso()
     return Record(
         record_id=f"preview_{new_id('vk')}",
         library_id=library_id,
         created_at=now,
         updated_at=now,
-        **payload.model_dump(),
+        **sanitized.model_dump(),
     )
 
 
@@ -111,7 +118,7 @@ def ingest_v2_agent_report(
     assessment = assess_agent_ingest_risk(_agent_risk_payload(payload))
     record_payload = _record_payload(payload, assessment, assignment.case.case_id if assignment.case else None)
     if payload.dry_run:
-        record = _preview_record(record_payload, library_id)
+        record = _preview_record(record_payload, library_id, payload.redaction_mode)
         write_op_log(
             "agent_report",
             operation_result="dry_run",
@@ -128,7 +135,7 @@ def ingest_v2_agent_report(
             review_reasons=assessment.review_reasons,
         )
 
-    record = create_record(record_payload, library_id=library_id)
+    record = create_record(record_payload, library_id=library_id, redaction_mode=payload.redaction_mode)
     if assignment.case is not None:
         assignment.case = touch_case_with_record(assignment.case, record)
 

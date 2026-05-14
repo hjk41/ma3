@@ -1,4 +1,5 @@
 from pydantic import BaseModel, Field
+from typing import Literal
 
 from app.models.common import EnvironmentFingerprint, EvidenceItem, TargetRef, VersionInfo
 from app.models.enums import FeedbackType, RelationType
@@ -32,6 +33,7 @@ class AgentIngestRequest(BaseModel):
     tags: list[str] = Field(default_factory=list)
     dry_run: bool = False
     draft_only: bool = False
+    redaction_mode: Literal["auto", "none"] = "auto"
 
 
 class AgentIngestResponse(BaseModel):

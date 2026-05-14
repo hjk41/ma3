@@ -690,6 +690,52 @@ Log every meaningful operation, including:
 
 Do not log raw secrets. Free-text payloads should be redacted or summarized. Raw query logging should remain disabled by default; store query hash and redacted feature summary unless explicitly enabled.
 
+## 16. Submission Redaction and Anonymization Control
+
+Write-time redaction must protect secrets without destroying valuable operational knowledge. Paths, hostnames, IPs, email addresses, and similar infrastructure identifiers can be either sensitive or essential retrieval/diagnostic context. For example, replacing the actual HPC-X `mpirun` path with `<redacted_path>` can make an LTP/MPI knowledge record much less useful.
+
+### 16.1 Redaction Classes
+
+Redaction is split into two classes:
+
+- Always-redacted secrets: API keys, tokens, passwords, private keys, AWS access keys, long opaque tokens, and explicit secret assignments. These are redacted regardless of user choice.
+- Contextual identifiers: Unix/Windows absolute paths, IPv4 addresses, and email addresses. These are redacted by default, but can be preserved when the submitter explicitly chooses non-anonymous submission.
+
+### 16.2 API Contract
+
+Submission APIs that create records accept a `redaction_mode` field:
+
+- `auto` (default): preserve existing behavior; redact contextual identifiers and always-redacted secrets.
+- `none`: preserve contextual identifiers but still redact always-redacted secrets.
+
+Initial coverage:
+
+- `POST /agent/ingest`
+- `POST /v2/agent/report`
+- `POST /knowledge`
+
+Direct low-level `POST /records` keeps default `auto` behavior for now unless an explicit API extension is designed later.
+
+Stored records do not need to persist `redaction_mode`; it is a submission-time control.
+
+### 16.3 Client Interaction
+
+The bundled CLI should detect contextual identifiers before write operations. If running interactively and no explicit `--redaction-mode` or payload `redaction_mode` is provided, it should prompt:
+
+- redact contextual identifiers (default, safer), or
+- keep contextual identifiers (more useful for operational knowledge).
+
+Non-interactive callers keep the default `auto` mode unless they explicitly pass `redaction_mode: "none"` or `--redaction-mode none`.
+
+### 16.4 Tests
+
+Tests must verify:
+
+- default submissions still redact paths/IPs/emails and secrets
+- `redaction_mode=none` preserves paths/IPs/emails
+- `redaction_mode=none` still redacts secrets
+- v1 agent ingest, v2 agent report, and `/knowledge` honor the mode
+
 ### 15.2 Log Format
 
 Use JSONL with one event per line. Suggested fields:

@@ -1,4 +1,5 @@
 from pydantic import BaseModel, Field
+from typing import Literal
 
 from app.models.enums import KnowledgeKind, RecordStatus, SourceType, VisibilityScope
 
@@ -37,3 +38,4 @@ class KnowledgeCreate(BaseModel):
 
     # Measurement / environment conditions (for measured / agent_verified kinds)
     conditions: dict | None = None
+    redaction_mode: Literal["auto", "none"] = "auto"

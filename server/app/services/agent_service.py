@@ -73,8 +73,12 @@ def _build_record_create(
     )
 
 
-def _preview_record(payload: RecordCreate, library_id: str | None = None) -> Record:
-    sanitized = RecordCreate.model_validate(redact_value(payload.model_dump()))
+def _preview_record(
+    payload: RecordCreate,
+    library_id: str | None = None,
+    redaction_mode: str = "auto",
+) -> Record:
+    sanitized = RecordCreate.model_validate(redact_value(payload.model_dump(), mode=redaction_mode))
     now = utc_now_iso()
     return Record(
         record_id=f"preview_{new_id('vk')}",
@@ -99,12 +103,12 @@ def ingest_agent_report(
             review_reasons=assessment.review_reasons,
             dry_run=True,
             draft_only=False,
-            record=_preview_record(record_payload, library_id),
+            record=_preview_record(record_payload, library_id, payload.redaction_mode),
             feedback=None,
             relation=None,
         )
 
-    record = create_record(record_payload, library_id=library_id)
+    record = create_record(record_payload, library_id=library_id, redaction_mode=payload.redaction_mode)
 
     feedback = None
     relation = None

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pydantic import BaseModel, Field
+from typing import Literal
 
 from app.models.agent import AgentAction
 from app.models.common import EnvironmentFingerprint, EvidenceItem, TargetRef, VersionInfo
@@ -105,6 +106,7 @@ class V2AgentReportRequest(BaseModel):
     case_id: str | None = None
     case_assignment_mode: str = "auto"
     dry_run: bool = False
+    redaction_mode: Literal["auto", "none"] = "auto"
 
 
 class V2AgentReportResponse(BaseModel):

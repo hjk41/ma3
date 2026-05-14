@@ -35,6 +35,7 @@ import argparse
 import io
 import json
 import os
+import re
 import subprocess
 import sys
 import urllib.error
@@ -52,6 +53,13 @@ if hasattr(sys.stderr, "buffer"):
 
 DEFAULT_BASE_URL = "https://hjk41.cc"
 CLIENT_VERSION = "0.4.0"
+
+CLIENT_CONTEXTUAL_REDACTION_PATTERNS = {
+    "windows_path": re.compile(r"\b[A-Za-z]:\\[^\s'\"<>|]+"),
+    "unix_path": re.compile(r"(?<!\w)/(?:home|root|usr|etc|var|opt|tmp|srv|mnt)/[^\s'\"<>|]+"),
+    "email": re.compile(r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b"),
+    "ipv4": re.compile(r"\b(?:\d{1,3}\.){3}\d{1,3}\b"),
+}
 
 
 # ── helpers ────────────────────────────────────────────────────────────────
@@ -509,12 +517,66 @@ def cmd_get_record(endpoints: List[Endpoint], record_id: str) -> int:
     return 1
 
 
+def _walk_strings(value: Any) -> List[str]:
+    if isinstance(value, str):
+        return [value]
+    if isinstance(value, list):
+        out: List[str] = []
+        for item in value:
+            out.extend(_walk_strings(item))
+        return out
+    if isinstance(value, dict):
+        out = []
+        for item in value.values():
+            out.extend(_walk_strings(item))
+        return out
+    return []
+
+
+def contextual_redaction_hits(payload: Any) -> Dict[str, int]:
+    hits: Dict[str, int] = {}
+    for text in _walk_strings(payload):
+        for name, pattern in CLIENT_CONTEXTUAL_REDACTION_PATTERNS.items():
+            count = len(pattern.findall(text))
+            if count:
+                hits[name] = hits.get(name, 0) + count
+    return hits
+
+
+def apply_redaction_mode(payload: Any, redaction_mode: Optional[str]) -> Any:
+    if not isinstance(payload, dict):
+        return payload
+    if "redaction_mode" in payload:
+        return payload
+    mode = redaction_mode
+    if mode is None:
+        hits = contextual_redaction_hits(payload)
+        if hits and sys.stdin.isatty() and sys.stderr.isatty():
+            summary = ", ".join(f"{key}={value}" for key, value in sorted(hits.items()))
+            print(
+                f"ma3 detected contextual identifiers ({summary}). "
+                "Redact paths/IPs/emails before submission? [Y/n] ",
+                end="",
+                file=sys.stderr,
+                flush=True,
+            )
+            answer = sys.stdin.readline().strip().lower()
+            mode = "none" if answer in {"n", "no", "否", "不", "不要"} else "auto"
+        else:
+            mode = "auto"
+    payload = dict(payload)
+    payload["redaction_mode"] = mode
+    return payload
+
+
 def cmd_ingest(
     endpoints: List[Endpoint],
     payload: Any,
     endpoint_name: Optional[str],
     library_id: Optional[str] = None,
+    redaction_mode: Optional[str] = None,
 ) -> int:
+    payload = apply_redaction_mode(payload, redaction_mode)
     if library_id:
         ep = _pick_by_library(endpoints, library_id)
     else:
@@ -531,8 +593,10 @@ def cmd_knowledge(
     endpoints: List[Endpoint],
     payload: Any,
     endpoint_name: Optional[str],
+    redaction_mode: Optional[str] = None,
 ) -> int:
     """POST /knowledge — writes a Q&A-style knowledge record to one endpoint."""
+    payload = apply_redaction_mode(payload, redaction_mode)
     ep = _pick_ingest_endpoint(endpoints, endpoint_name)
     status, body = ep.request("POST", "/knowledge", payload=payload)
     result = {"endpoint": ep.name, "status": status, "body": body}
@@ -547,6 +611,7 @@ def cmd_v2_request(
     endpoint_name: Optional[str],
     payload: Any = None,
     require_write: bool = False,
+    redaction_mode: Optional[str] = None,
 ) -> int:
     """Call a v2 endpoint on one selected endpoint.
 
@@ -554,6 +619,8 @@ def cmd_v2_request(
     fan-out surprises when writing reports or reading case timelines.
     """
     ep = _pick_ingest_endpoint(endpoints, endpoint_name) if require_write else _single_or_all(endpoints, endpoint_name)[0]
+    if require_write and payload is not None:
+        payload = apply_redaction_mode(payload, redaction_mode)
     status, body = ep.request(method, path, payload=payload)
     result = {"endpoint": ep.name, "status": status, "body": body}
     print(json.dumps(result, ensure_ascii=False, indent=2))
@@ -790,11 +857,13 @@ def main() -> int:
     ingest_p.add_argument("--payload",  help="Inline JSON payload.")
     ingest_p.add_argument("--endpoint", help="Endpoint name (required when multiple have API keys).")
     ingest_p.add_argument("--library",  help="Target by library_id (alternative to --endpoint).")
+    ingest_p.add_argument("--redaction-mode", choices=["auto", "none"], help="auto redacts paths/IPs/emails; none preserves them but still redacts secrets.")
 
     know_p = subparsers.add_parser("knowledge", help="POST /knowledge — writes a knowledge record to one endpoint.")
     know_p.add_argument("--input",    help="Path to a JSON payload file.")
     know_p.add_argument("--payload",  help="Inline JSON payload.")
     know_p.add_argument("--endpoint", help="Endpoint name (required when multiple have API keys).")
+    know_p.add_argument("--redaction-mode", choices=["auto", "none"], help="auto redacts paths/IPs/emails; none preserves them but still redacts secrets.")
 
     # ── v2 agent/tool workflow wrappers ──
     v2ctx_p = subparsers.add_parser("v2-context", help="POST /v2/agent/context — one-call agent retrieval context.")
@@ -806,6 +875,7 @@ def main() -> int:
     v2rep_p.add_argument("--input", help="Path to a JSON payload file.")
     v2rep_p.add_argument("--payload", help="Inline JSON payload.")
     v2rep_p.add_argument("--endpoint", help="Target endpoint by name.")
+    v2rep_p.add_argument("--redaction-mode", choices=["auto", "none"], help="auto redacts paths/IPs/emails; none preserves them but still redacts secrets.")
 
     v2case_p = subparsers.add_parser("v2-case", help="GET /v2/cases/{id} — read a v2 case timeline.")
     v2case_p.add_argument("case_id", help="Case ID to fetch.")
@@ -906,17 +976,27 @@ def main() -> int:
             load_json_payload(args.input, args.payload),
             ep_name,
             getattr(args, "library", None),
+            getattr(args, "redaction_mode", None),
         )
     if args.command == "knowledge":
         return cmd_knowledge(
             endpoints,
             load_json_payload(args.input, args.payload),
             ep_name,
+            getattr(args, "redaction_mode", None),
         )
     if args.command == "v2-context":
         return cmd_v2_request(endpoints, "POST", "/v2/agent/context", ep_name, load_json_payload(args.input, args.payload))
     if args.command == "v2-report":
-        return cmd_v2_request(endpoints, "POST", "/v2/agent/report", ep_name, load_json_payload(args.input, args.payload), require_write=True)
+        return cmd_v2_request(
+            endpoints,
+            "POST",
+            "/v2/agent/report",
+            ep_name,
+            load_json_payload(args.input, args.payload),
+            require_write=True,
+            redaction_mode=getattr(args, "redaction_mode", None),
+        )
     if args.command == "v2-case":
         return cmd_v2_request(endpoints, "GET", f"/v2/cases/{args.case_id}", ep_name)
     if args.command == "v2-cases":

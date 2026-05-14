@@ -6,8 +6,12 @@ from app.services.redaction import redact_value
 from app.storage.repositories import RecordRepository
 
 
-def create_record(payload: RecordCreate, library_id: str | None = None) -> Record:
-    sanitized = RecordCreate.model_validate(redact_value(payload.model_dump()))
+def create_record(
+    payload: RecordCreate,
+    library_id: str | None = None,
+    redaction_mode: str = "auto",
+) -> Record:
+    sanitized = RecordCreate.model_validate(redact_value(payload.model_dump(), mode=redaction_mode))
     now = utc_now_iso()
     record = Record(
         record_id=new_id("vk"),

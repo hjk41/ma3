@@ -422,9 +422,21 @@ If `persisted` is false:
 
 Avoid sending raw secrets when possible.
 
-ma3 applies write-time redaction for common patterns (Windows and Unix paths,
-emails, IPs, GitHub tokens, AWS keys, password assignments), but you should still
-avoid exposing:
+ma3 always redacts secrets such as GitHub tokens, AWS keys, long opaque tokens,
+and password/token assignments. Contextual identifiers (Windows/Unix paths,
+emails, IPs) are redacted by default, but they may be important technical content.
+
+When submitting via the bundled CLI, if contextual identifiers are detected and
+you are in an interactive terminal, the CLI prompts whether to redact them. To
+choose explicitly:
+
+```bash
+python3 ma3_client.py ingest --input report.json --redaction-mode auto  # default
+python3 ma3_client.py ingest --input report.json --redaction-mode none  # keep paths/IPs/emails
+```
+
+`--redaction-mode none` / payload `"redaction_mode": "none"` preserves
+paths/IPs/emails, but still redacts secrets. You should still avoid exposing:
 
 - tokens
 - passwords

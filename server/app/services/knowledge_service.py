@@ -45,4 +45,4 @@ def _build_record_create(payload: KnowledgeCreate) -> RecordCreate:
 
 def create_knowledge(payload: KnowledgeCreate, library_id: str | None = None) -> Record:
     record_payload = _build_record_create(payload)
-    return create_record(record_payload, library_id=library_id)
+    return create_record(record_payload, library_id=library_id, redaction_mode=payload.redaction_mode)

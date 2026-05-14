@@ -159,16 +159,28 @@ Single-record reads also support scope filtering:
 Invoke-RestMethod -Method Get -Uri "http://127.0.0.1:8000/records/vk_seed_approval_success?allowed_scopes=public"
 ```
 
-## Basic Redaction
+## Submission Redaction
 
-The current MVP applies basic write-time redaction for obvious sensitive patterns in free text fields:
+By default, ma3 applies write-time redaction for obvious sensitive patterns in free text fields:
 
 - Windows absolute paths
+- Unix absolute paths under common system/work directories
 - email addresses
 - IPv4 addresses
 - simple secret assignments such as `token=...` or `password=...`
 
-This is only a first-pass safeguard, not a complete data-loss-prevention system.
+For operational knowledge, paths and IPs can be important. Record-creation APIs such as
+`/agent/ingest`, `/v2/agent/report`, and `/knowledge` support:
+
+```json
+{
+  "redaction_mode": "none"
+}
+```
+
+`none` preserves paths/IPs/emails, but still redacts secrets and opaque tokens. The CLI also
+supports `--redaction-mode auto|none` and prompts interactively when it detects contextual
+identifiers. This is only a first-pass safeguard, not a complete data-loss-prevention system.
 
 ## Optional API Key Protection
 
