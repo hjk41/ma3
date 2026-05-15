@@ -1,0 +1,410 @@
+{
+    "baseline-instrumented": {
+        "search_broad_observability": {
+            "contrasting": [],
+            "primary": [
+                "vk_b2dbac998178",
+                "vk_4a450ba8a85e",
+                "vk_d5d074f34f7d",
+                "vk_5b31d2d4657f",
+                "vk_bbdfe8ce906c"
+            ]
+        },
+        "search_client_upgrade": {
+            "contrasting": [],
+            "primary": [
+                "vk_bbdfe8ce906c",
+                "vk_5b31d2d4657f",
+                "vk_54f174efd92a",
+                "vk_4a450ba8a85e",
+                "vk_b2dbac998178"
+            ]
+        },
+        "search_ltp_mpi_rdma": {
+            "contrasting": [],
+            "primary": [
+                "vk_efbd71005a69",
+                "vk_8a0e619db729",
+                "vk_b2dbac998178",
+                "vk_64778474cd41",
+                "vk_61136238fa7d"
+            ]
+        },
+        "search_ma3_deploy_ltp": {
+            "contrasting": [],
+            "primary": [
+                "vk_00ae231206d3",
+                "vk_570a99409344",
+                "vk_5dfa01507b4d",
+                "vk_61136238fa7d",
+                "vk_b2dbac998178"
+            ]
+        },
+        "search_zero_result": {
+            "contrasting": [],
+            "primary": [
+                "vk_61136238fa7d",
+                "vk_cd43751e0388",
+                "vk_cf137f22d12c"
+            ]
+        },
+        "v2_context_client_upgrade": {
+            "cases": [
+                "case_mig_612793b5ec4bdcc8926a",
+                "case_mig_4d24b8f27017b8edbc66",
+                "case_mig_f130fd56de4e4d5ca958",
+                "case_mig_dd755bb41e4b43207115",
+                "case_mig_3c6021b729e9b829c194"
+            ],
+            "records": [
+                "vk_bbdfe8ce906c",
+                "vk_5b31d2d4657f",
+                "vk_3d110cc9ce99",
+                "vk_5dfa01507b4d",
+                "vk_4a450ba8a85e",
+                "vk_b2dbac998178",
+                "vk_00ae231206d3"
+            ]
+        },
+        "v2_context_ma3_deploy": {
+            "cases": [
+                "case_mig_4d24b8f27017b8edbc66",
+                "case_mig_3c6021b729e9b829c194",
+                "case_mig_f6cd8ce2348705366d18",
+                "case_mig_dd755bb41e4b43207115",
+                "case_mig_fab9e7f5fb9dc8341080"
+            ],
+            "records": [
+                "vk_5dfa01507b4d",
+                "vk_3d110cc9ce99",
+                "vk_5b31d2d4657f",
+                "vk_00ae231206d3",
+                "vk_570a99409344",
+                "vk_b2dbac998178",
+                "vk_64778474cd41"
+            ]
+        },
+        "v2_explain_mpi_rdma": {
+            "cases": [
+                "case_mig_538d1254fc39012bbec0",
+                "case_mig_dd755bb41e4b43207115",
+                "case_mig_a7523e794637c13a704f",
+                "case_mig_fab9e7f5fb9dc8341080",
+                "case_mig_260098fb10cc6103c788"
+            ],
+            "records": [
+                "vk_efbd71005a69",
+                "vk_b2dbac998178",
+                "vk_8a0e619db729",
+                "vk_64778474cd41",
+                "vk_61136238fa7d"
+            ]
+        }
+    },
+    "pool-batch": {
+        "search_broad_observability": {
+            "contrasting": [],
+            "primary": [
+                "vk_b2dbac998178",
+                "vk_4a450ba8a85e",
+                "vk_d5d074f34f7d",
+                "vk_5b31d2d4657f",
+                "vk_bbdfe8ce906c"
+            ]
+        },
+        "search_client_upgrade": {
+            "contrasting": [],
+            "primary": [
+                "vk_bbdfe8ce906c",
+                "vk_5b31d2d4657f",
+                "vk_54f174efd92a",
+                "vk_4a450ba8a85e",
+                "vk_b2dbac998178"
+            ]
+        },
+        "search_ltp_mpi_rdma": {
+            "contrasting": [],
+            "primary": [
+                "vk_efbd71005a69",
+                "vk_8a0e619db729",
+                "vk_b2dbac998178",
+                "vk_64778474cd41",
+                "vk_61136238fa7d"
+            ]
+        },
+        "search_ma3_deploy_ltp": {
+            "contrasting": [],
+            "primary": [
+                "vk_00ae231206d3",
+                "vk_570a99409344",
+                "vk_5dfa01507b4d",
+                "vk_61136238fa7d",
+                "vk_b2dbac998178"
+            ]
+        },
+        "search_zero_result": {
+            "contrasting": [],
+            "primary": [
+                "vk_61136238fa7d",
+                "vk_cd43751e0388",
+                "vk_cf137f22d12c"
+            ]
+        },
+        "v2_context_client_upgrade": {
+            "cases": [
+                "case_mig_612793b5ec4bdcc8926a",
+                "case_mig_4d24b8f27017b8edbc66",
+                "case_mig_f130fd56de4e4d5ca958",
+                "case_mig_dd755bb41e4b43207115",
+                "case_mig_3c6021b729e9b829c194"
+            ],
+            "records": [
+                "vk_bbdfe8ce906c",
+                "vk_5b31d2d4657f",
+                "vk_3d110cc9ce99",
+                "vk_5dfa01507b4d",
+                "vk_4a450ba8a85e",
+                "vk_b2dbac998178",
+                "vk_00ae231206d3"
+            ]
+        },
+        "v2_context_ma3_deploy": {
+            "cases": [
+                "case_mig_4d24b8f27017b8edbc66",
+                "case_mig_3c6021b729e9b829c194",
+                "case_mig_f6cd8ce2348705366d18",
+                "case_mig_dd755bb41e4b43207115",
+                "case_mig_fab9e7f5fb9dc8341080"
+            ],
+            "records": [
+                "vk_5dfa01507b4d",
+                "vk_3d110cc9ce99",
+                "vk_5b31d2d4657f",
+                "vk_00ae231206d3",
+                "vk_570a99409344",
+                "vk_b2dbac998178",
+                "vk_64778474cd41"
+            ]
+        },
+        "v2_explain_mpi_rdma": {
+            "cases": [
+                "case_mig_538d1254fc39012bbec0",
+                "case_mig_dd755bb41e4b43207115",
+                "case_mig_a7523e794637c13a704f",
+                "case_mig_fab9e7f5fb9dc8341080",
+                "case_mig_260098fb10cc6103c788"
+            ],
+            "records": [
+                "vk_efbd71005a69",
+                "vk_b2dbac998178",
+                "vk_8a0e619db729",
+                "vk_64778474cd41",
+                "vk_61136238fa7d"
+            ]
+        }
+    },
+    "pool-batch-materialized": {
+        "search_broad_observability": {
+            "contrasting": [],
+            "primary": [
+                "vk_b2dbac998178",
+                "vk_4a450ba8a85e",
+                "vk_d5d074f34f7d",
+                "vk_5b31d2d4657f",
+                "vk_bbdfe8ce906c"
+            ]
+        },
+        "search_client_upgrade": {
+            "contrasting": [],
+            "primary": [
+                "vk_bbdfe8ce906c",
+                "vk_5b31d2d4657f",
+                "vk_54f174efd92a",
+                "vk_4a450ba8a85e",
+                "vk_b2dbac998178"
+            ]
+        },
+        "search_ltp_mpi_rdma": {
+            "contrasting": [],
+            "primary": [
+                "vk_efbd71005a69",
+                "vk_8a0e619db729",
+                "vk_b2dbac998178",
+                "vk_64778474cd41",
+                "vk_61136238fa7d"
+            ]
+        },
+        "search_ma3_deploy_ltp": {
+            "contrasting": [],
+            "primary": [
+                "vk_00ae231206d3",
+                "vk_570a99409344",
+                "vk_5dfa01507b4d",
+                "vk_61136238fa7d",
+                "vk_b2dbac998178"
+            ]
+        },
+        "search_zero_result": {
+            "contrasting": [],
+            "primary": [
+                "vk_61136238fa7d",
+                "vk_cd43751e0388",
+                "vk_cf137f22d12c"
+            ]
+        },
+        "v2_context_client_upgrade": {
+            "cases": [
+                "case_mig_612793b5ec4bdcc8926a",
+                "case_mig_4d24b8f27017b8edbc66",
+                "case_mig_f130fd56de4e4d5ca958",
+                "case_mig_dd755bb41e4b43207115",
+                "case_mig_3c6021b729e9b829c194"
+            ],
+            "records": [
+                "vk_bbdfe8ce906c",
+                "vk_5b31d2d4657f",
+                "vk_3d110cc9ce99",
+                "vk_5dfa01507b4d",
+                "vk_4a450ba8a85e",
+                "vk_b2dbac998178",
+                "vk_00ae231206d3"
+            ]
+        },
+        "v2_context_ma3_deploy": {
+            "cases": [
+                "case_mig_4d24b8f27017b8edbc66",
+                "case_mig_3c6021b729e9b829c194",
+                "case_mig_f6cd8ce2348705366d18",
+                "case_mig_dd755bb41e4b43207115",
+                "case_mig_fab9e7f5fb9dc8341080"
+            ],
+            "records": [
+                "vk_5dfa01507b4d",
+                "vk_3d110cc9ce99",
+                "vk_5b31d2d4657f",
+                "vk_00ae231206d3",
+                "vk_570a99409344",
+                "vk_b2dbac998178",
+                "vk_64778474cd41"
+            ]
+        },
+        "v2_explain_mpi_rdma": {
+            "cases": [
+                "case_mig_538d1254fc39012bbec0",
+                "case_mig_dd755bb41e4b43207115",
+                "case_mig_a7523e794637c13a704f",
+                "case_mig_fab9e7f5fb9dc8341080",
+                "case_mig_260098fb10cc6103c788"
+            ],
+            "records": [
+                "vk_efbd71005a69",
+                "vk_b2dbac998178",
+                "vk_8a0e619db729",
+                "vk_64778474cd41",
+                "vk_61136238fa7d"
+            ]
+        }
+    },
+    "pool-only": {
+        "search_broad_observability": {
+            "contrasting": [],
+            "primary": [
+                "vk_b2dbac998178",
+                "vk_4a450ba8a85e",
+                "vk_d5d074f34f7d",
+                "vk_5b31d2d4657f",
+                "vk_bbdfe8ce906c"
+            ]
+        },
+        "search_client_upgrade": {
+            "contrasting": [],
+            "primary": [
+                "vk_bbdfe8ce906c",
+                "vk_5b31d2d4657f",
+                "vk_54f174efd92a",
+                "vk_4a450ba8a85e",
+                "vk_b2dbac998178"
+            ]
+        },
+        "search_ltp_mpi_rdma": {
+            "contrasting": [],
+            "primary": [
+                "vk_efbd71005a69",
+                "vk_8a0e619db729",
+                "vk_b2dbac998178",
+                "vk_64778474cd41",
+                "vk_61136238fa7d"
+            ]
+        },
+        "search_ma3_deploy_ltp": {
+            "contrasting": [],
+            "primary": [
+                "vk_00ae231206d3",
+                "vk_570a99409344",
+                "vk_5dfa01507b4d",
+                "vk_61136238fa7d",
+                "vk_b2dbac998178"
+            ]
+        },
+        "search_zero_result": {
+            "contrasting": [],
+            "primary": [
+                "vk_61136238fa7d",
+                "vk_cd43751e0388",
+                "vk_cf137f22d12c"
+            ]
+        },
+        "v2_context_client_upgrade": {
+            "cases": [
+                "case_mig_612793b5ec4bdcc8926a",
+                "case_mig_4d24b8f27017b8edbc66",
+                "case_mig_f130fd56de4e4d5ca958",
+                "case_mig_dd755bb41e4b43207115",
+                "case_mig_3c6021b729e9b829c194"
+            ],
+            "records": [
+                "vk_bbdfe8ce906c",
+                "vk_5b31d2d4657f",
+                "vk_3d110cc9ce99",
+                "vk_5dfa01507b4d",
+                "vk_4a450ba8a85e",
+                "vk_b2dbac998178",
+                "vk_00ae231206d3"
+            ]
+        },
+        "v2_context_ma3_deploy": {
+            "cases": [
+                "case_mig_4d24b8f27017b8edbc66",
+                "case_mig_3c6021b729e9b829c194",
+                "case_mig_f6cd8ce2348705366d18",
+                "case_mig_dd755bb41e4b43207115",
+                "case_mig_fab9e7f5fb9dc8341080"
+            ],
+            "records": [
+                "vk_5dfa01507b4d",
+                "vk_3d110cc9ce99",
+                "vk_5b31d2d4657f",
+                "vk_00ae231206d3",
+                "vk_570a99409344",
+                "vk_b2dbac998178",
+                "vk_64778474cd41"
+            ]
+        },
+        "v2_explain_mpi_rdma": {
+            "cases": [
+                "case_mig_538d1254fc39012bbec0",
+                "case_mig_dd755bb41e4b43207115",
+                "case_mig_a7523e794637c13a704f",
+                "case_mig_fab9e7f5fb9dc8341080",
+                "case_mig_260098fb10cc6103c788"
+            ],
+            "records": [
+                "vk_efbd71005a69",
+                "vk_b2dbac998178",
+                "vk_8a0e619db729",
+                "vk_64778474cd41",
+                "vk_61136238fa7d"
+            ]
+        }
+    }
+}

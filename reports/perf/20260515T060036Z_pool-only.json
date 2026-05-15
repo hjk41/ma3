@@ -1,0 +1,1920 @@
+{
+  "label": "pool-only",
+  "base_url": "http://127.0.0.1:18180",
+  "summary": [
+    {
+      "name": "search_broad_observability",
+      "route": "/search",
+      "count": 20,
+      "avg_ms": 62.32,
+      "p50_ms": 62.157,
+      "p95_ms": 63.814,
+      "max_ms": 64.021,
+      "statuses": {
+        "200": 20
+      },
+      "avg_result_count": 5,
+      "errors": 0
+    },
+    {
+      "name": "search_client_upgrade",
+      "route": "/search",
+      "count": 20,
+      "avg_ms": 64.635,
+      "p50_ms": 64.651,
+      "p95_ms": 65.855,
+      "max_ms": 66.812,
+      "statuses": {
+        "200": 20
+      },
+      "avg_result_count": 5,
+      "errors": 0
+    },
+    {
+      "name": "search_ltp_mpi_rdma",
+      "route": "/search",
+      "count": 20,
+      "avg_ms": 60.812,
+      "p50_ms": 60.868,
+      "p95_ms": 61.894,
+      "max_ms": 62.162,
+      "statuses": {
+        "200": 20
+      },
+      "avg_result_count": 5,
+      "errors": 0
+    },
+    {
+      "name": "search_ma3_deploy_ltp",
+      "route": "/search",
+      "count": 20,
+      "avg_ms": 64.248,
+      "p50_ms": 64.222,
+      "p95_ms": 66.178,
+      "max_ms": 66.499,
+      "statuses": {
+        "200": 20
+      },
+      "avg_result_count": 5,
+      "errors": 0
+    },
+    {
+      "name": "search_zero_result",
+      "route": "/search",
+      "count": 20,
+      "avg_ms": 199.476,
+      "p50_ms": 196.594,
+      "p95_ms": 215.991,
+      "max_ms": 216.73,
+      "statuses": {
+        "200": 20
+      },
+      "avg_result_count": 3,
+      "errors": 0
+    },
+    {
+      "name": "v2_context_client_upgrade",
+      "route": "/v2/agent/context",
+      "count": 20,
+      "avg_ms": 65.984,
+      "p50_ms": 65.817,
+      "p95_ms": 67.227,
+      "max_ms": 67.358,
+      "statuses": {
+        "200": 20
+      },
+      "avg_result_count": 7,
+      "errors": 0
+    },
+    {
+      "name": "v2_context_ma3_deploy",
+      "route": "/v2/agent/context",
+      "count": 20,
+      "avg_ms": 66.642,
+      "p50_ms": 66.461,
+      "p95_ms": 67.937,
+      "max_ms": 68.739,
+      "statuses": {
+        "200": 20
+      },
+      "avg_result_count": 7,
+      "errors": 0
+    },
+    {
+      "name": "v2_explain_mpi_rdma",
+      "route": "/v2/search/explain",
+      "count": 20,
+      "avg_ms": 64.55,
+      "p50_ms": 64.102,
+      "p95_ms": 68.08,
+      "max_ms": 69.096,
+      "statuses": {
+        "200": 20
+      },
+      "avg_result_count": 5,
+      "errors": 0
+    }
+  ],
+  "rows": [
+    {
+      "phase": "warmup",
+      "name": "search_ma3_deploy_ltp",
+      "route": "/search",
+      "status": 200,
+      "latency_ms": 84.251,
+      "result_count": 5,
+      "error": null
+    },
+    {
+      "phase": "warmup",
+      "name": "search_ltp_mpi_rdma",
+      "route": "/search",
+      "status": 200,
+      "latency_ms": 57.183,
+      "result_count": 5,
+      "error": null
+    },
+    {
+      "phase": "warmup",
+      "name": "search_client_upgrade",
+      "route": "/search",
+      "status": 200,
+      "latency_ms": 59.773,
+      "result_count": 5,
+      "error": null
+    },
+    {
+      "phase": "warmup",
+      "name": "search_broad_observability",
+      "route": "/search",
+      "status": 200,
+      "latency_ms": 58.227,
+      "result_count": 5,
+      "error": null
+    },
+    {
+      "phase": "warmup",
+      "name": "search_zero_result",
+      "route": "/search",
+      "status": 200,
+      "latency_ms": 191.201,
+      "result_count": 3,
+      "error": null
+    },
+    {
+      "phase": "warmup",
+      "name": "v2_explain_mpi_rdma",
+      "route": "/v2/search/explain",
+      "status": 200,
+      "latency_ms": 60.221,
+      "result_count": 5,
+      "error": null
+    },
+    {
+      "phase": "warmup",
+      "name": "v2_context_ma3_deploy",
+      "route": "/v2/agent/context",
+      "status": 200,
+      "latency_ms": 62.5,
+      "result_count": 7,
+      "error": null
+    },
+    {
+      "phase": "warmup",
+      "name": "v2_context_client_upgrade",
+      "route": "/v2/agent/context",
+      "status": 200,
+      "latency_ms": 60.839,
+      "result_count": 7,
+      "error": null
+    },
+    {
+      "phase": "warmup",
+      "name": "search_ma3_deploy_ltp",
+      "route": "/search",
+      "status": 200,
+      "latency_ms": 60.273,
+      "result_count": 5,
+      "error": null
+    },
+    {
+      "phase": "warmup",
+      "name": "search_ltp_mpi_rdma",
+      "route": "/search",
+      "status": 200,
+      "latency_ms": 56.274,
+      "result_count": 5,
+      "error": null
+    },
+    {
+      "phase": "warmup",
+      "name": "search_client_upgrade",
+      "route": "/search",
+      "status": 200,
+      "latency_ms": 66.988,
+      "result_count": 5,
+      "error": null
+    },
+    {
+      "phase": "warmup",
+      "name": "search_broad_observability",
+      "route": "/search",
+      "status": 200,
+      "latency_ms": 62.132,
+      "result_count": 5,
+      "error": null
+    },
+    {
+      "phase": "warmup",
+      "name": "search_zero_result",
+      "route": "/search",
+      "status": 200,
+      "latency_ms": 198.935,
+      "result_count": 3,
+      "error": null
+    },
+    {
+      "phase": "warmup",
+      "name": "v2_explain_mpi_rdma",
+      "route": "/v2/search/explain",
+      "status": 200,
+      "latency_ms": 61.987,
+      "result_count": 5,
+      "error": null
+    },
+    {
+      "phase": "warmup",
+      "name": "v2_context_ma3_deploy",
+      "route": "/v2/agent/context",
+      "status": 200,
+      "latency_ms": 63.896,
+      "result_count": 7,
+      "error": null
+    },
+    {
+      "phase": "warmup",
+      "name": "v2_context_client_upgrade",
+      "route": "/v2/agent/context",
+      "status": 200,
+      "latency_ms": 62.807,
+      "result_count": 7,
+      "error": null
+    },
+    {
+      "phase": "warmup",
+      "name": "search_ma3_deploy_ltp",
+      "route": "/search",
+      "status": 200,
+      "latency_ms": 61.961,
+      "result_count": 5,
+      "error": null
+    },
+    {
+      "phase": "warmup",
+      "name": "search_ltp_mpi_rdma",
+      "route": "/search",
+      "status": 200,
+      "latency_ms": 60.032,
+      "result_count": 5,
+      "error": null
+    },
+    {
+      "phase": "warmup",
+      "name": "search_client_upgrade",
+      "route": "/search",
+      "status": 200,
+      "latency_ms": 62.419,
+      "result_count": 5,
+      "error": null
+    },
+    {
+      "phase": "warmup",
+      "name": "search_broad_observability",
+      "route": "/search",
+      "status": 200,
+      "latency_ms": 60.136,
+      "result_count": 5,
+      "error": null
+    },
+    {
+      "phase": "warmup",
+      "name": "search_zero_result",
+      "route": "/search",
+      "status": 200,
+      "latency_ms": 172.151,
+      "result_count": 3,
+      "error": null
+    },
+    {
+      "phase": "warmup",
+      "name": "v2_explain_mpi_rdma",
+      "route": "/v2/search/explain",
+      "status": 200,
+      "latency_ms": 62.411,
+      "result_count": 5,
+      "error": null
+    },
+    {
+      "phase": "warmup",
+      "name": "v2_context_ma3_deploy",
+      "route": "/v2/agent/context",
+      "status": 200,
+      "latency_ms": 63.597,
+      "result_count": 7,
+      "error": null
+    },
+    {
+      "phase": "warmup",
+      "name": "v2_context_client_upgrade",
+      "route": "/v2/agent/context",
+      "status": 200,
+      "latency_ms": 63.066,
+      "result_count": 7,
+      "error": null
+    },
+    {
+      "phase": "warmup",
+      "name": "search_ma3_deploy_ltp",
+      "route": "/search",
+      "status": 200,
+      "latency_ms": 61.411,
+      "result_count": 5,
+      "error": null
+    },
+    {
+      "phase": "warmup",
+      "name": "search_ltp_mpi_rdma",
+      "route": "/search",
+      "status": 200,
+      "latency_ms": 58.823,
+      "result_count": 5,
+      "error": null
+    },
+    {
+      "phase": "warmup",
+      "name": "search_client_upgrade",
+      "route": "/search",
+      "status": 200,
+      "latency_ms": 62.245,
+      "result_count": 5,
+      "error": null
+    },
+    {
+      "phase": "warmup",
+      "name": "search_broad_observability",
+      "route": "/search",
+      "status": 200,
+      "latency_ms": 60.498,
+      "result_count": 5,
+      "error": null
+    },
+    {
+      "phase": "warmup",
+      "name": "search_zero_result",
+      "route": "/search",
+      "status": 200,
+      "latency_ms": 173.329,
+      "result_count": 3,
+      "error": null
+    },
+    {
+      "phase": "warmup",
+      "name": "v2_explain_mpi_rdma",
+      "route": "/v2/search/explain",
+      "status": 200,
+      "latency_ms": 62.46,
+      "result_count": 5,
+      "error": null
+    },
+    {
+      "phase": "warmup",
+      "name": "v2_context_ma3_deploy",
+      "route": "/v2/agent/context",
+      "status": 200,
+      "latency_ms": 63.516,
+      "result_count": 7,
+      "error": null
+    },
+    {
+      "phase": "warmup",
+      "name": "v2_context_client_upgrade",
+      "route": "/v2/agent/context",
+      "status": 200,
+      "latency_ms": 62.606,
+      "result_count": 7,
+      "error": null
+    },
+    {
+      "phase": "warmup",
+      "name": "search_ma3_deploy_ltp",
+      "route": "/search",
+      "status": 200,
+      "latency_ms": 61.564,
+      "result_count": 5,
+      "error": null
+    },
+    {
+      "phase": "warmup",
+      "name": "search_ltp_mpi_rdma",
+      "route": "/search",
+      "status": 200,
+      "latency_ms": 60.484,
+      "result_count": 5,
+      "error": null
+    },
+    {
+      "phase": "warmup",
+      "name": "search_client_upgrade",
+      "route": "/search",
+      "status": 200,
+      "latency_ms": 62.413,
+      "result_count": 5,
+      "error": null
+    },
+    {
+      "phase": "warmup",
+      "name": "search_broad_observability",
+      "route": "/search",
+      "status": 200,
+      "latency_ms": 59.949,
+      "result_count": 5,
+      "error": null
+    },
+    {
+      "phase": "warmup",
+      "name": "search_zero_result",
+      "route": "/search",
+      "status": 200,
+      "latency_ms": 174.521,
+      "result_count": 3,
+      "error": null
+    },
+    {
+      "phase": "warmup",
+      "name": "v2_explain_mpi_rdma",
+      "route": "/v2/search/explain",
+      "status": 200,
+      "latency_ms": 61.696,
+      "result_count": 5,
+      "error": null
+    },
+    {
+      "phase": "warmup",
+      "name": "v2_context_ma3_deploy",
+      "route": "/v2/agent/context",
+      "status": 200,
+      "latency_ms": 64.129,
+      "result_count": 7,
+      "error": null
+    },
+    {
+      "phase": "warmup",
+      "name": "v2_context_client_upgrade",
+      "route": "/v2/agent/context",
+      "status": 200,
+      "latency_ms": 63.002,
+      "result_count": 7,
+      "error": null
+    },
+    {
+      "phase": "measure",
+      "name": "search_ma3_deploy_ltp",
+      "route": "/search",
+      "status": 200,
+      "latency_ms": 61.752,
+      "result_count": 5,
+      "error": null
+    },
+    {
+      "phase": "measure",
+      "name": "search_ltp_mpi_rdma",
+      "route": "/search",
+      "status": 200,
+      "latency_ms": 59.298,
+      "result_count": 5,
+      "error": null
+    },
+    {
+      "phase": "measure",
+      "name": "search_client_upgrade",
+      "route": "/search",
+      "status": 200,
+      "latency_ms": 62.322,
+      "result_count": 5,
+      "error": null
+    },
+    {
+      "phase": "measure",
+      "name": "search_broad_observability",
+      "route": "/search",
+      "status": 200,
+      "latency_ms": 60.644,
+      "result_count": 5,
+      "error": null
+    },
+    {
+      "phase": "measure",
+      "name": "search_zero_result",
+      "route": "/search",
+      "status": 200,
+      "latency_ms": 192.472,
+      "result_count": 3,
+      "error": null
+    },
+    {
+      "phase": "measure",
+      "name": "v2_explain_mpi_rdma",
+      "route": "/v2/search/explain",
+      "status": 200,
+      "latency_ms": 62.186,
+      "result_count": 5,
+      "error": null
+    },
+    {
+      "phase": "measure",
+      "name": "v2_context_ma3_deploy",
+      "route": "/v2/agent/context",
+      "status": 200,
+      "latency_ms": 66.491,
+      "result_count": 7,
+      "error": null
+    },
+    {
+      "phase": "measure",
+      "name": "v2_context_client_upgrade",
+      "route": "/v2/agent/context",
+      "status": 200,
+      "latency_ms": 65.817,
+      "result_count": 7,
+      "error": null
+    },
+    {
+      "phase": "measure",
+      "name": "search_ma3_deploy_ltp",
+      "route": "/search",
+      "status": 200,
+      "latency_ms": 65.642,
+      "result_count": 5,
+      "error": null
+    },
+    {
+      "phase": "measure",
+      "name": "search_ltp_mpi_rdma",
+      "route": "/search",
+      "status": 200,
+      "latency_ms": 60.65,
+      "result_count": 5,
+      "error": null
+    },
+    {
+      "phase": "measure",
+      "name": "search_client_upgrade",
+      "route": "/search",
+      "status": 200,
+      "latency_ms": 63.974,
+      "result_count": 5,
+      "error": null
+    },
+    {
+      "phase": "measure",
+      "name": "search_broad_observability",
+      "route": "/search",
+      "status": 200,
+      "latency_ms": 63.463,
+      "result_count": 5,
+      "error": null
+    },
+    {
+      "phase": "measure",
+      "name": "search_zero_result",
+      "route": "/search",
+      "status": 200,
+      "latency_ms": 196.823,
+      "result_count": 3,
+      "error": null
+    },
+    {
+      "phase": "measure",
+      "name": "v2_explain_mpi_rdma",
+      "route": "/v2/search/explain",
+      "status": 200,
+      "latency_ms": 64.075,
+      "result_count": 5,
+      "error": null
+    },
+    {
+      "phase": "measure",
+      "name": "v2_context_ma3_deploy",
+      "route": "/v2/agent/context",
+      "status": 200,
+      "latency_ms": 65.562,
+      "result_count": 7,
+      "error": null
+    },
+    {
+      "phase": "measure",
+      "name": "v2_context_client_upgrade",
+      "route": "/v2/agent/context",
+      "status": 200,
+      "latency_ms": 65.578,
+      "result_count": 7,
+      "error": null
+    },
+    {
+      "phase": "measure",
+      "name": "search_ma3_deploy_ltp",
+      "route": "/search",
+      "status": 200,
+      "latency_ms": 63.231,
+      "result_count": 5,
+      "error": null
+    },
+    {
+      "phase": "measure",
+      "name": "search_ltp_mpi_rdma",
+      "route": "/search",
+      "status": 200,
+      "latency_ms": 59.851,
+      "result_count": 5,
+      "error": null
+    },
+    {
+      "phase": "measure",
+      "name": "search_client_upgrade",
+      "route": "/search",
+      "status": 200,
+      "latency_ms": 62.289,
+      "result_count": 5,
+      "error": null
+    },
+    {
+      "phase": "measure",
+      "name": "search_broad_observability",
+      "route": "/search",
+      "status": 200,
+      "latency_ms": 61.446,
+      "result_count": 5,
+      "error": null
+    },
+    {
+      "phase": "measure",
+      "name": "search_zero_result",
+      "route": "/search",
+      "status": 200,
+      "latency_ms": 195.077,
+      "result_count": 3,
+      "error": null
+    },
+    {
+      "phase": "measure",
+      "name": "v2_explain_mpi_rdma",
+      "route": "/v2/search/explain",
+      "status": 200,
+      "latency_ms": 63.545,
+      "result_count": 5,
+      "error": null
+    },
+    {
+      "phase": "measure",
+      "name": "v2_context_ma3_deploy",
+      "route": "/v2/agent/context",
+      "status": 200,
+      "latency_ms": 66.175,
+      "result_count": 7,
+      "error": null
+    },
+    {
+      "phase": "measure",
+      "name": "v2_context_client_upgrade",
+      "route": "/v2/agent/context",
+      "status": 200,
+      "latency_ms": 64.992,
+      "result_count": 7,
+      "error": null
+    },
+    {
+      "phase": "measure",
+      "name": "search_ma3_deploy_ltp",
+      "route": "/search",
+      "status": 200,
+      "latency_ms": 62.965,
+      "result_count": 5,
+      "error": null
+    },
+    {
+      "phase": "measure",
+      "name": "search_ltp_mpi_rdma",
+      "route": "/search",
+      "status": 200,
+      "latency_ms": 60.198,
+      "result_count": 5,
+      "error": null
+    },
+    {
+      "phase": "measure",
+      "name": "search_client_upgrade",
+      "route": "/search",
+      "status": 200,
+      "latency_ms": 64.876,
+      "result_count": 5,
+      "error": null
+    },
+    {
+      "phase": "measure",
+      "name": "search_broad_observability",
+      "route": "/search",
+      "status": 200,
+      "latency_ms": 62.456,
+      "result_count": 5,
+      "error": null
+    },
+    {
+      "phase": "measure",
+      "name": "search_zero_result",
+      "route": "/search",
+      "status": 200,
+      "latency_ms": 194.81,
+      "result_count": 3,
+      "error": null
+    },
+    {
+      "phase": "measure",
+      "name": "v2_explain_mpi_rdma",
+      "route": "/v2/search/explain",
+      "status": 200,
+      "latency_ms": 64.54,
+      "result_count": 5,
+      "error": null
+    },
+    {
+      "phase": "measure",
+      "name": "v2_context_ma3_deploy",
+      "route": "/v2/agent/context",
+      "status": 200,
+      "latency_ms": 67.791,
+      "result_count": 7,
+      "error": null
+    },
+    {
+      "phase": "measure",
+      "name": "v2_context_client_upgrade",
+      "route": "/v2/agent/context",
+      "status": 200,
+      "latency_ms": 67.227,
+      "result_count": 7,
+      "error": null
+    },
+    {
+      "phase": "measure",
+      "name": "search_ma3_deploy_ltp",
+      "route": "/search",
+      "status": 200,
+      "latency_ms": 63.997,
+      "result_count": 5,
+      "error": null
+    },
+    {
+      "phase": "measure",
+      "name": "search_ltp_mpi_rdma",
+      "route": "/search",
+      "status": 200,
+      "latency_ms": 59.806,
+      "result_count": 5,
+      "error": null
+    },
+    {
+      "phase": "measure",
+      "name": "search_client_upgrade",
+      "route": "/search",
+      "status": 200,
+      "latency_ms": 65.629,
+      "result_count": 5,
+      "error": null
+    },
+    {
+      "phase": "measure",
+      "name": "search_broad_observability",
+      "route": "/search",
+      "status": 200,
+      "latency_ms": 61.881,
+      "result_count": 5,
+      "error": null
+    },
+    {
+      "phase": "measure",
+      "name": "search_zero_result",
+      "route": "/search",
+      "status": 200,
+      "latency_ms": 215.711,
+      "result_count": 3,
+      "error": null
+    },
+    {
+      "phase": "measure",
+      "name": "v2_explain_mpi_rdma",
+      "route": "/v2/search/explain",
+      "status": 200,
+      "latency_ms": 69.096,
+      "result_count": 5,
+      "error": null
+    },
+    {
+      "phase": "measure",
+      "name": "v2_context_ma3_deploy",
+      "route": "/v2/agent/context",
+      "status": 200,
+      "latency_ms": 65.942,
+      "result_count": 7,
+      "error": null
+    },
+    {
+      "phase": "measure",
+      "name": "v2_context_client_upgrade",
+      "route": "/v2/agent/context",
+      "status": 200,
+      "latency_ms": 66.02,
+      "result_count": 7,
+      "error": null
+    },
+    {
+      "phase": "measure",
+      "name": "search_ma3_deploy_ltp",
+      "route": "/search",
+      "status": 200,
+      "latency_ms": 63.509,
+      "result_count": 5,
+      "error": null
+    },
+    {
+      "phase": "measure",
+      "name": "search_ltp_mpi_rdma",
+      "route": "/search",
+      "status": 200,
+      "latency_ms": 59.809,
+      "result_count": 5,
+      "error": null
+    },
+    {
+      "phase": "measure",
+      "name": "search_client_upgrade",
+      "route": "/search",
+      "status": 200,
+      "latency_ms": 63.973,
+      "result_count": 5,
+      "error": null
+    },
+    {
+      "phase": "measure",
+      "name": "search_broad_observability",
+      "route": "/search",
+      "status": 200,
+      "latency_ms": 63.814,
+      "result_count": 5,
+      "error": null
+    },
+    {
+      "phase": "measure",
+      "name": "search_zero_result",
+      "route": "/search",
+      "status": 200,
+      "latency_ms": 197.493,
+      "result_count": 3,
+      "error": null
+    },
+    {
+      "phase": "measure",
+      "name": "v2_explain_mpi_rdma",
+      "route": "/v2/search/explain",
+      "status": 200,
+      "latency_ms": 68.08,
+      "result_count": 5,
+      "error": null
+    },
+    {
+      "phase": "measure",
+      "name": "v2_context_ma3_deploy",
+      "route": "/v2/agent/context",
+      "status": 200,
+      "latency_ms": 66.713,
+      "result_count": 7,
+      "error": null
+    },
+    {
+      "phase": "measure",
+      "name": "v2_context_client_upgrade",
+      "route": "/v2/agent/context",
+      "status": 200,
+      "latency_ms": 66.842,
+      "result_count": 7,
+      "error": null
+    },
+    {
+      "phase": "measure",
+      "name": "search_ma3_deploy_ltp",
+      "route": "/search",
+      "status": 200,
+      "latency_ms": 65.156,
+      "result_count": 5,
+      "error": null
+    },
+    {
+      "phase": "measure",
+      "name": "search_ltp_mpi_rdma",
+      "route": "/search",
+      "status": 200,
+      "latency_ms": 62.162,
+      "result_count": 5,
+      "error": null
+    },
+    {
+      "phase": "measure",
+      "name": "search_client_upgrade",
+      "route": "/search",
+      "status": 200,
+      "latency_ms": 64.993,
+      "result_count": 5,
+      "error": null
+    },
+    {
+      "phase": "measure",
+      "name": "search_broad_observability",
+      "route": "/search",
+      "status": 200,
+      "latency_ms": 63.156,
+      "result_count": 5,
+      "error": null
+    },
+    {
+      "phase": "measure",
+      "name": "search_zero_result",
+      "route": "/search",
+      "status": 200,
+      "latency_ms": 198.874,
+      "result_count": 3,
+      "error": null
+    },
+    {
+      "phase": "measure",
+      "name": "v2_explain_mpi_rdma",
+      "route": "/v2/search/explain",
+      "status": 200,
+      "latency_ms": 64.102,
+      "result_count": 5,
+      "error": null
+    },
+    {
+      "phase": "measure",
+      "name": "v2_context_ma3_deploy",
+      "route": "/v2/agent/context",
+      "status": 200,
+      "latency_ms": 67.937,
+      "result_count": 7,
+      "error": null
+    },
+    {
+      "phase": "measure",
+      "name": "v2_context_client_upgrade",
+      "route": "/v2/agent/context",
+      "status": 200,
+      "latency_ms": 65.773,
+      "result_count": 7,
+      "error": null
+    },
+    {
+      "phase": "measure",
+      "name": "search_ma3_deploy_ltp",
+      "route": "/search",
+      "status": 200,
+      "latency_ms": 64.4,
+      "result_count": 5,
+      "error": null
+    },
+    {
+      "phase": "measure",
+      "name": "search_ltp_mpi_rdma",
+      "route": "/search",
+      "status": 200,
+      "latency_ms": 61.875,
+      "result_count": 5,
+      "error": null
+    },
+    {
+      "phase": "measure",
+      "name": "search_client_upgrade",
+      "route": "/search",
+      "status": 200,
+      "latency_ms": 64.997,
+      "result_count": 5,
+      "error": null
+    },
+    {
+      "phase": "measure",
+      "name": "search_broad_observability",
+      "route": "/search",
+      "status": 200,
+      "latency_ms": 62.621,
+      "result_count": 5,
+      "error": null
+    },
+    {
+      "phase": "measure",
+      "name": "search_zero_result",
+      "route": "/search",
+      "status": 200,
+      "latency_ms": 196.69,
+      "result_count": 3,
+      "error": null
+    },
+    {
+      "phase": "measure",
+      "name": "v2_explain_mpi_rdma",
+      "route": "/v2/search/explain",
+      "status": 200,
+      "latency_ms": 64.62,
+      "result_count": 5,
+      "error": null
+    },
+    {
+      "phase": "measure",
+      "name": "v2_context_ma3_deploy",
+      "route": "/v2/agent/context",
+      "status": 200,
+      "latency_ms": 66.378,
+      "result_count": 7,
+      "error": null
+    },
+    {
+      "phase": "measure",
+      "name": "v2_context_client_upgrade",
+      "route": "/v2/agent/context",
+      "status": 200,
+      "latency_ms": 66.815,
+      "result_count": 7,
+      "error": null
+    },
+    {
+      "phase": "measure",
+      "name": "search_ma3_deploy_ltp",
+      "route": "/search",
+      "status": 200,
+      "latency_ms": 66.178,
+      "result_count": 5,
+      "error": null
+    },
+    {
+      "phase": "measure",
+      "name": "search_ltp_mpi_rdma",
+      "route": "/search",
+      "status": 200,
+      "latency_ms": 61.239,
+      "result_count": 5,
+      "error": null
+    },
+    {
+      "phase": "measure",
+      "name": "search_client_upgrade",
+      "route": "/search",
+      "status": 200,
+      "latency_ms": 66.812,
+      "result_count": 5,
+      "error": null
+    },
+    {
+      "phase": "measure",
+      "name": "search_broad_observability",
+      "route": "/search",
+      "status": 200,
+      "latency_ms": 62.818,
+      "result_count": 5,
+      "error": null
+    },
+    {
+      "phase": "measure",
+      "name": "search_zero_result",
+      "route": "/search",
+      "status": 200,
+      "latency_ms": 215.638,
+      "result_count": 3,
+      "error": null
+    },
+    {
+      "phase": "measure",
+      "name": "v2_explain_mpi_rdma",
+      "route": "/v2/search/explain",
+      "status": 200,
+      "latency_ms": 65.675,
+      "result_count": 5,
+      "error": null
+    },
+    {
+      "phase": "measure",
+      "name": "v2_context_ma3_deploy",
+      "route": "/v2/agent/context",
+      "status": 200,
+      "latency_ms": 67.512,
+      "result_count": 7,
+      "error": null
+    },
+    {
+      "phase": "measure",
+      "name": "v2_context_client_upgrade",
+      "route": "/v2/agent/context",
+      "status": 200,
+      "latency_ms": 67.358,
+      "result_count": 7,
+      "error": null
+    },
+    {
+      "phase": "measure",
+      "name": "search_ma3_deploy_ltp",
+      "route": "/search",
+      "status": 200,
+      "latency_ms": 63.783,
+      "result_count": 5,
+      "error": null
+    },
+    {
+      "phase": "measure",
+      "name": "search_ltp_mpi_rdma",
+      "route": "/search",
+      "status": 200,
+      "latency_ms": 61.894,
+      "result_count": 5,
+      "error": null
+    },
+    {
+      "phase": "measure",
+      "name": "search_client_upgrade",
+      "route": "/search",
+      "status": 200,
+      "latency_ms": 65.855,
+      "result_count": 5,
+      "error": null
+    },
+    {
+      "phase": "measure",
+      "name": "search_broad_observability",
+      "route": "/search",
+      "status": 200,
+      "latency_ms": 64.021,
+      "result_count": 5,
+      "error": null
+    },
+    {
+      "phase": "measure",
+      "name": "search_zero_result",
+      "route": "/search",
+      "status": 200,
+      "latency_ms": 195.907,
+      "result_count": 3,
+      "error": null
+    },
+    {
+      "phase": "measure",
+      "name": "v2_explain_mpi_rdma",
+      "route": "/v2/search/explain",
+      "status": 200,
+      "latency_ms": 63.817,
+      "result_count": 5,
+      "error": null
+    },
+    {
+      "phase": "measure",
+      "name": "v2_context_ma3_deploy",
+      "route": "/v2/agent/context",
+      "status": 200,
+      "latency_ms": 66.469,
+      "result_count": 7,
+      "error": null
+    },
+    {
+      "phase": "measure",
+      "name": "v2_context_client_upgrade",
+      "route": "/v2/agent/context",
+      "status": 200,
+      "latency_ms": 66.333,
+      "result_count": 7,
+      "error": null
+    },
+    {
+      "phase": "measure",
+      "name": "search_ma3_deploy_ltp",
+      "route": "/search",
+      "status": 200,
+      "latency_ms": 64.777,
+      "result_count": 5,
+      "error": null
+    },
+    {
+      "phase": "measure",
+      "name": "search_ltp_mpi_rdma",
+      "route": "/search",
+      "status": 200,
+      "latency_ms": 60.767,
+      "result_count": 5,
+      "error": null
+    },
+    {
+      "phase": "measure",
+      "name": "search_client_upgrade",
+      "route": "/search",
+      "status": 200,
+      "latency_ms": 65.223,
+      "result_count": 5,
+      "error": null
+    },
+    {
+      "phase": "measure",
+      "name": "search_broad_observability",
+      "route": "/search",
+      "status": 200,
+      "latency_ms": 62.276,
+      "result_count": 5,
+      "error": null
+    },
+    {
+      "phase": "measure",
+      "name": "search_zero_result",
+      "route": "/search",
+      "status": 200,
+      "latency_ms": 195.398,
+      "result_count": 3,
+      "error": null
+    },
+    {
+      "phase": "measure",
+      "name": "v2_explain_mpi_rdma",
+      "route": "/v2/search/explain",
+      "status": 200,
+      "latency_ms": 63.989,
+      "result_count": 5,
+      "error": null
+    },
+    {
+      "phase": "measure",
+      "name": "v2_context_ma3_deploy",
+      "route": "/v2/agent/context",
+      "status": 200,
+      "latency_ms": 66.2,
+      "result_count": 7,
+      "error": null
+    },
+    {
+      "phase": "measure",
+      "name": "v2_context_client_upgrade",
+      "route": "/v2/agent/context",
+      "status": 200,
+      "latency_ms": 66.366,
+      "result_count": 7,
+      "error": null
+    },
+    {
+      "phase": "measure",
+      "name": "search_ma3_deploy_ltp",
+      "route": "/search",
+      "status": 200,
+      "latency_ms": 66.499,
+      "result_count": 5,
+      "error": null
+    },
+    {
+      "phase": "measure",
+      "name": "search_ltp_mpi_rdma",
+      "route": "/search",
+      "status": 200,
+      "latency_ms": 61.466,
+      "result_count": 5,
+      "error": null
+    },
+    {
+      "phase": "measure",
+      "name": "search_client_upgrade",
+      "route": "/search",
+      "status": 200,
+      "latency_ms": 64.914,
+      "result_count": 5,
+      "error": null
+    },
+    {
+      "phase": "measure",
+      "name": "search_broad_observability",
+      "route": "/search",
+      "status": 200,
+      "latency_ms": 62.32,
+      "result_count": 5,
+      "error": null
+    },
+    {
+      "phase": "measure",
+      "name": "search_zero_result",
+      "route": "/search",
+      "status": 200,
+      "latency_ms": 197.387,
+      "result_count": 3,
+      "error": null
+    },
+    {
+      "phase": "measure",
+      "name": "v2_explain_mpi_rdma",
+      "route": "/v2/search/explain",
+      "status": 200,
+      "latency_ms": 64.322,
+      "result_count": 5,
+      "error": null
+    },
+    {
+      "phase": "measure",
+      "name": "v2_context_ma3_deploy",
+      "route": "/v2/agent/context",
+      "status": 200,
+      "latency_ms": 68.739,
+      "result_count": 7,
+      "error": null
+    },
+    {
+      "phase": "measure",
+      "name": "v2_context_client_upgrade",
+      "route": "/v2/agent/context",
+      "status": 200,
+      "latency_ms": 66.08,
+      "result_count": 7,
+      "error": null
+    },
+    {
+      "phase": "measure",
+      "name": "search_ma3_deploy_ltp",
+      "route": "/search",
+      "status": 200,
+      "latency_ms": 64.138,
+      "result_count": 5,
+      "error": null
+    },
+    {
+      "phase": "measure",
+      "name": "search_ltp_mpi_rdma",
+      "route": "/search",
+      "status": 200,
+      "latency_ms": 60.904,
+      "result_count": 5,
+      "error": null
+    },
+    {
+      "phase": "measure",
+      "name": "search_client_upgrade",
+      "route": "/search",
+      "status": 200,
+      "latency_ms": 64.487,
+      "result_count": 5,
+      "error": null
+    },
+    {
+      "phase": "measure",
+      "name": "search_broad_observability",
+      "route": "/search",
+      "status": 200,
+      "latency_ms": 62.157,
+      "result_count": 5,
+      "error": null
+    },
+    {
+      "phase": "measure",
+      "name": "search_zero_result",
+      "route": "/search",
+      "status": 200,
+      "latency_ms": 216.73,
+      "result_count": 3,
+      "error": null
+    },
+    {
+      "phase": "measure",
+      "name": "v2_explain_mpi_rdma",
+      "route": "/v2/search/explain",
+      "status": 200,
+      "latency_ms": 66.526,
+      "result_count": 5,
+      "error": null
+    },
+    {
+      "phase": "measure",
+      "name": "v2_context_ma3_deploy",
+      "route": "/v2/agent/context",
+      "status": 200,
+      "latency_ms": 66.461,
+      "result_count": 7,
+      "error": null
+    },
+    {
+      "phase": "measure",
+      "name": "v2_context_client_upgrade",
+      "route": "/v2/agent/context",
+      "status": 200,
+      "latency_ms": 65.477,
+      "result_count": 7,
+      "error": null
+    },
+    {
+      "phase": "measure",
+      "name": "search_ma3_deploy_ltp",
+      "route": "/search",
+      "status": 200,
+      "latency_ms": 64.264,
+      "result_count": 5,
+      "error": null
+    },
+    {
+      "phase": "measure",
+      "name": "search_ltp_mpi_rdma",
+      "route": "/search",
+      "status": 200,
+      "latency_ms": 60.687,
+      "result_count": 5,
+      "error": null
+    },
+    {
+      "phase": "measure",
+      "name": "search_client_upgrade",
+      "route": "/search",
+      "status": 200,
+      "latency_ms": 65.7,
+      "result_count": 5,
+      "error": null
+    },
+    {
+      "phase": "measure",
+      "name": "search_broad_observability",
+      "route": "/search",
+      "status": 200,
+      "latency_ms": 62.141,
+      "result_count": 5,
+      "error": null
+    },
+    {
+      "phase": "measure",
+      "name": "search_zero_result",
+      "route": "/search",
+      "status": 200,
+      "latency_ms": 196.594,
+      "result_count": 3,
+      "error": null
+    },
+    {
+      "phase": "measure",
+      "name": "v2_explain_mpi_rdma",
+      "route": "/v2/search/explain",
+      "status": 200,
+      "latency_ms": 64.488,
+      "result_count": 5,
+      "error": null
+    },
+    {
+      "phase": "measure",
+      "name": "v2_context_ma3_deploy",
+      "route": "/v2/agent/context",
+      "status": 200,
+      "latency_ms": 66.469,
+      "result_count": 7,
+      "error": null
+    },
+    {
+      "phase": "measure",
+      "name": "v2_context_client_upgrade",
+      "route": "/v2/agent/context",
+      "status": 200,
+      "latency_ms": 65.95,
+      "result_count": 7,
+      "error": null
+    },
+    {
+      "phase": "measure",
+      "name": "search_ma3_deploy_ltp",
+      "route": "/search",
+      "status": 200,
+      "latency_ms": 64.84,
+      "result_count": 5,
+      "error": null
+    },
+    {
+      "phase": "measure",
+      "name": "search_ltp_mpi_rdma",
+      "route": "/search",
+      "status": 200,
+      "latency_ms": 61.07,
+      "result_count": 5,
+      "error": null
+    },
+    {
+      "phase": "measure",
+      "name": "search_client_upgrade",
+      "route": "/search",
+      "status": 200,
+      "latency_ms": 64.504,
+      "result_count": 5,
+      "error": null
+    },
+    {
+      "phase": "measure",
+      "name": "search_broad_observability",
+      "route": "/search",
+      "status": 200,
+      "latency_ms": 61.863,
+      "result_count": 5,
+      "error": null
+    },
+    {
+      "phase": "measure",
+      "name": "search_zero_result",
+      "route": "/search",
+      "status": 200,
+      "latency_ms": 193.064,
+      "result_count": 3,
+      "error": null
+    },
+    {
+      "phase": "measure",
+      "name": "v2_explain_mpi_rdma",
+      "route": "/v2/search/explain",
+      "status": 200,
+      "latency_ms": 63.149,
+      "result_count": 5,
+      "error": null
+    },
+    {
+      "phase": "measure",
+      "name": "v2_context_ma3_deploy",
+      "route": "/v2/agent/context",
+      "status": 200,
+      "latency_ms": 66.434,
+      "result_count": 7,
+      "error": null
+    },
+    {
+      "phase": "measure",
+      "name": "v2_context_client_upgrade",
+      "route": "/v2/agent/context",
+      "status": 200,
+      "latency_ms": 65.352,
+      "result_count": 7,
+      "error": null
+    },
+    {
+      "phase": "measure",
+      "name": "search_ma3_deploy_ltp",
+      "route": "/search",
+      "status": 200,
+      "latency_ms": 63.649,
+      "result_count": 5,
+      "error": null
+    },
+    {
+      "phase": "measure",
+      "name": "search_ltp_mpi_rdma",
+      "route": "/search",
+      "status": 200,
+      "latency_ms": 60.596,
+      "result_count": 5,
+      "error": null
+    },
+    {
+      "phase": "measure",
+      "name": "search_client_upgrade",
+      "route": "/search",
+      "status": 200,
+      "latency_ms": 64.218,
+      "result_count": 5,
+      "error": null
+    },
+    {
+      "phase": "measure",
+      "name": "search_broad_observability",
+      "route": "/search",
+      "status": 200,
+      "latency_ms": 61.752,
+      "result_count": 5,
+      "error": null
+    },
+    {
+      "phase": "measure",
+      "name": "search_zero_result",
+      "route": "/search",
+      "status": 200,
+      "latency_ms": 194.676,
+      "result_count": 3,
+      "error": null
+    },
+    {
+      "phase": "measure",
+      "name": "v2_explain_mpi_rdma",
+      "route": "/v2/search/explain",
+      "status": 200,
+      "latency_ms": 63.943,
+      "result_count": 5,
+      "error": null
+    },
+    {
+      "phase": "measure",
+      "name": "v2_context_ma3_deploy",
+      "route": "/v2/agent/context",
+      "status": 200,
+      "latency_ms": 66.005,
+      "result_count": 7,
+      "error": null
+    },
+    {
+      "phase": "measure",
+      "name": "v2_context_client_upgrade",
+      "route": "/v2/agent/context",
+      "status": 200,
+      "latency_ms": 65.514,
+      "result_count": 7,
+      "error": null
+    },
+    {
+      "phase": "measure",
+      "name": "search_ma3_deploy_ltp",
+      "route": "/search",
+      "status": 200,
+      "latency_ms": 64.258,
+      "result_count": 5,
+      "error": null
+    },
+    {
+      "phase": "measure",
+      "name": "search_ltp_mpi_rdma",
+      "route": "/search",
+      "status": 200,
+      "latency_ms": 61.153,
+      "result_count": 5,
+      "error": null
+    },
+    {
+      "phase": "measure",
+      "name": "search_client_upgrade",
+      "route": "/search",
+      "status": 200,
+      "latency_ms": 64.635,
+      "result_count": 5,
+      "error": null
+    },
+    {
+      "phase": "measure",
+      "name": "search_broad_observability",
+      "route": "/search",
+      "status": 200,
+      "latency_ms": 62.085,
+      "result_count": 5,
+      "error": null
+    },
+    {
+      "phase": "measure",
+      "name": "search_zero_result",
+      "route": "/search",
+      "status": 200,
+      "latency_ms": 215.991,
+      "result_count": 3,
+      "error": null
+    },
+    {
+      "phase": "measure",
+      "name": "v2_explain_mpi_rdma",
+      "route": "/v2/search/explain",
+      "status": 200,
+      "latency_ms": 63.32,
+      "result_count": 5,
+      "error": null
+    },
+    {
+      "phase": "measure",
+      "name": "v2_context_ma3_deploy",
+      "route": "/v2/agent/context",
+      "status": 200,
+      "latency_ms": 66.758,
+      "result_count": 7,
+      "error": null
+    },
+    {
+      "phase": "measure",
+      "name": "v2_context_client_upgrade",
+      "route": "/v2/agent/context",
+      "status": 200,
+      "latency_ms": 65.356,
+      "result_count": 7,
+      "error": null
+    },
+    {
+      "phase": "measure",
+      "name": "search_ma3_deploy_ltp",
+      "route": "/search",
+      "status": 200,
+      "latency_ms": 63.904,
+      "result_count": 5,
+      "error": null
+    },
+    {
+      "phase": "measure",
+      "name": "search_ltp_mpi_rdma",
+      "route": "/search",
+      "status": 200,
+      "latency_ms": 60.838,
+      "result_count": 5,
+      "error": null
+    },
+    {
+      "phase": "measure",
+      "name": "search_client_upgrade",
+      "route": "/search",
+      "status": 200,
+      "latency_ms": 64.651,
+      "result_count": 5,
+      "error": null
+    },
+    {
+      "phase": "measure",
+      "name": "search_broad_observability",
+      "route": "/search",
+      "status": 200,
+      "latency_ms": 61.979,
+      "result_count": 5,
+      "error": null
+    },
+    {
+      "phase": "measure",
+      "name": "search_zero_result",
+      "route": "/search",
+      "status": 200,
+      "latency_ms": 193.662,
+      "result_count": 3,
+      "error": null
+    },
+    {
+      "phase": "measure",
+      "name": "v2_explain_mpi_rdma",
+      "route": "/v2/search/explain",
+      "status": 200,
+      "latency_ms": 63.652,
+      "result_count": 5,
+      "error": null
+    },
+    {
+      "phase": "measure",
+      "name": "v2_context_ma3_deploy",
+      "route": "/v2/agent/context",
+      "status": 200,
+      "latency_ms": 66.334,
+      "result_count": 7,
+      "error": null
+    },
+    {
+      "phase": "measure",
+      "name": "v2_context_client_upgrade",
+      "route": "/v2/agent/context",
+      "status": 200,
+      "latency_ms": 65.722,
+      "result_count": 7,
+      "error": null
+    },
+    {
+      "phase": "measure",
+      "name": "search_ma3_deploy_ltp",
+      "route": "/search",
+      "status": 200,
+      "latency_ms": 63.787,
+      "result_count": 5,
+      "error": null
+    },
+    {
+      "phase": "measure",
+      "name": "search_ltp_mpi_rdma",
+      "route": "/search",
+      "status": 200,
+      "latency_ms": 60.868,
+      "result_count": 5,
+      "error": null
+    },
+    {
+      "phase": "measure",
+      "name": "search_client_upgrade",
+      "route": "/search",
+      "status": 200,
+      "latency_ms": 64.428,
+      "result_count": 5,
+      "error": null
+    },
+    {
+      "phase": "measure",
+      "name": "search_broad_observability",
+      "route": "/search",
+      "status": 200,
+      "latency_ms": 61.719,
+      "result_count": 5,
+      "error": null
+    },
+    {
+      "phase": "measure",
+      "name": "search_zero_result",
+      "route": "/search",
+      "status": 200,
+      "latency_ms": 193.072,
+      "result_count": 3,
+      "error": null
+    },
+    {
+      "phase": "measure",
+      "name": "v2_explain_mpi_rdma",
+      "route": "/v2/search/explain",
+      "status": 200,
+      "latency_ms": 64.411,
+      "result_count": 5,
+      "error": null
+    },
+    {
+      "phase": "measure",
+      "name": "v2_context_ma3_deploy",
+      "route": "/v2/agent/context",
+      "status": 200,
+      "latency_ms": 66.155,
+      "result_count": 7,
+      "error": null
+    },
+    {
+      "phase": "measure",
+      "name": "v2_context_client_upgrade",
+      "route": "/v2/agent/context",
+      "status": 200,
+      "latency_ms": 65.776,
+      "result_count": 7,
+      "error": null
+    },
+    {
+      "phase": "measure",
+      "name": "search_ma3_deploy_ltp",
+      "route": "/search",
+      "status": 200,
+      "latency_ms": 64.222,
+      "result_count": 5,
+      "error": null
+    },
+    {
+      "phase": "measure",
+      "name": "search_ltp_mpi_rdma",
+      "route": "/search",
+      "status": 200,
+      "latency_ms": 61.105,
+      "result_count": 5,
+      "error": null
+    },
+    {
+      "phase": "measure",
+      "name": "search_client_upgrade",
+      "route": "/search",
+      "status": 200,
+      "latency_ms": 64.222,
+      "result_count": 5,
+      "error": null
+    },
+    {
+      "phase": "measure",
+      "name": "search_broad_observability",
+      "route": "/search",
+      "status": 200,
+      "latency_ms": 61.793,
+      "result_count": 5,
+      "error": null
+    },
+    {
+      "phase": "measure",
+      "name": "search_zero_result",
+      "route": "/search",
+      "status": 200,
+      "latency_ms": 193.457,
+      "result_count": 3,
+      "error": null
+    },
+    {
+      "phase": "measure",
+      "name": "v2_explain_mpi_rdma",
+      "route": "/v2/search/explain",
+      "status": 200,
+      "latency_ms": 63.457,
+      "result_count": 5,
+      "error": null
+    },
+    {
+      "phase": "measure",
+      "name": "v2_context_ma3_deploy",
+      "route": "/v2/agent/context",
+      "status": 200,
+      "latency_ms": 66.309,
+      "result_count": 7,
+      "error": null
+    },
+    {
+      "phase": "measure",
+      "name": "v2_context_client_upgrade",
+      "route": "/v2/agent/context",
+      "status": 200,
+      "latency_ms": 65.327,
+      "result_count": 7,
+      "error": null
+    }
+  ]
+}
