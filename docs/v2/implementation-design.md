@@ -671,8 +671,9 @@ A change is not complete until tests or an explicit manual acceptance checklist 
 - Remote MCP compact-output and `include_full_json=true` modes return stable schemas for search/context, write, and case tools
 - Remote MCP `ma3_doctor` distinguishes missing auth, invalid token, permission mismatch, server health, index health, TLS, and network failures
 - Remote MCP operation logs and metrics record tool name/status/latency/query hash without token material
-- CLI doctor identifies missing auth, invalid token, TLS failure, and network failure
-- Codex remote MCP flow verifies the ma3 tool is visible and can call v2 context/report when credentials exist
+- CLI doctor identifies missing auth, invalid token, TLS failure, and network failure. Until automated pytest coverage exists this is verified through the manual acceptance checklist in `server/tests/scripts/api_key_auth_smoke_test.py` and `server/tests/scripts/e2e_http_integration_cases.py`, run before each cutover.
+- Codex remote MCP flow verifies the ma3 tool is visible and can call v2 context/report when credentials exist. Until host-runtime CI exists this is verified through the manual acceptance checklist documented in `client/AGENTS.md` (post-warmup `ma3_doctor`, `ma3_context`, `ma3_report` smoke).
+- LTP bootstrap static checks: `bash -n deploy/ltp/bootstrap_ma3_ltp.sh` and the static-inspection items in §13.3.1 (CephFS keyring identity, mountpoint wait, healthz/`/v2/doctor` identity gate, PGPORT detection, `--set=ma3_password` password parameter, JSONB normalization SQL) are verified by `server/tests/unit/test_db_backend.py` (JSONB SQL) and by a pre-submission manual acceptance checklist in `deploy/ltp/README.md` for the bash/template assertions until they migrate into pytest.
 
 ### Performance tests
 
@@ -698,7 +699,7 @@ Expected server additions:
 - `server/app/services/metrics_service.py`
 - `server/app/services/doctor_service.py`
 - `server/app/storage/v2_repositories.py`
-- `server/scripts/migrate_v2_cases.py`
+- `server/scripts/migrate_v1_to_v2_cases.py`
 
 Expected client/tool additions:
 
@@ -946,15 +947,21 @@ The first web UI should be a lightweight static frontend served by FastAPI under
 
 ### 14.2 Additional APIs
 
-Add these APIs before or alongside the UI:
+Implemented alongside the MVP UI:
 
 - `GET /v2/topics`: topic distribution and coverage metrics.
 - `GET /v2/cases?topic_kind=product|component|tag|problem_family&topic=...&limit=...&offset=...`: filtered case list for topic drill-down. The filter is applied to case metadata and to records assigned to each case, so migrated cases remain discoverable even if the case-level tags are sparse.
+- `PATCH /v2/cases/{case_id}`: covers title/summary/state/canonical_record_id/tags edits used by lightweight curation.
+
+Deferred (planned for the Review Workflow iteration in §14.5; not required for the MVP UI to function):
+
 - `GET /v2/graph?case_id=...|record_id=...|q=...`: 1-2 hop knowledge graph for selected objects.
 - `PATCH /v2/records/{record_id}/review`: curation actions such as stale, verification level, tags, and summary edits.
-- `PATCH /v2/cases/{case_id}/canonical-record`: set the canonical record.
+- `PATCH /v2/cases/{case_id}/canonical-record`: dedicated canonical-record setter (currently available through the generic `PATCH /v2/cases/{case_id}` until the dedicated route lands).
 - `POST /v2/cases/{case_id}/merge`: merge duplicate cases.
 - `POST /v2/cases/{case_id}/relations`: add case/record relations.
+
+A change to enable any deferred endpoint must update this section, add tests per §10, and ship before the corresponding UI control is exposed.
 
 ### 14.3 Frontend Choice
 
