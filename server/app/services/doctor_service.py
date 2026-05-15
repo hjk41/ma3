@@ -57,6 +57,8 @@ def server_doctor() -> dict:
             "v2_stats",
             "v2_metrics",
             "v2_doctor",
+            "remote_mcp",
         ],
+        "mcp": {"endpoint": "/mcp", "transport": "streamable-http-jsonrpc", "tool_schema_version": "ma3.mcp.v1"},
         "checks": checks,
     }

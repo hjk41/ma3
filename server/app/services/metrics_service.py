@@ -19,6 +19,9 @@ class MetricsRegistry:
         self.search_stage_durations: dict[tuple[str, str], list[float]] = defaultdict(list)
         self.db_queries: dict[tuple[str, str], int] = defaultdict(int)
         self.db_connection_checkouts: dict[str, int] = defaultdict(int)
+        self.mcp_tool_calls: dict[tuple[str, str], int] = defaultdict(int)
+        self.mcp_tool_durations: dict[str, list[float]] = defaultdict(list)
+        self.mcp_tool_errors: dict[tuple[str, str], int] = defaultdict(int)
 
     def record_http(self, method: str, route: str, status: int, duration: float) -> None:
         with self._lock:
@@ -52,6 +55,13 @@ class MetricsRegistry:
                 self.db_queries[(route, operation)] += int(count)
             self.db_connection_checkouts[route] += int(summary.get("db_connection_checkout_count") or 0)
 
+    def record_mcp_tool(self, tool: str, status: str, duration: float, error_type: str | None = None) -> None:
+        with self._lock:
+            self.mcp_tool_calls[(tool, status)] += 1
+            self.mcp_tool_durations[tool].append(duration)
+            if error_type:
+                self.mcp_tool_errors[(tool, error_type)] += 1
+
     def render_prometheus(self) -> str:
         lines = [
             "# HELP ma3_http_requests_total HTTP requests by route, method, and status.",
@@ -67,6 +77,21 @@ class MetricsRegistry:
             for (route, method), values in sorted(self.http_durations.items()):
                 lines.append(f'ma3_http_request_duration_seconds_count{{route="{route}",method="{method}"}} {len(values)}')
                 lines.append(f'ma3_http_request_duration_seconds_sum{{route="{route}",method="{method}"}} {sum(values):.6f}')
+            lines.extend([
+                "# HELP ma3_mcp_tool_calls_total Remote MCP tool calls by tool and status.",
+                "# TYPE ma3_mcp_tool_calls_total counter",
+            ])
+            for (tool, status), value in sorted(self.mcp_tool_calls.items()):
+                lines.append(f'ma3_mcp_tool_calls_total{{tool="{tool}",status="{status}"}} {value}')
+            lines.extend([
+                "# HELP ma3_mcp_tool_duration_seconds_sum Remote MCP tool duration sum.",
+                "# TYPE ma3_mcp_tool_duration_seconds_sum counter",
+            ])
+            for tool, values in sorted(self.mcp_tool_durations.items()):
+                lines.append(f'ma3_mcp_tool_duration_seconds_count{{tool="{tool}"}} {len(values)}')
+                lines.append(f'ma3_mcp_tool_duration_seconds_sum{{tool="{tool}"}} {sum(values):.6f}')
+            for (tool, error_type), value in sorted(self.mcp_tool_errors.items()):
+                lines.append(f'ma3_mcp_tool_errors_total{{tool="{tool}",error_type="{error_type}"}} {value}')
             lines.extend([
                 "# HELP ma3_search_requests_total Search requests by candidate path.",
                 "# TYPE ma3_search_requests_total counter",

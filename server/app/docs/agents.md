@@ -19,6 +19,23 @@ When working on ma3 itself, follow these rules:
 - **Keep design docs current.** After implementation, ensure the design document still matches the actual behavior, interfaces, defaults, and known limitations.
 - **Every design must have corresponding tests.** Each design section must define how it is verified: unit, API, integration, migration, performance, observability, or manual acceptance tests. Do not consider an implementation complete unless its tests cover the design intent and important failure modes.
 
+## Production Cutover Rule
+
+When moving `ma3.zhilicon.com` to a new LTP-backed ma3 instance, treat it as a production-impacting change and follow the documented cutover checklist in `deploy/ltp/README.md` before touching DNS or nginx.
+
+Required order:
+
+1. Confirm the target instance is the intended one and record its job name, backend IP/port, `MA3_INSTANCE_ID`, and `MA3_GIT_COMMIT`.
+2. Freeze or stop v1 writes for the final backup window unless the designer explicitly accepted possible write loss.
+3. Restore the final backup into the target instance and compare counts / migration report.
+4. Verify the target directly via `/healthz`, `/v2/doctor`, `/client/manifest.json`, and `/ui/overview`.
+5. Pre-validate HTTPS via dns-manager ACME DNS-01 so the cutover window only changes the backend and reloads nginx.
+6. Update the `ma3` record in dns-manager, run `nginx -t`, then reload nginx.
+7. Verify `https://ma3.zhilicon.com/healthz`, `/v2/doctor`, `/client/manifest.json`, `/ui/overview`, and one authenticated `/v2/search/explain`.
+8. Install or refresh the v2 backup cron on the target and keep the old backend available for rollback until post-cutover checks pass.
+
+Rollback must be a reverse dns-manager upstream change followed by `nginx -t` and reload.
+
 ## Naming
 
 ma3 is also referred to as `马妈妈` in Chinese instructions.

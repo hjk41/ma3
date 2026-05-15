@@ -12,7 +12,7 @@ v2 is a breaking redesign. It keeps the product goal—verified institutional me
 
 ## 2. Goals
 
-- Make the fast path for agents a single long-lived tool service call, not multiple standalone CLI calls.
+- Make the fast path for agents a single remote MCP tool call, not multiple standalone CLI calls or a per-host local daemon.
 - Make search and storage behavior explainable and measurable.
 - Introduce a first-class Case/Thread model so that multiple records about the same underlying issue are grouped and evolved together.
 - Treat PostgreSQL as the production storage and search path.
@@ -30,15 +30,17 @@ v2 is a breaking redesign. It keeps the product goal—verified institutional me
 ```text
 Agent / Codex / Claude
         |
-        | MCP / tool calls (primary)
+        | remote MCP / tool calls (primary)
         v
-ma3 local tool service
-  - keeps warm process state
-  - caches server metadata and recent reads
-  - batches workflow calls
+ma3 remote MCP server
+  - hosted with the ma3 service
+  - exposes typed agent tools
+  - centralizes auth, endpoint config, versioning, and observability
+  - keeps warm server-side process state and caches safe metadata
+  - batches workflow calls and record/case reads
   - exposes doctor/whoami
         |
-        | v2 HTTP API
+        | internal service calls / v2 HTTP API
         v
 ma3 server
   - workflow API
@@ -56,7 +58,9 @@ PostgreSQL
   - request/search event summaries
 ```
 
-The CLI remains as a wrapper for installation, diagnostics, one-shot manual use, and environments that do not support MCP/tool services. It is no longer the primary high-frequency agent path.
+The CLI remains as a wrapper for diagnostics, one-shot manual use, bootstrap, and environments that do not support remote MCP. It is no longer the primary high-frequency agent path.
+
+The v2 design intentionally chooses a **remote MCP server** over a local MCP daemon. This centralizes upgrades, authentication policy, metrics, and tool schema evolution in the production ma3 deployment. Agents that support remote MCP can connect directly to the ma3 MCP endpoint without installing or keeping a local background process warm.
 
 ## 5. Core Concepts
 
@@ -95,7 +99,7 @@ Relations are used for explanation, search grouping, and case evolution, not jus
 
 The primary v2 agent path is:
 
-1. Agent calls the ma3 tool service with a task description and environment fingerprint.
+1. Agent calls the remote ma3 MCP server with a task description and environment fingerprint.
 2. ma3 returns:
    - best records
    - relevant cases
@@ -108,6 +112,8 @@ The primary v2 agent path is:
 5. Server assigns the new record to a case automatically when no explicit case is supplied.
 
 This replaces the v1 pattern of separate `search`, `get-record`, and `ingest` client invocations.
+
+The remote MCP layer is responsible for translating compact, schema-validated tool arguments into the v2 workflow APIs. Agents should not need to construct full ma3 JSON payloads or know which HTTP endpoints are involved.
 
 ## 7. Transparency and Observability
 
@@ -136,7 +142,7 @@ v2 is allowed to break v1 interfaces, but migration should be explicit:
 
 ## 10. Success Criteria
 
-- A normal agent lookup and write-back flow can be completed through the v2 tool service without repeated standalone CLI calls.
+- A normal agent lookup and write-back flow can be completed through the remote MCP server without repeated standalone CLI calls or local JSON payload files.
 - Operators can answer “what is in ma3?” and “why did search return this?” via APIs and metrics.
 - Related experiences are grouped under cases and visible as evolution threads.
 - Search avoids known N+1 relation/feedback loading patterns.

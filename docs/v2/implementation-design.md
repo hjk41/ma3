@@ -14,10 +14,10 @@
 - Add migration/backfill from v1 records and relations.
 - Add case assignment service with deterministic, explainable recommendation output.
 
-### Phase 3: Workflow API and Tool Service
+### Phase 3: Workflow API and Remote MCP Server
 
 - Add aggregated agent workflow APIs.
-- Add MCP/tool service as the primary agent interface.
+- Add the remote MCP server as the primary agent interface.
 - Keep CLI as wrapper for diagnostics and manual one-shot commands.
 
 ### Phase 4: Transparency and Metrics
@@ -28,7 +28,10 @@
 
 ## 2. Public API Design
 
-All v2 server APIs live under `/v2`. v1 APIs may remain during transition but are not the primary contract.
+All v2 HTTP APIs live under `/v2`. The remote MCP endpoint is exposed separately
+at `/mcp` because it follows the MCP transport contract rather than the ma3 REST
+API contract. v1 APIs may remain during transition but are not the primary
+contract.
 
 ### 2.1 Agent Workflow
 
@@ -127,13 +130,13 @@ Response fields:
 Server-side health and compatibility details:
 
 - service version
-- min supported tool version
+- min supported MCP/tool version
 - database backend
 - migration status
 - index status
 - metrics enabled
 
-Tool service and CLI `doctor` should additionally test:
+Remote MCP `ma3_doctor` and CLI `doctor` should additionally test:
 
 - endpoint reachability
 - DNS/network failure
@@ -311,28 +314,127 @@ The UI should display these fields so a user can see why an expected case was be
 
 Raw problem text remains excluded from persistent operation logs by default. Query replay may store normalized tags/target/task type/result IDs and score summaries, but raw prompt retention must remain explicit and visible in `/v2/doctor`.
 
-## 6. MCP / Tool Service
+## 6. Remote MCP Server
 
-The v2 local tool service is the primary integration point for agents.
+The v2 remote MCP server is the primary integration point for agents.
 
-Tools:
+It is deployed with the ma3 service and exposed through the same production
+HTTPS boundary as the public ma3 endpoint. Agents connect to the remote MCP
+endpoint directly; they do not need to start a local ma3 daemon, maintain a
+local warm process, or construct shell-safe JSON payloads.
+
+### 6.1 Transport and Endpoint
+
+The remote MCP endpoint is versioned independently from the v2 HTTP APIs:
+
+- primary endpoint: `https://ma3.zhilicon.com/mcp`
+- JSON-RPC methods over POST: `initialize`, `ping`, `tools/list`, and `tools/call`
+- `GET /mcp` returns HTTP 405 unless an SSE stream transport is implemented; human-readable capability discovery is available at `GET /mcp/info`
+- health and capability discovery: `ma3_doctor`, `GET /mcp/info`, plus `GET /v2/doctor`
+- tool schema version: included in MCP server capabilities and `/v2/doctor`
+
+The implementation should prefer a standard remote MCP transport supported by
+current agent runtimes. If multiple transports are needed during rollout, they
+must expose the same tool schemas and authorization semantics.
+
+### 6.2 Authentication and Authorization
+
+Remote MCP authentication must reuse ma3's library-token permission model while
+making the agent identity explicit.
+
+Accepted credentials:
+
+- library token with reader/writer/admin role
+- global admin key only for admin-only tools
+- future gateway-issued agent/session token, once available
+
+Authorization rules:
+
+- every tool call is evaluated against the caller's library scopes
+- reads only return records/cases visible to the caller
+- writes target the caller's library unless an authorized explicit library is
+  provided
+- admin tools require library-admin or global-admin capability
+- no tool may log raw tokens, passwords, or authorization headers
+
+The remote MCP server may keep short-lived per-session metadata, but it must not
+persist user tokens in plaintext. If longer-lived remote MCP sessions are added,
+session storage must use encrypted secrets or opaque server-side session IDs.
+
+### 6.3 Tools
+
+Initial tools:
 
 - `ma3_context`: calls `/v2/agent/context`
 - `ma3_report`: calls `/v2/agent/report`
 - `ma3_case`: reads a case timeline
 - `ma3_search_explain`: diagnostic search
 - `ma3_doctor`: endpoint/auth/version diagnostics
+- `ma3_whoami`: returns visible libraries and effective role without exposing token material
 
-Responsibilities:
+Tool inputs should be compact and agent-friendly. For example, `ma3_context`
+accepts `problem`, optional `goal`, optional `target_product`,
+`target_component`, `task_type`, `environment`, `observations`, and constraints.
+The MCP layer constructs the full v2 workflow payload internally.
 
-- keep process warm
-- reuse HTTP connections
-- cache health/version/whoami responses briefly
-- batch repeated record/case reads
-- present compact agent-friendly output
-- preserve full JSON output on request
+All tools should support:
 
-The existing CLI should call the same internal client library used by the tool service.
+- compact default output suitable for agent reasoning
+- `include_full_json=true` to return the underlying v2 response
+- stable `query_id` or `query_hash` where applicable, so users can debug a
+  specific search later in `/ui/search-explain`
+
+### 6.4 Responsibilities
+
+The remote MCP server is responsible for:
+
+- keeping server-side process state warm
+- reusing database pools and internal HTTP clients
+- caching safe metadata such as server version, tool schema, public library
+  summaries, and whoami results for short TTLs
+- batching repeated record/case reads within one tool call
+- presenting compact agent-friendly output
+- preserving full JSON output on request
+- emitting metrics and operation logs for every tool call
+- enforcing redaction and sensitive-input confirmation policy before writes
+
+The existing CLI remains a fallback and diagnostic wrapper. It may call the same
+v2 HTTP APIs as the MCP server, but it is no longer the high-frequency agent
+interface.
+
+### 6.5 Failure Semantics
+
+Remote MCP errors should be agent-actionable:
+
+- `auth_missing`
+- `auth_invalid`
+- `permission_denied`
+- `tool_version_mismatch`
+- `server_unhealthy`
+- `search_index_unhealthy`
+- `rate_limited`
+- `upstream_timeout`
+
+`ma3_doctor` should explain whether the failure is caused by the agent's MCP
+configuration, ma3 authentication, server health, database/index health, or
+network/TLS reachability.
+
+### 6.6 Observability
+
+Remote MCP calls must be visible in metrics and operation logs:
+
+- tool name
+- status
+- latency
+- caller role / library scope summary, without token values
+- result counts
+- query hash, when applicable
+- whether full JSON was requested
+- whether raw prompt retention was explicitly enabled
+
+MCP-level metrics should be correlated with v2 HTTP/search metrics so a slow
+agent call can be traced to MCP overhead, workflow aggregation, search, database,
+or serialization.
 
 ## 7. Metrics
 
@@ -340,6 +442,9 @@ Prometheus metrics:
 
 - `ma3_http_requests_total{route,method,status}`
 - `ma3_http_request_duration_seconds{route,method}`
+- `ma3_mcp_tool_calls_total{tool,status}`
+- `ma3_mcp_tool_duration_seconds{tool}`
+- `ma3_mcp_tool_errors_total{tool,error_type}`
 - `ma3_search_requests_total{path}` where path is `fts`, `vector`, `hybrid`, or `full_scan`
 - `ma3_search_duration_seconds`
 - `ma3_search_results_total`
@@ -523,24 +628,34 @@ A change is not complete until tests or an explicit manual acceptance checklist 
 
 ### Integration tests
 
-- MCP tool flow: context → agent action simulation → report
+- Remote MCP tool flow: `ma3_context` → agent action simulation → `ma3_report`
+- Remote MCP auth isolation: reader token cannot write, writer token writes only to its library, admin-only tools reject non-admin callers
+- Remote MCP Streamable HTTP compatibility: `POST /mcp` handles `initialize`, `ping`, `tools/list`, and `tools/call`; `GET /mcp` returns 405 when SSE is not supported
+- Remote MCP compact-output and `include_full_json=true` modes return stable schemas
+- Remote MCP `ma3_doctor` distinguishes missing auth, invalid token, permission mismatch, server health, index health, TLS, and network failures
+- Remote MCP operation logs and metrics record tool name/status/latency/query hash without token material
 - CLI doctor identifies missing auth, invalid token, TLS failure, and network failure
-- Codex local flow verifies the ma3 tool is visible and can call v2 context/report when credentials exist
+- Codex remote MCP flow verifies the ma3 tool is visible and can call v2 context/report when credentials exist
 
 ### Performance tests
 
 - compare v1-style multi-call flow against v2 context flow
+- compare CLI `search`/`get-record` multi-process flow against one remote MCP `ma3_context` call
 - assert search does not perform per-record feedback/relation queries
+- assert remote MCP overhead is bounded relative to direct `/v2/agent/context` for the fixed benchmark set
 - measure p50/p95 for seeded libraries with increasing record counts
 
 ## 11. Initial File/Module Layout
 
 Expected server additions:
 
+- `server/app/api/routes_mcp.py`
 - `server/app/api/routes_v2_agent.py`
 - `server/app/api/routes_v2_cases.py`
 - `server/app/api/routes_v2_stats.py`
+- `server/app/models/mcp.py`
 - `server/app/models/v2.py`
+- `server/app/services/mcp_tool_service.py`
 - `server/app/services/case_service.py`
 - `server/app/services/v2_search_service.py`
 - `server/app/services/metrics_service.py`
@@ -550,8 +665,8 @@ Expected server additions:
 
 Expected client/tool additions:
 
-- shared v2 client library extracted from `ma3_client.py`
-- MCP/tool service entrypoint
+- remote MCP connector examples for Codex/Claude-compatible clients
+- optional local MCP shim only for clients that cannot connect to remote MCP directly
 - CLI `doctor`, `context`, `report`, and `case` commands as wrappers
 
 ## 12. Rollout
@@ -559,10 +674,12 @@ Expected client/tool additions:
 1. Land docs and tests for intended API contracts.
 2. Add schema and migration dry-run.
 3. Add server v2 APIs behind feature flag.
-4. Add tool service and CLI wrappers.
-5. Run migration in staging and inspect stats/explain output.
-6. Switch agent instructions to prefer v2 tool service.
-7. Deprecate v1 agent loop after v2 proves stable.
+4. Add remote MCP server behind a feature flag and expose it through HTTPS.
+5. Add CLI wrappers and optional local shim for clients without remote MCP support.
+6. Run migration in staging and inspect stats/explain output.
+7. Validate remote MCP auth isolation, metrics/logging, and performance against the fixed benchmark set.
+8. Switch agent instructions to prefer remote MCP tools.
+9. Deprecate v1 agent loop after v2 proves stable.
 
 ## 13. LTP Deployment Implementation
 
