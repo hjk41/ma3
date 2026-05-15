@@ -100,6 +100,68 @@ def test_remote_mcp_context_report_case_and_metrics(authed_client):
     assert 'tool="ma3_report"' in metrics.text
 
 
+def test_remote_mcp_all_initial_tools_and_full_json_modes(authed_client):
+    report = _call(
+        authed_client,
+        "ma3_report",
+        {
+            "problem": "Remote MCP full coverage needs explain and full JSON",
+            "task_type": "remote mcp coverage",
+            "goal": "exercise all MCP tools",
+            "target_product": "ma3",
+            "target_component": "remote-mcp-tests",
+            "outcome": "success",
+            "result_summary": "Full MCP coverage seed record",
+            "actions": [{"action": "seeded through ma3_report"}],
+            "tags": ["mcp", "coverage", "explain"],
+            "include_full_json": True,
+        },
+    )
+    assert report.status_code == 200, report.text
+    report_structured = report.json()["result"]["structuredContent"]
+    assert report_structured["persisted"] is True
+    assert report_structured["record"]["record_id"].startswith("vk_")
+    case_id = report_structured["case_assignment"]["case"]["case_id"]
+
+    explain = _call(
+        authed_client,
+        "ma3_search_explain",
+        {
+            "problem": "Remote MCP full coverage needs explain and full JSON",
+            "task_type": "remote mcp coverage",
+            "goal": "inspect explain ranking output",
+            "target_product": "ma3",
+            "target_component": "remote-mcp-tests",
+            "max_cases": 5,
+            "include_full_json": True,
+        },
+    )
+    assert explain.status_code == 200, explain.text
+    explain_structured = explain.json()["result"]["structuredContent"]
+    assert "explain" in explain_structured
+    assert explain_structured["explain"]["query_hash"]
+    assert any(group["case"]["case_id"] == case_id for group in explain_structured["cases"])
+
+    case = _call(authed_client, "ma3_case", {"case_id": case_id, "include_full_json": True})
+    assert case.status_code == 200, case.text
+    case_structured = case.json()["result"]["structuredContent"]
+    assert case_structured["case"]["case_id"] == case_id
+    assert any(record["record_id"] == report_structured["record"]["record_id"] for record in case_structured["records"])
+
+    doctor = _call(authed_client, "ma3_doctor", {"include_full_json": True})
+    assert doctor.status_code == 200, doctor.text
+    doctor_structured = doctor.json()["result"]["structuredContent"]
+    assert doctor_structured["status"] == "ok"
+    assert doctor_structured["mcp"]["endpoint"] == "/mcp"
+    assert "ma3_search_explain" in doctor_structured["mcp"]["tools"]
+
+    whoami = _call(authed_client, "ma3_whoami", {"include_full_json": True})
+    assert whoami.status_code == 200, whoami.text
+    whoami_structured = whoami.json()["result"]["structuredContent"]
+    assert whoami_structured["identity"]["type"] == "admin"
+    assert isinstance(whoami_structured["visible_libraries"], list)
+
+
 def test_remote_mcp_auth_isolation_reader_cannot_write(authed_client):
     lib = authed_client.post("/libraries", json={"name": "mcp-reader-lib", "is_public": False}).json()
     reader = authed_client.post(
@@ -135,3 +197,35 @@ def test_remote_mcp_invalid_params_and_notifications(client):
 
     notification = client.post("/mcp", json={"jsonrpc": "2.0", "method": "notifications/initialized"})
     assert notification.status_code == 202
+
+
+def test_remote_mcp_batch_jsonrpc_and_error_mapping(authed_client):
+    batch = authed_client.post(
+        "/mcp",
+        json=[
+            {"jsonrpc": "2.0", "id": "init", "method": "initialize", "params": {}},
+            {"jsonrpc": "2.0", "id": "ping", "method": "ping", "params": {}},
+            {
+                "jsonrpc": "2.0",
+                "id": "missing-tool",
+                "method": "tools/call",
+                "params": {"name": "ma3_missing_tool", "arguments": {}},
+            },
+            {"jsonrpc": "2.0", "method": "notifications/initialized", "params": {}},
+        ],
+    )
+    assert batch.status_code == 200, batch.text
+    responses = {item["id"]: item for item in batch.json()}
+    assert responses["init"]["result"]["serverInfo"]["name"] == "ma3-remote-mcp"
+    assert responses["ping"]["result"] == {}
+    assert responses["missing-tool"]["error"]["code"] == -32601
+    assert "notifications/initialized" not in responses
+
+    invalid_arguments = _rpc(
+        authed_client,
+        "tools/call",
+        {"name": "ma3_context", "arguments": []},
+        request_id=77,
+    )
+    assert invalid_arguments.status_code == 200
+    assert invalid_arguments.json()["error"]["code"] == -32602

@@ -660,10 +660,15 @@ A change is not complete until tests or an explicit manual acceptance checklist 
 
 ### Integration tests
 
-- Remote MCP tool flow: `ma3_context` → agent action simulation → `ma3_report`
+- Remote MCP tool flow: all initial tools are covered:
+  `ma3_context`, `ma3_report`, `ma3_case`, `ma3_search_explain`,
+  `ma3_doctor`, and `ma3_whoami`
 - Remote MCP auth isolation: reader token cannot write, writer token writes only to its library, admin-only tools reject non-admin callers
-- Remote MCP Streamable HTTP compatibility: `POST /mcp` handles `initialize`, `ping`, `tools/list`, and `tools/call`; `GET /mcp` returns 405 when SSE is not supported
-- Remote MCP compact-output and `include_full_json=true` modes return stable schemas
+- Remote MCP Streamable HTTP compatibility: `POST /mcp` handles single-request
+  and batch JSON-RPC for `initialize`, `ping`, `tools/list`, and
+  `tools/call`; notifications return no body; `GET /mcp` returns 405 when SSE
+  is not supported
+- Remote MCP compact-output and `include_full_json=true` modes return stable schemas for search/context, write, and case tools
 - Remote MCP `ma3_doctor` distinguishes missing auth, invalid token, permission mismatch, server health, index health, TLS, and network failures
 - Remote MCP operation logs and metrics record tool name/status/latency/query hash without token material
 - CLI doctor identifies missing auth, invalid token, TLS failure, and network failure
