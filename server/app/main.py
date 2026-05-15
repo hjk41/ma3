@@ -19,7 +19,7 @@ from app.api.routes_v2_cases import router as v2_cases_router
 from app.api.routes_v2_stats import router as v2_stats_router, metrics_router
 from app.services.metrics_service import metrics
 from app.services.op_log_service import write_op_log
-from app.storage.db import initialize_database, backfill_search_indexes
+from app.storage.db import initialize_database, backfill_search_indexes, close_postgres_pool
 
 
 app = FastAPI(
@@ -59,6 +59,12 @@ def on_startup() -> None:
     t = threading.Thread(target=backfill_search_indexes, daemon=True, name="backfill")
     t.start()
     write_op_log("startup", status="ok")
+
+
+@app.on_event("shutdown")
+def on_shutdown() -> None:
+    close_postgres_pool()
+    write_op_log("shutdown", status="ok")
 
 
 app.include_router(health_router)

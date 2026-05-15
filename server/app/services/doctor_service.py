@@ -23,6 +23,25 @@ def server_doctor() -> dict:
         ok = False
         checks.append({"name": "v2_schema", "status": "error", "error": str(exc)})
 
+    if settings.db_backend == "postgresql":
+        try:
+            with get_connection() as conn:
+                records = int(conn.execute("SELECT COUNT(*) AS count FROM records").fetchone()["count"])
+                indexed = int(conn.execute("SELECT COUNT(*) AS count FROM record_search_index").fetchone()["count"])
+            status = "ok" if indexed >= records else "degraded"
+            if status != "ok":
+                ok = False
+            checks.append({
+                "name": "record_search_index",
+                "status": status,
+                "mode": settings.search_index_mode,
+                "records": records,
+                "indexed": indexed,
+            })
+        except Exception as exc:  # pragma: no cover - defensive diagnostic
+            ok = False
+            checks.append({"name": "record_search_index", "status": "error", "error": str(exc)})
+
     return {
         "status": "ok" if ok else "degraded",
         "service": settings.service_name,

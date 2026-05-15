@@ -54,6 +54,10 @@ Render the template with:
 - `MA3_PORT` — default `8000`; on LTP shared-node jobs prefer a high unused port
   such as `18080` to avoid collisions with services already listening on the
   host network namespace
+- `MA3_DB_POOL_ENABLED` — default `1`; set `0` only for v2.1 benchmark baseline or emergency rollback
+- `MA3_DB_POOL_MIN_SIZE` / `MA3_DB_POOL_MAX_SIZE` / `MA3_DB_POOL_TIMEOUT_SECONDS` — v2.1 PostgreSQL pool sizing
+- `MA3_SEARCH_BATCH_GRAPH_ENABLED` — default `1`; set `0` only for v2.1 N+1 baseline benchmark or rollback
+- `MA3_SEARCH_INDEX_MODE` — `jsonb_runtime` or `materialized`; benchmark both before switching production
 - `MA3_CEPHFS_ENABLE` — set `1` when `MA3_BACKUP_DIR` is on CephFS
 - `MA3_CEPHFS_USER` — CephFS user, for example `chuntao.hong`
 - `MA3_CEPHFS_MOUNT` — default `/mnt/cephfs`

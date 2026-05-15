@@ -15,6 +15,7 @@ from app.models.v2 import (
 )
 from app.services.metrics_service import metrics
 from app.services.op_log_service import write_op_log
+from app.services.perf_service import current_trace, perf_stage, search_perf_trace
 from app.services.search_service import search_records
 from app.storage.v2_repositories import CaseRepository, SearchEventRepository, V2GraphRepository
 
@@ -176,38 +177,55 @@ def build_agent_context(
     payload: V2AgentContextRequest,
     accessible_library_ids: set[str],
     library_id: str | None = None,
+    route: str = "/v2/agent/context",
+) -> V2AgentContextResponse:
+    qh = query_hash(payload)
+    with search_perf_trace(route, qh):
+        return _build_agent_context_impl(payload, accessible_library_ids, library_id, route, qh)
+
+
+def _build_agent_context_impl(
+    payload: V2AgentContextRequest,
+    accessible_library_ids: set[str],
+    library_id: str | None,
+    route: str,
+    qh: str,
 ) -> V2AgentContextResponse:
     started = time.perf_counter()
-    qh = query_hash(payload)
-    v1_response = search_records(_to_v1_query(payload), accessible_library_ids)
+    with perf_stage("v1_candidate_search"):
+        v1_response = search_records(_to_v1_query(payload), accessible_library_ids)
     candidate_pool_limit = _candidate_pool_limit(payload)
-    matches, score_breakdown = _rerank_matches(payload, v1_response.primary_records)
+    with perf_stage("v2_metadata_rerank"):
+        matches, score_breakdown = _rerank_matches(payload, v1_response.primary_records)
     record_ids = {m.record.record_id for m in matches}
     case_ids = {m.record.case_id for m in matches if m.record.case_id}
-    cases_by_id = {c.case_id: c for c in CaseRepository().list_by_ids_accessible(case_ids, accessible_library_ids)}
-    relations_by_record = V2GraphRepository().relations_by_record_ids(record_ids)
+    with perf_stage("case_fetch"):
+        cases_by_id = {c.case_id: c for c in CaseRepository().list_by_ids_accessible(case_ids, accessible_library_ids)}
+    with perf_stage("relation_fetch"):
+        relations_by_record = V2GraphRepository().relations_by_record_ids(record_ids)
 
     groups: dict[str, V2CaseRecordGroup] = {}
     ungrouped = []
-    for match in matches:
-        rec = match.record
-        if rec.case_id and rec.case_id in cases_by_id:
-            group = groups.setdefault(
-                rec.case_id,
-                V2CaseRecordGroup(
-                    case=cases_by_id[rec.case_id],
-                    records=[],
-                    relations=[],
-                    match_score=match.match_score,
-                    why_matched=list(match.why_matched),
-                ),
-            )
-            if len(group.records) < payload.max_records_per_case:
-                group.records.append(rec)
-            group.relations.extend(relations_by_record.get(rec.record_id, []))
-            group.match_score = max(group.match_score, match.match_score)
-        else:
-            ungrouped.append(rec)
+    with perf_stage("case_grouping"):
+        for match in matches:
+            rec = match.record
+            if rec.case_id and rec.case_id in cases_by_id:
+                group = groups.setdefault(
+                    rec.case_id,
+                    V2CaseRecordGroup(
+                        case=cases_by_id[rec.case_id],
+                        records=[],
+                        relations=[],
+                        match_score=match.match_score,
+                        why_matched=list(match.why_matched),
+                    ),
+                )
+                if len(group.records) < payload.max_records_per_case:
+                    group.records.append(rec)
+                group.relations.extend(relations_by_record.get(rec.record_id, []))
+                group.match_score = max(group.match_score, match.match_score)
+            else:
+                ungrouped.append(rec)
 
     ordered_groups = sorted(groups.values(), key=lambda g: g.match_score, reverse=True)[: payload.max_cases]
     explain = None
@@ -244,10 +262,20 @@ def build_agent_context(
 
     duration = time.perf_counter() - started
     result_count = sum(len(g.records) for g in ordered_groups) + len(ungrouped)
+    trace = current_trace()
+    perf_summary = None
+    if trace is not None:
+        trace.result_count = result_count
+        trace.ranking_config_version = RANKING_CONFIG_VERSION
+        perf_summary = trace.finish()
+    if explain is not None and perf_summary is not None:
+        explain.stages.append({"name": "performance", **perf_summary})
     metrics.record_search("full_scan" if full_scan else "hybrid", duration, result_count)
+    if perf_summary is not None:
+        metrics.record_search_perf(route, perf_summary)
     write_op_log(
         "agent_context",
-        route="/v2/agent/context",
+        route=route,
         library_id=library_id,
         query_hash=qh,
         latency_ms=round(duration * 1000, 3),
@@ -260,18 +288,20 @@ def build_agent_context(
             "target": payload.target.model_dump(),
             "tags": payload.tags,
         },
+        perf=perf_summary,
     )
     SearchEventRepository().insert_event({
         "event_id": new_id("se"),
         "library_id": library_id,
         "created_at": utc_now_iso(),
-        "route": "/v2/agent/context",
+        "route": route,
         "latency_ms": round(duration * 1000, 3),
         "result_count": result_count,
         "case_count": len(ordered_groups),
         "full_scan": full_scan,
         "query_hash": qh,
         "ranking_config_version": RANKING_CONFIG_VERSION,
+        "perf": perf_summary,
     })
 
     warnings = []

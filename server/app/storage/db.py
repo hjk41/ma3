@@ -12,22 +12,37 @@ except ImportError:  # pragma: no cover - exercised only when postgres deps are 
     psycopg = None
     dict_row = None
 
+try:
+    from psycopg_pool import ConnectionPool
+except ImportError:  # pragma: no cover - exercised only when postgres deps are absent
+    ConnectionPool = None
+
+from app.services.perf_service import record_connection_checkout, record_db_query
+
 
 class DatabaseConnection:
-    def __init__(self, raw_connection: Any, backend: str):
+    def __init__(self, raw_connection: Any, backend: str, context_manager: Any | None = None):
         self._raw = raw_connection
         self.backend = backend
+        self._context_manager = context_manager
 
     def __enter__(self) -> "DatabaseConnection":
-        self._raw.__enter__()
+        if self._context_manager is not None:
+            self._raw = self._context_manager.__enter__()
+        else:
+            self._raw.__enter__()
         return self
 
     def __exit__(self, exc_type, exc, tb) -> bool | None:
+        if self._context_manager is not None:
+            return self._context_manager.__exit__(exc_type, exc, tb)
         return self._raw.__exit__(exc_type, exc, tb)
 
     def execute(self, sql: str, params: list | tuple | dict | None = None):
         if self.backend == "postgresql":
             sql = sql.replace("?", "%s")
+        operation = sql.strip().split(None, 1)[0].lower() if sql.strip() else "execute"
+        record_db_query(operation)
         return self._raw.execute(sql, params or ())
 
 
@@ -42,20 +57,62 @@ def _connect_sqlite() -> DatabaseConnection:
     return DatabaseConnection(conn, "sqlite")
 
 
-def _connect_postgres() -> DatabaseConnection:
+_pg_pool: Any | None = None
+
+
+def _get_postgres_pool():
+    global _pg_pool
     if not settings.database_url:
         raise RuntimeError("MA3_DATABASE_URL is required for PostgreSQL mode")
     if psycopg is None:
         raise RuntimeError(
             "PostgreSQL mode requires psycopg. Install server requirements again."
         )
-    conn = psycopg.connect(settings.database_url, row_factory=dict_row)
-    return DatabaseConnection(conn, "postgresql")
+    if ConnectionPool is None:
+        raise RuntimeError(
+            "PostgreSQL pooling requires psycopg_pool. Install psycopg[pool]."
+        )
+    if _pg_pool is None:
+        _pg_pool = ConnectionPool(
+            conninfo=settings.database_url,
+            min_size=settings.db_pool_min_size,
+            max_size=settings.db_pool_max_size,
+            timeout=settings.db_pool_timeout_seconds,
+            kwargs={"row_factory": dict_row},
+            open=True,
+        )
+    return _pg_pool
+
+
+def close_postgres_pool() -> None:
+    global _pg_pool
+    if _pg_pool is not None:
+        _pg_pool.close()
+        _pg_pool = None
+
+
+def _connect_postgres() -> DatabaseConnection:
+    if not settings.db_pool_enabled:
+        if not settings.database_url:
+            raise RuntimeError("MA3_DATABASE_URL is required for PostgreSQL mode")
+        if psycopg is None:
+            raise RuntimeError(
+                "PostgreSQL mode requires psycopg. Install server requirements again."
+            )
+        record_connection_checkout()
+        return DatabaseConnection(
+            psycopg.connect(settings.database_url, row_factory=dict_row),
+            "postgresql",
+        )
+    pool = _get_postgres_pool()
+    record_connection_checkout()
+    return DatabaseConnection(None, "postgresql", context_manager=pool.connection())
 
 
 def get_connection() -> DatabaseConnection:
     if is_postgres():
         return _connect_postgres()
+    record_connection_checkout()
     return _connect_sqlite()
 
 
@@ -418,6 +475,23 @@ def _initialize_v2_postgres(conn) -> None:
         """
     )
     conn.execute("CREATE INDEX IF NOT EXISTS idx_search_feedback_judgment ON search_feedback(judgment)")
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS record_search_index (
+            record_id TEXT PRIMARY KEY,
+            library_id TEXT,
+            status TEXT NOT NULL,
+            search_text TEXT NOT NULL DEFAULT '',
+            tags_text TEXT NOT NULL DEFAULT '',
+            search_tsv TSVECTOR NOT NULL,
+            tags_tsv TSVECTOR NOT NULL,
+            updated_at TEXT NOT NULL
+        )
+        """
+    )
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_record_search_index_search_tsv ON record_search_index USING GIN(search_tsv)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_record_search_index_tags_tsv ON record_search_index USING GIN(tags_tsv)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_record_search_index_library_status ON record_search_index(library_id, status)")
 
 
 def backfill_search_indexes() -> None:
@@ -444,7 +518,7 @@ def backfill_search_indexes() -> None:
 
     with get_connection() as conn:
         for record in all_records:
-            if not is_postgres() and record.record_id not in indexed_tag_ids:
+            if is_postgres() or record.record_id not in indexed_tag_ids:
                 fts_upsert(conn, record)
             if record.record_id not in indexed_emb_ids:
                 embedding = embed_record(record)
@@ -490,8 +564,7 @@ def seed_if_empty() -> None:
                     _json_param(record.model_dump()),
                 ),
             )
-            if not is_postgres():
-                fts_upsert(conn, record)
+            fts_upsert(conn, record)
 
 
 def _upsert(table: str, key_columns: list[str], all_columns: list[str]) -> str:

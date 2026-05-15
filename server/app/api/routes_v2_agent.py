@@ -38,6 +38,7 @@ def post_context(
         payload,
         accessible_library_ids(token, is_admin=_is_admin(x_api_key, authorization)),
         library_id=token.library_id if token else None,
+        route="/v2/agent/context",
     )
 
 
@@ -67,6 +68,7 @@ def post_search_explain(
         payload.model_copy(update={"include_explain": True}),
         accessible_library_ids(token, is_admin=_is_admin(x_api_key, authorization)),
         library_id=token.library_id if token else None,
+        route="/v2/search/explain",
     )
 
 

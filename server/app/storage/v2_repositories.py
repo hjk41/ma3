@@ -4,6 +4,7 @@ from collections import defaultdict
 from typing import Any
 
 from app.models.feedback import Feedback
+from datetime import datetime, timezone, timedelta
 from app.models.record import Record
 from app.models.relation import RecordRelation
 from app.models.v2 import Case
@@ -294,4 +295,56 @@ class SearchEventRepository:
             zero = int(conn.execute("SELECT COUNT(*) AS count FROM search_events WHERE result_count = 0").fetchone()["count"])
             full = int(conn.execute("SELECT COUNT(*) AS count FROM search_events WHERE full_scan = ?", (True if is_postgres() else 1,)).fetchone()["count"])
             feedback = int(conn.execute("SELECT COUNT(*) AS count FROM search_feedback").fetchone()["count"])
-        return {"search_events": total, "zero_result_events": zero, "full_scan_events": full, "search_feedback": feedback}
+            rows = conn.execute(
+                "SELECT created_at, route, latency_ms, result_count, full_scan FROM search_events ORDER BY created_at ASC"
+            ).fetchall()
+
+        cutoff = datetime.now(timezone.utc) - timedelta(hours=48)
+        buckets: dict[tuple[str, str], list[dict]] = {}
+        for row in rows:
+            try:
+                dt = datetime.fromisoformat(str(row["created_at"]).replace("Z", "+00:00"))
+                if dt.tzinfo is None:
+                    dt = dt.replace(tzinfo=timezone.utc)
+            except Exception:
+                continue
+            if dt < cutoff:
+                continue
+            hour = dt.replace(minute=0, second=0, microsecond=0).isoformat().replace("+00:00", "Z")
+            key = (hour, row["route"])
+            buckets.setdefault(key, []).append({
+                "latency_ms": float(row["latency_ms"] or 0),
+                "result_count": int(row["result_count"] or 0),
+                "full_scan": bool(row["full_scan"]),
+            })
+
+        def pct(values: list[float], percentile: float) -> float:
+            if not values:
+                return 0.0
+            ordered = sorted(values)
+            idx = round((len(ordered) - 1) * percentile)
+            return ordered[idx]
+
+        by_hour = []
+        for (hour, route), items in sorted(buckets.items()):
+            latencies = [item["latency_ms"] for item in items]
+            by_hour.append({
+                "hour": hour,
+                "route": route,
+                "count": len(items),
+                "avg_latency_ms": round(sum(latencies) / len(latencies), 3) if latencies else 0.0,
+                "p50_latency_ms": round(pct(latencies, 0.50), 3),
+                "p95_latency_ms": round(pct(latencies, 0.95), 3),
+                "max_latency_ms": round(max(latencies), 3) if latencies else 0.0,
+                "zero_results": sum(1 for item in items if item["result_count"] == 0),
+                "full_scan": sum(1 for item in items if item["full_scan"]),
+            })
+
+        return {
+            "search_events": total,
+            "zero_result_events": zero,
+            "full_scan_events": full,
+            "search_feedback": feedback,
+            "window_hours": 48,
+            "by_hour": by_hour,
+        }

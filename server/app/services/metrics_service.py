@@ -16,6 +16,9 @@ class MetricsRegistry:
         self.ingest_total: dict[tuple[str, str], int] = defaultdict(int)
         self.case_assignment_total: dict[str, int] = defaultdict(int)
         self.doctor_failures: dict[str, int] = defaultdict(int)
+        self.search_stage_durations: dict[tuple[str, str], list[float]] = defaultdict(list)
+        self.db_queries: dict[tuple[str, str], int] = defaultdict(int)
+        self.db_connection_checkouts: dict[str, int] = defaultdict(int)
 
     def record_http(self, method: str, route: str, status: int, duration: float) -> None:
         with self._lock:
@@ -40,6 +43,14 @@ class MetricsRegistry:
     def record_doctor_failure(self, failure_type: str) -> None:
         with self._lock:
             self.doctor_failures[failure_type] += 1
+
+    def record_search_perf(self, route: str, summary: dict) -> None:
+        with self._lock:
+            for stage, ms in (summary.get("stages_ms") or {}).items():
+                self.search_stage_durations[(route, stage)].append(float(ms) / 1000.0)
+            for operation, count in (summary.get("db_query_operations") or {}).items():
+                self.db_queries[(route, operation)] += int(count)
+            self.db_connection_checkouts[route] += int(summary.get("db_connection_checkout_count") or 0)
 
     def render_prometheus(self) -> str:
         lines = [
@@ -71,6 +82,17 @@ class MetricsRegistry:
                 lines.append(f'ma3_case_assignment_total{{result="{result}"}} {value}')
             for failure_type, value in sorted(self.doctor_failures.items()):
                 lines.append(f'ma3_doctor_failures_total{{failure_type="{failure_type}"}} {value}')
+            lines.extend([
+                "# HELP ma3_search_stage_duration_seconds_sum Search stage duration sum.",
+                "# TYPE ma3_search_stage_duration_seconds_sum counter",
+            ])
+            for (route, stage), values in sorted(self.search_stage_durations.items()):
+                lines.append(f'ma3_search_stage_duration_seconds_count{{route="{route}",stage="{stage}"}} {len(values)}')
+                lines.append(f'ma3_search_stage_duration_seconds_sum{{route="{route}",stage="{stage}"}} {sum(values):.6f}')
+            for (route, operation), value in sorted(self.db_queries.items()):
+                lines.append(f'ma3_db_queries_total{{route="{route}",operation="{operation}"}} {value}')
+            for route, value in sorted(self.db_connection_checkouts.items()):
+                lines.append(f'ma3_db_connection_checkouts_total{{route="{route}"}} {value}')
         return "\n".join(lines) + "\n"
 
 

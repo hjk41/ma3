@@ -54,6 +54,12 @@ def _isolated_settings(tmp_path):
     orig_log_archive_dir = config.settings.log_archive_dir
     orig_log_local_retention_days = config.settings.log_local_retention_days
     orig_log_redact_raw = config.settings.log_redact_raw
+    orig_db_pool_min_size = config.settings.db_pool_min_size
+    orig_db_pool_max_size = config.settings.db_pool_max_size
+    orig_db_pool_timeout_seconds = config.settings.db_pool_timeout_seconds
+    orig_db_pool_enabled = config.settings.db_pool_enabled
+    orig_search_batch_graph_enabled = config.settings.search_batch_graph_enabled
+    orig_search_index_mode = config.settings.search_index_mode
 
     db = tmp_path / "test.db"
     object.__setattr__(config.settings, "db_path", db)
@@ -67,6 +73,12 @@ def _isolated_settings(tmp_path):
     object.__setattr__(config.settings, "log_archive_dir", tmp_path / "archive")
     object.__setattr__(config.settings, "log_local_retention_days", 2)
     object.__setattr__(config.settings, "log_redact_raw", True)
+    object.__setattr__(config.settings, "db_pool_min_size", 1)
+    object.__setattr__(config.settings, "db_pool_max_size", 4)
+    object.__setattr__(config.settings, "db_pool_timeout_seconds", 5.0)
+    object.__setattr__(config.settings, "db_pool_enabled", True)
+    object.__setattr__(config.settings, "search_batch_graph_enabled", True)
+    object.__setattr__(config.settings, "search_index_mode", "jsonb_runtime")
     # Point seed_path at a non-existent file so seed_if_empty() is a no-op
     object.__setattr__(config.settings, "seed_path", tmp_path / "no_seed.json")
 
@@ -85,6 +97,12 @@ def _isolated_settings(tmp_path):
     object.__setattr__(config.settings, "log_archive_dir", orig_log_archive_dir)
     object.__setattr__(config.settings, "log_local_retention_days", orig_log_local_retention_days)
     object.__setattr__(config.settings, "log_redact_raw", orig_log_redact_raw)
+    object.__setattr__(config.settings, "db_pool_min_size", orig_db_pool_min_size)
+    object.__setattr__(config.settings, "db_pool_max_size", orig_db_pool_max_size)
+    object.__setattr__(config.settings, "db_pool_timeout_seconds", orig_db_pool_timeout_seconds)
+    object.__setattr__(config.settings, "db_pool_enabled", orig_db_pool_enabled)
+    object.__setattr__(config.settings, "search_batch_graph_enabled", orig_search_batch_graph_enabled)
+    object.__setattr__(config.settings, "search_index_mode", orig_search_index_mode)
 
 
 # ── Autouse: mock embeddings ─────────────────────────────────────────────────
@@ -110,8 +128,14 @@ def _mock_embeddings(monkeypatch):
 @pytest.fixture
 def client():
     """Unauthenticated TestClient."""
-    with TestClient(app_module.app) as c:
+    # The database is initialized by _isolated_settings, so unit tests do not
+    # need FastAPI lifespan startup.  Avoiding the context manager also avoids
+    # TestClient/anyio socket restrictions in sandboxed CI.
+    c = TestClient(app_module.app)
+    try:
         yield c
+    finally:
+        c.close()
 
 
 @pytest.fixture

@@ -29,6 +29,12 @@ class Settings:
     log_archive_dir: Path | None = field(init=False)
     log_local_retention_days: int = field(init=False)
     log_redact_raw: bool = field(init=False)
+    db_pool_min_size: int = field(init=False)
+    db_pool_max_size: int = field(init=False)
+    db_pool_timeout_seconds: float = field(init=False)
+    db_pool_enabled: bool = field(init=False)
+    search_batch_graph_enabled: bool = field(init=False)
+    search_index_mode: str = field(init=False)
 
     def __post_init__(self) -> None:
         project_dir = self.app_dir.parent
@@ -46,6 +52,12 @@ class Settings:
         log_archive = os.environ.get("MA3_LOG_ARCHIVE_DIR") or None
         log_local_retention_days = int(os.environ.get("MA3_LOG_LOCAL_RETENTION_DAYS", "2"))
         log_redact_raw = os.environ.get("MA3_LOG_REDACT_RAW", "1") != "0"
+        db_pool_min_size = int(os.environ.get("MA3_DB_POOL_MIN_SIZE", "1"))
+        db_pool_max_size = int(os.environ.get("MA3_DB_POOL_MAX_SIZE", "8"))
+        db_pool_timeout_seconds = float(os.environ.get("MA3_DB_POOL_TIMEOUT_SECONDS", "5"))
+        db_pool_enabled = os.environ.get("MA3_DB_POOL_ENABLED", "1") != "0"
+        search_batch_graph_enabled = os.environ.get("MA3_SEARCH_BATCH_GRAPH_ENABLED", "1") != "0"
+        search_index_mode = os.environ.get("MA3_SEARCH_INDEX_MODE", "jsonb_runtime").strip() or "jsonb_runtime"
         db_backend = "postgresql" if database_url else "sqlite"
         object.__setattr__(self, "project_dir", project_dir)
         object.__setattr__(self, "data_dir", data_dir)
@@ -61,6 +73,12 @@ class Settings:
         object.__setattr__(self, "log_archive_dir", Path(log_archive) if log_archive else None)
         object.__setattr__(self, "log_local_retention_days", log_local_retention_days)
         object.__setattr__(self, "log_redact_raw", log_redact_raw)
+        object.__setattr__(self, "db_pool_min_size", db_pool_min_size)
+        object.__setattr__(self, "db_pool_max_size", db_pool_max_size)
+        object.__setattr__(self, "db_pool_timeout_seconds", db_pool_timeout_seconds)
+        object.__setattr__(self, "db_pool_enabled", db_pool_enabled)
+        object.__setattr__(self, "search_batch_graph_enabled", search_batch_graph_enabled)
+        object.__setattr__(self, "search_index_mode", search_index_mode)
 
 
 settings = Settings()

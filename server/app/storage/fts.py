@@ -3,6 +3,8 @@ from __future__ import annotations
 
 import sqlite3
 
+from app.core.config import settings
+from app.core.time import utc_now_iso
 from app.storage.db import get_connection, is_postgres
 
 
@@ -11,10 +13,41 @@ def fts_upsert(conn, record) -> None:
 
     Must be called within an open connection/transaction.
     """
-    if is_postgres():
-        return
     record_id = record.record_id
     tags_str = " ".join(record.tags) if record.tags else ""
+    if is_postgres():
+        search_text = " ".join(
+            part for part in [record.title, record.problem_family, record.summary, record.claim]
+            if part
+        )
+        conn.execute(
+            """
+            INSERT INTO record_search_index(
+                record_id, library_id, status, search_text, tags_text,
+                search_tsv, tags_tsv, updated_at
+            )
+            VALUES (?, ?, ?, ?, ?, to_tsvector('simple', ?), to_tsvector('simple', ?), ?)
+            ON CONFLICT (record_id) DO UPDATE SET
+                library_id = EXCLUDED.library_id,
+                status = EXCLUDED.status,
+                search_text = EXCLUDED.search_text,
+                tags_text = EXCLUDED.tags_text,
+                search_tsv = EXCLUDED.search_tsv,
+                tags_tsv = EXCLUDED.tags_tsv,
+                updated_at = EXCLUDED.updated_at
+            """,
+            (
+                record.record_id,
+                record.library_id,
+                record.status.value if hasattr(record.status, "value") else str(record.status),
+                search_text,
+                tags_str,
+                search_text,
+                tags_str,
+                getattr(record, "updated_at", None) or utc_now_iso(),
+            ),
+        )
+        return
 
     conn.execute(
         "DELETE FROM records_fts_tags WHERE record_id = ?", (record_id,)
@@ -43,6 +76,7 @@ def fts_upsert(conn, record) -> None:
 def fts_delete(conn, record_id: str) -> None:
     """Remove FTS index entries for a record."""
     if is_postgres():
+        conn.execute("DELETE FROM record_search_index WHERE record_id = ?", (record_id,))
         return
     conn.execute(
         "DELETE FROM records_fts_tags WHERE record_id = ?", (record_id,)
@@ -78,6 +112,10 @@ def fts_tag_search(
         return []
 
     if is_postgres():
+        if settings.search_index_mode == "materialized":
+            hits = _pg_materialized_tag_search(query, accessible_library_ids, status_filter, limit)
+            if hits is not None:
+                return hits
         return _pg_tag_search(query, accessible_library_ids, status_filter, limit)
 
     lib_sql, lib_params = _build_library_filter(accessible_library_ids)
@@ -115,6 +153,10 @@ def fts_content_search(
         return []
 
     if is_postgres():
+        if settings.search_index_mode == "materialized":
+            hits = _pg_materialized_content_search(query, accessible_library_ids, status_filter, limit)
+            if hits is not None:
+                return hits
         return _pg_content_search(query, accessible_library_ids, status_filter, limit)
 
     lib_sql, lib_params = _build_library_filter(accessible_library_ids)
@@ -146,6 +188,58 @@ def _pg_library_filter(alias: str, accessible_library_ids: set[str]) -> tuple[st
         list(accessible_library_ids),
     )
 
+
+
+def _pg_materialized_tag_search(
+    query: str,
+    accessible_library_ids: set[str],
+    status_filter: str,
+    limit: int,
+) -> list[tuple[str, float]] | None:
+    lib_sql, lib_params = _pg_library_filter("i", accessible_library_ids)
+    sql = f"""
+        SELECT i.record_id,
+               ts_rank_cd(i.tags_tsv, websearch_to_tsquery('simple', ?)) AS score
+        FROM record_search_index i
+        WHERE i.tags_tsv @@ websearch_to_tsquery('simple', ?)
+          AND {lib_sql}
+          AND i.status = ?
+        ORDER BY score DESC
+        LIMIT ?
+    """
+    params = [query, query, *lib_params, status_filter, limit]
+    try:
+        with get_connection() as conn:
+            rows = conn.execute(sql, params).fetchall()
+        return [(row["record_id"], float(row["score"])) for row in rows]
+    except Exception:
+        return None
+
+
+def _pg_materialized_content_search(
+    query: str,
+    accessible_library_ids: set[str],
+    status_filter: str,
+    limit: int,
+) -> list[tuple[str, float]] | None:
+    lib_sql, lib_params = _pg_library_filter("i", accessible_library_ids)
+    sql = f"""
+        SELECT i.record_id,
+               ts_rank_cd(i.search_tsv, websearch_to_tsquery('simple', ?)) AS score
+        FROM record_search_index i
+        WHERE i.search_tsv @@ websearch_to_tsquery('simple', ?)
+          AND {lib_sql}
+          AND i.status = ?
+        ORDER BY score DESC
+        LIMIT ?
+    """
+    params = [query, query, *lib_params, status_filter, limit]
+    try:
+        with get_connection() as conn:
+            rows = conn.execute(sql, params).fetchall()
+        return [(row["record_id"], float(row["score"])) for row in rows]
+    except Exception:
+        return None
 
 def _pg_tag_search(
     query: str,

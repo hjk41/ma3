@@ -372,12 +372,23 @@ class FeedbackRepository:
             )
 
     def list_by_record(self, record_id: str) -> list[Feedback]:
+        return self.list_by_record_ids({record_id}).get(record_id, [])
+
+    def list_by_record_ids(self, record_ids: set[str]) -> dict[str, list[Feedback]]:
+        if not record_ids:
+            return {}
+        placeholders = ",".join("?" * len(record_ids))
         with get_connection() as conn:
             rows = conn.execute(
-                "SELECT payload_json FROM feedback WHERE record_id = ?",
-                (record_id,),
+                f"SELECT record_id, payload_json FROM feedback WHERE record_id IN ({placeholders})",
+                list(record_ids),
             ).fetchall()
-        return [Feedback.model_validate(_load_json_payload(row["payload_json"])) for row in rows]
+        grouped: dict[str, list[Feedback]] = {record_id: [] for record_id in record_ids}
+        for row in rows:
+            grouped.setdefault(row["record_id"], []).append(
+                Feedback.model_validate(_load_json_payload(row["payload_json"]))
+            )
+        return grouped
 
 
 class RelationRepository:
@@ -398,19 +409,30 @@ class RelationRepository:
             )
 
     def list_by_record(self, record_id: str) -> list[RecordRelation]:
+        return self.list_by_record_ids({record_id}).get(record_id, [])
+
+    def list_by_record_ids(self, record_ids: set[str]) -> dict[str, list[RecordRelation]]:
+        if not record_ids:
+            return {}
+        placeholders = ",".join("?" * len(record_ids))
+        params = list(record_ids) + list(record_ids)
         with get_connection() as conn:
             rows = conn.execute(
-                """
+                f"""
                 SELECT payload_json
                 FROM relations
-                WHERE from_record_id = ? OR to_record_id = ?
+                WHERE from_record_id IN ({placeholders}) OR to_record_id IN ({placeholders})
                 """,
-                (record_id, record_id),
+                params,
             ).fetchall()
-        return [
-            RecordRelation.model_validate(_load_json_payload(row["payload_json"]))
-            for row in rows
-        ]
+        grouped: dict[str, list[RecordRelation]] = {record_id: [] for record_id in record_ids}
+        for row in rows:
+            relation = RecordRelation.model_validate(_load_json_payload(row["payload_json"]))
+            if relation.from_record_id in grouped:
+                grouped[relation.from_record_id].append(relation)
+            if relation.to_record_id in grouped and relation.to_record_id != relation.from_record_id:
+                grouped[relation.to_record_id].append(relation)
+        return grouped
 
 
 class LibraryRepository:
