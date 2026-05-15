@@ -402,7 +402,39 @@ The existing CLI remains a fallback and diagnostic wrapper. It may call the same
 v2 HTTP APIs as the MCP server, but it is no longer the high-frequency agent
 interface.
 
-### 6.5 Failure Semantics
+### 6.5 Client and Skill Migration
+
+Existing v1/v2 CLI clients are migrated to the remote MCP path through
+self-update, but the migration has a clear runtime boundary:
+
+- self-update may update `SKILL.md`, `AGENTS.md`, the CLI, examples, and MCP
+  connector snippets served by `/client/manifest.json`
+- updated skill instructions must tell agents to prefer native remote MCP tools
+  when the host runtime exposes them
+- installer/warmup may detect `/mcp/info` and generate or validate
+  host-specific MCP configuration for runtimes that support safe config
+  mutation
+- after writing MCP configuration, warmup must report `rerun_required` or
+  `restart_required` because most agent runtimes discover MCP servers only at
+  process startup or an explicit config reload
+- the currently running agent process must keep using the CLI/REST fallback
+  until the MCP tools are visible in that process
+- clients that do not call warmup/self-update cannot be forced onto MCP
+
+Therefore "automatic switch to MCP" means:
+
+1. old client calls warmup/self-update;
+2. the local skill/client files are refreshed and, where safe, MCP config is
+   installed or a precise config instruction is emitted;
+3. the agent restarts or reloads MCP configuration;
+4. future ma3 operations use native remote MCP tools first and CLI/REST only as
+   fallback.
+
+Self-update must not silently overwrite unrelated user MCP configuration. Any
+config mutation that affects other tools or credentials must either be
+idempotent and ma3-scoped or require explicit user/agent confirmation.
+
+### 6.6 Failure Semantics
 
 Remote MCP errors should be agent-actionable:
 
@@ -419,7 +451,7 @@ Remote MCP errors should be agent-actionable:
 configuration, ma3 authentication, server health, database/index health, or
 network/TLS reachability.
 
-### 6.6 Observability
+### 6.7 Observability
 
 Remote MCP calls must be visible in metrics and operation logs:
 
@@ -666,6 +698,9 @@ Expected server additions:
 Expected client/tool additions:
 
 - remote MCP connector examples for Codex/Claude-compatible clients
+- warmup/self-update MCP discovery that checks `/mcp/info`, validates native
+  MCP configuration when possible, and reports `rerun_required` after safe
+  config installation
 - optional local MCP shim only for clients that cannot connect to remote MCP directly
 - CLI `doctor`, `context`, `report`, and `case` commands as wrappers
 
@@ -679,7 +714,10 @@ Expected client/tool additions:
 6. Run migration in staging and inspect stats/explain output.
 7. Validate remote MCP auth isolation, metrics/logging, and performance against the fixed benchmark set.
 8. Switch agent instructions to prefer remote MCP tools.
-9. Deprecate v1 agent loop after v2 proves stable.
+9. Add self-update/warmup MCP migration so old clients refresh the skill,
+   validate or install ma3-scoped MCP config where supported, and ask the agent
+   to restart/reload before claiming MCP is active.
+10. Deprecate v1 agent loop after v2 proves stable.
 
 ## 13. LTP Deployment Implementation
 

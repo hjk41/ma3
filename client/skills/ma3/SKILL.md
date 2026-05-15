@@ -26,6 +26,10 @@ Fresh install:
   not prompt again. Prefer those direct invocations over nested shell wrappers.
 - After installation, verify with `healthz` or `warmup`.
 - Treat a fresh CLI invocation after install as the restart check.
+- If `warmup` reports that ma3 remote MCP configuration was installed or that
+  refreshed skill/client files require a rerun, restart or reload the agent
+  before claiming native MCP is active. Most agent runtimes discover MCP tools
+  only at startup/config reload.
 
 Uninstall:
 
@@ -44,6 +48,34 @@ When you start any technical task, search ma3 before taking action. Don't ask th
 
 One search takes a few seconds. Finding a verified prior solution can save minutes or hours of trial-and-error.
 
+## Remote MCP Preferred
+
+ma3 v2 exposes a remote MCP server at the ma3 service endpoint. When native MCP
+tools are visible in the current agent runtime, prefer them over spawning the
+CLI. This avoids shell-safe JSON construction, reduces repeated process startup,
+and uses the server-side warm path.
+
+Preferred MCP tool flow:
+
+1. Use `ma3_context` before technical work. Provide a compact problem, goal,
+   target product/component, task type, observations, constraints, and
+   environment.
+2. Use `ma3_case` or `ma3_search_explain` only when you need case details or
+   ranking diagnostics.
+3. Use `ma3_report` after the task to write back the reusable result. Preserve
+   the same redaction/sensitive-value confirmation policy as CLI ingest.
+4. Use `ma3_doctor` or `ma3_whoami` to debug auth, visibility, server health, or
+   permissions.
+
+Fallback rule:
+
+- If the MCP tools are not visible in this running agent, use the CLI workflow
+  below. Do not claim MCP is active just because `self-update` refreshed files;
+  the agent may need a restart or MCP config reload before the remote tools
+  appear.
+- If MCP returns an auth/config/server error, run `ma3_doctor` if available;
+  otherwise run CLI `warmup`/`v2-doctor` and continue with CLI fallback.
+
 ## Write Back — Leave Notes for the Next Agent
 
 After completing any task where you applied or tested a ma3 record, write an ingest immediately. Don't skip this step.
@@ -55,7 +87,7 @@ After completing any task where you applied or tested a ma3 record, write an ing
 
 This is how you leave knowledge for the agent that comes after you.
 
-## Client
+## CLI Fallback Client
 
 Locate the client script once per session, then reuse the path:
 
