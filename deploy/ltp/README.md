@@ -275,6 +275,10 @@ Required pre-cutover gates:
    - `https://ma3.zhilicon.com/client/manifest.json`
    - `https://ma3.zhilicon.com/ui/overview`
    - one authenticated `/v2/search/explain`
+9. Install a root-only v2 DB backup cron on the LTP instance. After traffic is
+   cut to v2, v2 is the write source of truth; run one immediate manual
+   `backup_postgres.sh` after validation/write-back and schedule daily backups
+   to the same CephFS backup directory.
 
 Keep the old v1 service and final backup intact until these checks pass. Rollback
 is to restore the old dns-manager backend IP/port for `ma3`, regenerate/reload

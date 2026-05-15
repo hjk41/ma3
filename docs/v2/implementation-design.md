@@ -744,7 +744,13 @@ The cutover design is:
    - `https://ma3.zhilicon.com/ui/overview`
    - one authenticated v2 search/explain request
    - one non-mutating v1 compatibility search request if v1 clients are still in use
-9. **Rollback path.** Keep the old v1 backend process and its last backup intact
+9. **Install the v2 database backup cron before declaring cutover complete.**
+   Once traffic points at v2, v2 becomes the write source of truth. A root-only
+   cron wrapper on the LTP instance must run `deploy/ltp/backup_postgres.sh`
+   against the v2 PostgreSQL database and write fresh manifests/dumps to the
+   same CephFS backup directory. Run one manual backup after cutover and after
+   any validation write-back so the latest post-cutover data is captured.
+10. **Rollback path.** Keep the old v1 backend process and its last backup intact
    until the HTTPS checks and agent smoke tests pass. Rollback is to restore the
    dns-manager `ma3` record to the previous backend IP/port, regenerate/reload
    nginx, and verify `https://ma3.zhilicon.com/healthz`.
@@ -761,6 +767,8 @@ Every cutover run must collect evidence for:
 - nginx config test (`nginx -t`) before reload
 - HTTPS certificate subject/issuer/notAfter check after install
 - external HTTPS smoke checks after DNS cutover
+- v2 backup cron syntax check, crontab entry, and one successful post-cutover
+  backup manifest
 - rollback record: previous backend IP/port and command/API path used to restore
   it if validation fails
 
