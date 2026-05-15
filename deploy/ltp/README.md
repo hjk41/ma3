@@ -238,3 +238,44 @@ ma3 writes JSONL operation logs locally. The bootstrap installs a daily cron job
 that runs `deploy/ltp/archive_logs.sh`, compresses completed logs, copies them to
 CephFS/3FS under `$MA3_LOG_ARCHIVE_DIR/$MA3_INSTANCE_ID/`, updates a manifest, and
 removes old local compressed logs after the configured retention window.
+
+## Production cutover checklist
+
+Moving `ma3.zhilicon.com` to an LTP-started v2 instance is a production-impacting
+operation. Do not cut over an instance that was restored from an old backup and
+then left to drift: until a tested delta protocol exists, completeness requires a
+fresh final full backup and restore.
+
+Required pre-cutover gates:
+
+1. Record the target job, backend IP/port, `MA3_INSTANCE_ID`, `MA3_GIT_COMMIT`,
+   and old rollback backend IP/port.
+2. Freeze or stop v1 writes for the final backup window, unless the designer has
+   explicitly accepted the risk of missing writes created after the backup.
+3. Run `deploy/ltp/backup_postgres.sh` on the production database or backup host,
+   then restore that manifest into the v2 target.
+4. Compare v1 and v2 counts for libraries, tokens, records, feedback, and
+   relations. Confirm v2 `records_total == records_with_case` and inspect the
+   v1-to-v2 migration report.
+5. Verify the target backend directly:
+   - `GET /healthz`
+   - `GET /v2/doctor`
+   - `GET /client/manifest.json`
+   - `GET /ui/overview`
+6. Update the `ma3` record through dns-manager so nginx proxies
+   `ma3.zhilicon.com` to the v2 backend. Run `nginx -t` before reload.
+7. Use the dns-manager ACME DNS-01 hook for HTTPS:
+   - set `DNSMANAGER_URL=http://localhost:8053`
+   - set `DNSMANAGER_TOKEN` from a valid LTP token without printing it
+   - run `acme.sh --issue --dns dns_dnsmanager -d ma3.zhilicon.com`
+   - run `acme.sh --install-cert ... --reloadcmd 'nginx -s reload'`
+8. Verify externally over HTTPS:
+   - `https://ma3.zhilicon.com/healthz`
+   - `https://ma3.zhilicon.com/v2/doctor`
+   - `https://ma3.zhilicon.com/client/manifest.json`
+   - `https://ma3.zhilicon.com/ui/overview`
+   - one authenticated `/v2/search/explain`
+
+Keep the old v1 service and final backup intact until these checks pass. Rollback
+is to restore the old dns-manager backend IP/port for `ma3`, regenerate/reload
+nginx, and re-check `https://ma3.zhilicon.com/healthz`.

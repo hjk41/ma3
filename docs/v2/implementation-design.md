@@ -690,6 +690,80 @@ Deployment changes must be checked with:
 
 The first implementation keeps `MA3_ENABLE_DELTA=0`. Delta import remains a placeholder until ma3 has a versioned and idempotent protocol that covers all mutable knowledge objects and tombstones. Do not enable delta in production-like clones until that protocol exists and has replay tests.
 
+### 13.6 Production Cutover to an LTP v2 Instance
+
+Switching `ma3.zhilicon.com` from v1 production to a v2 LTP instance is a
+user-impacting operation. It must be treated as a controlled cutover rather than
+as a normal debug redeploy.
+
+The cutover design is:
+
+1. **Document and announce the exact target instance.** Record the LTP job name,
+   SSH endpoint, `MA3_INSTANCE_ID`, `MA3_GIT_COMMIT`, service port, and expected
+   public URL before changing DNS or nginx.
+2. **Use a final full backup, not best-effort delta.** Until a versioned
+   idempotent delta protocol exists, data completeness is proven by taking a
+   fresh production PostgreSQL backup immediately before cutover and restoring
+   that manifest into the target v2 instance (or into a new v2 instance launched
+   from that manifest). A clone restored from an older `latest.manifest.json`
+   is not sufficient for production cutover.
+3. **Quiesce or minimize writes during the final backup window.** To guarantee no
+   v1 writes are missed, either briefly freeze/stop v1 writes before the final
+   backup or accept and explicitly document a bounded write-loss risk. The
+   default production rule is no intentional loss: freeze v1 writes, take the
+   final backup, restore/migrate v2, then switch traffic.
+4. **Compare data counts and high-water marks.** Before switching traffic,
+   compare v1 production and v2 target for:
+   - library count
+   - token count
+   - record count
+   - feedback count
+   - relation count
+   - v2 case count and `records_with_case == records_total`
+   - latest record/update timestamp from the backup manifest and from the
+     restored database
+5. **Verify runtime identity from both sides.** The v2 target must pass
+   `/healthz` and `/v2/doctor`, and those responses must report the planned
+   `MA3_INSTANCE_ID`, `MA3_GIT_COMMIT`, `database_backend=postgresql`, and
+   `public_base_url=https://ma3.zhilicon.com`.
+6. **Switch through dns-manager/nginx, not direct LTP HTTPS.** The LTP job keeps
+   serving HTTP on its high internal port. Public HTTPS is terminated by the
+   existing `dns.zhilicon.com`/dns-manager/nginx infrastructure on the infra
+   host. The dns-manager record for `ma3` should point to the v2 backend IP/port
+   with proxy enabled, then nginx config must be generated, tested, and reloaded.
+7. **Issue or reinstall the certificate through dns-manager ACME DNS-01.** The
+   supported HTTPS path is `acme.sh --dns dns_dnsmanager` with
+   `DNSMANAGER_URL=http://localhost:8053` on the infra host and a valid
+   `DNSMANAGER_TOKEN` supplied from an LTP token. Certificates must be installed
+   to the nginx certificate directory and `nginx -s reload` must be part of the
+   install/renew hook. Do not print tokens or private keys.
+8. **Post-cutover verification gates.** After DNS/nginx/HTTPS change, verify:
+   - `https://ma3.zhilicon.com/healthz`
+   - `https://ma3.zhilicon.com/v2/doctor`
+   - `https://ma3.zhilicon.com/client/manifest.json`
+   - `https://ma3.zhilicon.com/ui/overview`
+   - one authenticated v2 search/explain request
+   - one non-mutating v1 compatibility search request if v1 clients are still in use
+9. **Rollback path.** Keep the old v1 backend process and its last backup intact
+   until the HTTPS checks and agent smoke tests pass. Rollback is to restore the
+   dns-manager `ma3` record to the previous backend IP/port, regenerate/reload
+   nginx, and verify `https://ma3.zhilicon.com/healthz`.
+
+#### 13.6.1 Production Cutover Tests
+
+Every cutover run must collect evidence for:
+
+- final v1 backup manifest timestamp, record count, latest record timestamp, and
+  checksum verification during restore
+- v1/v2 count comparison for libraries/tokens/records/feedback/relations
+- v2 migration report showing no orphan records and successful case assignment
+- `/healthz` and `/v2/doctor` identity checks on the target before DNS cutover
+- nginx config test (`nginx -t`) before reload
+- HTTPS certificate subject/issuer/notAfter check after install
+- external HTTPS smoke checks after DNS cutover
+- rollback record: previous backend IP/port and command/API path used to restore
+  it if validation fails
+
 ## 14. Knowledge Observatory Web UI Implementation
 
 The first web UI should be a lightweight static frontend served by FastAPI under `/ui`. It should use v2 APIs and avoid direct database coupling.
