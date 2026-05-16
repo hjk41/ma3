@@ -9,8 +9,21 @@ from app.models.relation import RecordRelation
 
 
 class AgentAction(BaseModel):
+    """A single step the agent took while solving the task.
+
+    `action` is required (the verb / step description). `rationale`, `ref`,
+    and `note` are all optional; they exist because agents naturally want to
+    record *why* they did something and *what link / file* it touched in
+    addition to the bare verb. Extra fields are forbidden so payload typos
+    (e.g. `step` instead of `action`) fail loudly with the field name.
+    """
+
     action: str
+    rationale: str | None = None
+    ref: str | None = None
     note: str | None = None
+
+    model_config = {"extra": "forbid"}
 
 
 class AgentIngestRequest(BaseModel):

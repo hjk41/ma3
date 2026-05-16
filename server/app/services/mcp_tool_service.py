@@ -11,7 +11,8 @@ from pydantic import ValidationError
 from app.core.config import settings
 from app.core.security import ResolvedToken, _is_admin_key, hash_token
 from app.models.common import TargetRef
-from app.models.mcp import McpToolDescriptor, McpToolResult
+from app.models.mcp import McpToolDescriptor, McpToolResult, McpToolValidationError
+from app.models.mcp_payloads import PAYLOAD_BY_TOOL, tool_input_schema
 from app.models.v2 import V2AgentContextRequest, V2AgentReportRequest, V2CaseRecordGroup
 from app.services.doctor_service import server_doctor
 from app.services.library_service import accessible_library_ids
@@ -72,95 +73,74 @@ def resolve_mcp_auth(raw: str | None) -> McpAuthContext:
     )
 
 
-def _schema(properties: dict[str, Any], required: list[str] | None = None) -> dict[str, Any]:
-    return {
-        "type": "object",
-        "properties": properties,
-        "required": required or [],
-        "additionalProperties": True,
-    }
+_TOOL_DESCRIPTIONS: dict[str, str] = {
+    "ma3_context": (
+        "Return agent-ready ma3 context for a task: matched cases, records, warnings, "
+        "and optional explain data. Inputs are validated against the Ma3ContextPayload "
+        "Pydantic model — invalid arguments fail with -32602 and a structured "
+        "error.data.validation_errors list."
+    ),
+    "ma3_report": (
+        "Write back an agent outcome to ma3 and assign it to a case. Inputs are "
+        "validated against the Ma3ReportPayload Pydantic model; see "
+        "inputSchema.$defs.AgentAction for the exact item shape of `actions` and "
+        "inputSchema.$defs.EvidenceItem for `evidence`. Use ma3_validate first for "
+        "dry-run validation without consuming write quota."
+    ),
+    "ma3_case": "Read one ma3 case timeline with records and relations visible to the caller.",
+    "ma3_search_explain": (
+        "Diagnostic ma3 search that always includes ranking/candidate explain data. "
+        "Same input shape as ma3_context."
+    ),
+    "ma3_doctor": "Diagnose remote MCP authentication, server health, version, database, and index state.",
+    "ma3_whoami": "Return the caller identity and visible library summary without exposing token material.",
+    "ma3_validate": (
+        "Dry-run validator. Returns {ok: true} when `arguments` would pass Pydantic "
+        "validation for `tool_name`, or the same structured validation_errors list "
+        "that a real call would emit. Cheap, never persists, and ideal for an agent "
+        "retry loop that wants to confirm payload shape before consuming write quota."
+    ),
+}
+
+
+_TOOL_ORDER: tuple[str, ...] = (
+    "ma3_context",
+    "ma3_report",
+    "ma3_case",
+    "ma3_search_explain",
+    "ma3_validate",
+    "ma3_doctor",
+    "ma3_whoami",
+)
 
 
 def list_mcp_tools() -> list[McpToolDescriptor]:
     return [
         McpToolDescriptor(
-            name="ma3_context",
-            description="Return agent-ready ma3 context for a task: matched cases, records, warnings, and optional explain data.",
-            inputSchema=_schema({
-                "problem": {"type": "string"},
-                "goal": {"type": "string"},
-                "task_type": {"type": "string"},
-                "target_product": {"type": "string"},
-                "target_component": {"type": "string"},
-                "target": {"type": "object"},
-                "environment": {"type": "object"},
-                "versions": {"type": "object"},
-                "observations": {"type": "array", "items": {"type": "string"}},
-                "constraints": {"type": "array", "items": {"type": "string"}},
-                "tags": {"type": "array", "items": {"type": "string"}},
-                "max_cases": {"type": "integer", "minimum": 1, "maximum": 20},
-                "max_records_per_case": {"type": "integer", "minimum": 1, "maximum": 10},
-                "include_explain": {"type": "boolean"},
-                "include_full_json": {"type": "boolean"},
-            }, ["problem"]),
-        ),
-        McpToolDescriptor(
-            name="ma3_report",
-            description="Write back an agent outcome to ma3 and assign it to a case.",
-            inputSchema=_schema({
-                "problem": {"type": "string"},
-                "goal": {"type": "string"},
-                "task_type": {"type": "string"},
-                "target_product": {"type": "string"},
-                "target_component": {"type": "string"},
-                "target": {"type": "object"},
-                "outcome": {"type": "string"},
-                "result_summary": {"type": "string"},
-                "actions": {"type": "array"},
-                "evidence": {"type": "array"},
-                "observations": {"type": "array", "items": {"type": "string"}},
-                "based_on_record_ids": {"type": "array", "items": {"type": "string"}},
-                "relation_type": {"type": "string"},
-                "case_id": {"type": "string"},
-                "dry_run": {"type": "boolean"},
-                "redaction_mode": {"type": "string", "enum": ["auto", "none"]},
-                "include_full_json": {"type": "boolean"},
-            }, ["problem", "outcome", "result_summary"]),
-        ),
-        McpToolDescriptor(
-            name="ma3_case",
-            description="Read one ma3 case timeline with records and relations visible to the caller.",
-            inputSchema=_schema({
-                "case_id": {"type": "string"},
-                "include_full_json": {"type": "boolean"},
-            }, ["case_id"]),
-        ),
-        McpToolDescriptor(
-            name="ma3_search_explain",
-            description="Diagnostic ma3 search that always includes ranking/candidate explain data.",
-            inputSchema=_schema({
-                "problem": {"type": "string"},
-                "goal": {"type": "string"},
-                "task_type": {"type": "string"},
-                "target_product": {"type": "string"},
-                "target_component": {"type": "string"},
-                "target": {"type": "object"},
-                "max_cases": {"type": "integer"},
-                "max_records_per_case": {"type": "integer"},
-                "include_full_json": {"type": "boolean"},
-            }, ["problem"]),
-        ),
-        McpToolDescriptor(
-            name="ma3_doctor",
-            description="Diagnose remote MCP authentication, server health, version, database, and index state.",
-            inputSchema=_schema({"include_full_json": {"type": "boolean"}}),
-        ),
-        McpToolDescriptor(
-            name="ma3_whoami",
-            description="Return the caller identity and visible library summary without exposing token material.",
-            inputSchema=_schema({"include_full_json": {"type": "boolean"}}),
-        ),
+            name=name,
+            description=_TOOL_DESCRIPTIONS[name],
+            inputSchema=tool_input_schema(name),
+        )
+        for name in _TOOL_ORDER
+        if name in PAYLOAD_BY_TOOL
     ]
+
+
+def _validate_args(tool_name: str, arguments: dict[str, Any]) -> dict[str, Any]:
+    """Run the tool's Pydantic payload validator and return the cleaned dict.
+
+    On failure, raise ``McpToolValidationError`` carrying the structured
+    Pydantic errors list so the route layer can attach it to error.data.
+    """
+
+    model = PAYLOAD_BY_TOOL.get(tool_name)
+    if model is None:
+        raise HTTPException(status_code=404, detail="tool_not_found")
+    try:
+        validated = model.model_validate(arguments)
+    except ValidationError as exc:
+        raise McpToolValidationError(tool_name, exc.errors()) from exc
+    return validated.model_dump(mode="python")
 
 
 def _json_text(data: Any) -> str:
@@ -314,8 +294,13 @@ def call_mcp_tool(tool_name: str, arguments: dict[str, Any], auth: McpAuthContex
     error_type = None
     include_full_json = bool(arguments.get("include_full_json", False))
     try:
+        if tool_name not in PAYLOAD_BY_TOOL:
+            raise HTTPException(status_code=404, detail="tool_not_found")
+
+        validated = _validate_args(tool_name, arguments)
+
         if tool_name == "ma3_context":
-            req = _context_request(arguments)
+            req = _context_request(validated)
             resp = build_agent_context(
                 req,
                 auth.readable_library_ids,
@@ -327,7 +312,7 @@ def call_mcp_tool(tool_name: str, arguments: dict[str, Any], auth: McpAuthContex
             return _tool_result(_context_summary(compact), compact if not include_full_json else full, include_full_json=False)
 
         if tool_name == "ma3_search_explain":
-            req = _context_request(arguments, explain=True)
+            req = _context_request(validated, explain=True)
             resp = build_agent_context(
                 req,
                 auth.readable_library_ids,
@@ -340,7 +325,7 @@ def call_mcp_tool(tool_name: str, arguments: dict[str, Any], auth: McpAuthContex
 
         if tool_name == "ma3_report":
             library_id = _require_write_library_id(auth)
-            req = _report_request(arguments)
+            req = _report_request(validated)
             resp = ingest_v2_agent_report(req, library_id=library_id, accessible_library_ids=auth.readable_library_ids)
             full = resp.model_dump(mode="json")
             compact = {
@@ -355,9 +340,7 @@ def call_mcp_tool(tool_name: str, arguments: dict[str, Any], auth: McpAuthContex
             return _tool_result(summary, compact if not include_full_json else full, include_full_json=False)
 
         if tool_name == "ma3_case":
-            case_id = arguments.get("case_id")
-            if not case_id:
-                raise ValueError("case_id is required")
+            case_id = validated["case_id"]
             cases = CaseRepository().list_by_ids_accessible({case_id}, auth.readable_library_ids)
             if not cases:
                 raise HTTPException(status_code=404, detail="case not found")
@@ -408,7 +391,38 @@ def call_mcp_tool(tool_name: str, arguments: dict[str, Any], auth: McpAuthContex
             summary = f"ma3_whoami: {auth.caller_summary.get('type')} visible_libraries={len(visible)}"
             return _tool_result(summary, full, include_full_json=False)
 
+        if tool_name == "ma3_validate":
+            inner_tool = validated["tool_name"]
+            inner_args = validated.get("arguments") or {}
+            try:
+                _validate_args(inner_tool, inner_args)
+                ok_payload = {"ok": True, "tool_name": inner_tool}
+                return _tool_result(
+                    f"ma3_validate: {inner_tool} ok",
+                    ok_payload,
+                    include_full_json=False,
+                )
+            except McpToolValidationError as exc:
+                err_payload = {
+                    "ok": False,
+                    "tool_name": inner_tool,
+                    "validation_errors": exc.errors,
+                    "schema_hint": (
+                        f"See tools/list inputSchema for {inner_tool}; "
+                        "fix each entry in validation_errors[*].loc and retry."
+                    ),
+                }
+                return _tool_result(
+                    f"ma3_validate: {inner_tool} failed ({len(exc.errors)} error(s))",
+                    err_payload,
+                    include_full_json=False,
+                )
+
         raise HTTPException(status_code=404, detail="tool_not_found")
+    except McpToolValidationError as exc:
+        status = "error"
+        error_type = "invalid_params"
+        raise
     except HTTPException as exc:
         status = "error"
         error_type = str(exc.detail)

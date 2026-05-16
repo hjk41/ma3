@@ -7,7 +7,7 @@ from fastapi.responses import JSONResponse
 from pydantic import ValidationError
 
 from app.core.security import _extract_raw
-from app.models.mcp import McpJsonRpcRequest
+from app.models.mcp import McpJsonRpcRequest, McpToolValidationError
 from app.services.mcp_tool_service import (
     call_mcp_tool,
     list_mcp_tools,
@@ -63,6 +63,21 @@ def _handle_rpc(req: McpJsonRpcRequest, raw_auth: str | None) -> dict[str, Any] 
             result = call_mcp_tool(name, arguments, auth)
             return _jsonrpc_result(req.id, result.model_dump(mode="json", exclude_none=True))
         return _jsonrpc_error(req.id, -32601, "Method not found", {"method": req.method})
+    except McpToolValidationError as exc:
+        return _jsonrpc_error(
+            req.id,
+            -32602,
+            "Invalid params",
+            {
+                "tool_name": exc.tool_name,
+                "validation_errors": exc.errors,
+                "schema_hint": (
+                    f"See tools/list inputSchema for {exc.tool_name}; "
+                    "fix each entry in validation_errors[*].loc and retry. "
+                    "ma3_validate offers a dry-run check."
+                ),
+            },
+        )
     except HTTPException as exc:
         return _jsonrpc_error(req.id, _http_to_jsonrpc_code(exc.status_code), str(exc.detail), {"status_code": exc.status_code})
     except ValueError as exc:

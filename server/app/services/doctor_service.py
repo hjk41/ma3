@@ -51,6 +51,8 @@ def server_doctor() -> dict:
         "public_base_url": settings.public_base_url,
         "instance_id": settings.instance_id,
         "git_commit": settings.git_commit,
+        "job_name": settings.job_name,
+        "deployed_at": settings.started_at,
         "features": list(settings.feature_flags) + [
             "v2_agent_context",
             "v2_cases",

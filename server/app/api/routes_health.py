@@ -19,4 +19,6 @@ def healthz() -> dict[str, str | list[str] | None]:
         "public_base_url": settings.public_base_url,
         "instance_id": settings.instance_id,
         "git_commit": settings.git_commit,
+        "job_name": settings.job_name,
+        "deployed_at": settings.started_at,
     }

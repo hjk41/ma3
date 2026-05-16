@@ -1,5 +1,7 @@
 import os
+import time
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
 from pathlib import Path
 
 
@@ -25,6 +27,9 @@ class Settings:
     public_base_url: str | None = field(init=False)
     instance_id: str | None = field(init=False)
     git_commit: str | None = field(init=False)
+    job_name: str | None = field(init=False)
+    started_at: str = field(init=False)
+    started_at_epoch: int = field(init=False)
     op_log_dir: Path = field(init=False)
     log_archive_dir: Path | None = field(init=False)
     log_local_retention_days: int = field(init=False)
@@ -48,6 +53,14 @@ class Settings:
         public_base_url = os.environ.get("MA3_PUBLIC_BASE_URL") or None
         instance_id = os.environ.get("MA3_INSTANCE_ID") or None
         git_commit = os.environ.get("MA3_GIT_COMMIT") or None
+        job_name = (
+            os.environ.get("MA3_JOB_NAME")
+            or os.environ.get("PAI_JOB_NAME")
+            or os.environ.get("MA3_INSTANCE_NAME")
+            or None
+        )
+        started_at_epoch = int(time.time())
+        started_at = datetime.fromtimestamp(started_at_epoch, tz=timezone.utc).isoformat()
         op_log_dir = Path(os.environ.get("MA3_OP_LOG_DIR", "/var/log/ma3/ops"))
         log_archive = os.environ.get("MA3_LOG_ARCHIVE_DIR") or None
         log_local_retention_days = int(os.environ.get("MA3_LOG_LOCAL_RETENTION_DAYS", "2"))
@@ -69,6 +82,9 @@ class Settings:
         object.__setattr__(self, "public_base_url", public_base_url)
         object.__setattr__(self, "instance_id", instance_id)
         object.__setattr__(self, "git_commit", git_commit)
+        object.__setattr__(self, "job_name", job_name)
+        object.__setattr__(self, "started_at", started_at)
+        object.__setattr__(self, "started_at_epoch", started_at_epoch)
         object.__setattr__(self, "op_log_dir", op_log_dir)
         object.__setattr__(self, "log_archive_dir", Path(log_archive) if log_archive else None)
         object.__setattr__(self, "log_local_retention_days", log_local_retention_days)

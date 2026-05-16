@@ -38,8 +38,22 @@ def test_remote_mcp_initialize_and_tools_list(client):
     listed = _rpc(client, "tools/list", key=None)
     assert listed.status_code == 200
     tools = {tool["name"]: tool for tool in listed.json()["result"]["tools"]}
-    assert {"ma3_context", "ma3_report", "ma3_case", "ma3_search_explain", "ma3_doctor", "ma3_whoami"} <= set(tools)
+    assert {
+        "ma3_context",
+        "ma3_report",
+        "ma3_case",
+        "ma3_search_explain",
+        "ma3_validate",
+        "ma3_doctor",
+        "ma3_whoami",
+    } <= set(tools)
     assert tools["ma3_context"]["inputSchema"]["type"] == "object"
+    # The schema must surface the AgentAction/EvidenceItem $defs so clients
+    # can construct payloads from inputSchema alone.
+    report_schema = tools["ma3_report"]["inputSchema"]
+    assert "$defs" in report_schema
+    assert "AgentAction" in report_schema["$defs"]
+    assert "EvidenceItem" in report_schema["$defs"]
 
 
 def test_remote_mcp_context_report_case_and_metrics(authed_client):
@@ -193,10 +207,80 @@ def test_remote_mcp_auth_isolation_reader_cannot_write(authed_client):
 def test_remote_mcp_invalid_params_and_notifications(client):
     bad = _call(client, "ma3_context", {}, key=None)
     assert bad.status_code == 200
-    assert bad.json()["error"]["code"] == -32602
+    err = bad.json()["error"]
+    assert err["code"] == -32602
+    # The structured shape must carry the offending field, not just a string.
+    assert err["data"]["tool_name"] == "ma3_context"
+    validation_errors = err["data"]["validation_errors"]
+    assert isinstance(validation_errors, list) and validation_errors
+    locs = {tuple(item["loc"]) for item in validation_errors}
+    assert ("problem",) in locs, f"problem field should be flagged missing; got {locs}"
+    assert "schema_hint" in err["data"]
 
     notification = client.post("/mcp", json={"jsonrpc": "2.0", "method": "notifications/initialized"})
     assert notification.status_code == 202
+
+
+def test_remote_mcp_report_extra_field_surfaces_offending_field(authed_client):
+    """A typo like `outome` instead of `outcome` must fail loudly and name the field."""
+
+    bad = _call(
+        authed_client,
+        "ma3_report",
+        {
+            "problem": "validate that typos are caught",
+            "outome": "success",  # typo on purpose
+            "result_summary": "this should never persist",
+            "target": {"product": "ma3", "component": "remote-mcp"},
+        },
+    )
+    assert bad.status_code == 200
+    err = bad.json()["error"]
+    assert err["code"] == -32602
+    assert err["data"]["tool_name"] == "ma3_report"
+    locs = {tuple(item["loc"]) for item in err["data"]["validation_errors"]}
+    # extra=forbid surfaces the unknown key's loc; outcome must also be flagged missing.
+    assert ("outome",) in locs or any("outome" in str(item) for item in err["data"]["validation_errors"])
+    assert ("outcome",) in locs
+
+
+def test_remote_mcp_ma3_validate_dry_run_does_not_persist(authed_client):
+    listed_before = _call(authed_client, "ma3_doctor").json()["result"]["structuredContent"]
+    assert listed_before["mcp"]["status"] == "ok"
+
+    ok = _call(
+        authed_client,
+        "ma3_validate",
+        {
+            "tool_name": "ma3_report",
+            "arguments": {
+                "problem": "dry-run validation should succeed",
+                "outcome": "resolved",
+                "result_summary": "this is a dry run",
+                "target": {"product": "ma3", "component": "remote-mcp"},
+                "actions": [{"action": "ran ma3_validate"}],
+            },
+        },
+    )
+    assert ok.status_code == 200, ok.text
+    ok_body = ok.json()["result"]["structuredContent"]
+    assert ok_body == {"ok": True, "tool_name": "ma3_report"}
+
+    bad = _call(
+        authed_client,
+        "ma3_validate",
+        {
+            "tool_name": "ma3_report",
+            "arguments": {"problem": "missing outcome and result_summary"},
+        },
+    )
+    assert bad.status_code == 200, bad.text
+    bad_body = bad.json()["result"]["structuredContent"]
+    assert bad_body["ok"] is False
+    assert bad_body["tool_name"] == "ma3_report"
+    locs = {tuple(item["loc"]) for item in bad_body["validation_errors"]}
+    assert ("outcome",) in locs
+    assert ("result_summary",) in locs
 
 
 def test_remote_mcp_batch_jsonrpc_and_error_mapping(authed_client):
@@ -229,3 +313,35 @@ def test_remote_mcp_batch_jsonrpc_and_error_mapping(authed_client):
     )
     assert invalid_arguments.status_code == 200
     assert invalid_arguments.json()["error"]["code"] == -32602
+
+
+def test_remote_mcp_overview_ui_shows_deploy_identity(client, monkeypatch):
+    """The UI banner is the single visible source of truth for which
+    instance is serving traffic. It must show commit, job, and deploy date
+    even when the JS data fetches fail.
+    """
+    from app.core import config as _config
+
+    object.__setattr__(_config.settings, "git_commit", "abcdef0123456789")
+    object.__setattr__(_config.settings, "instance_id", "ma3-test-instance")
+    object.__setattr__(_config.settings, "job_name", "ma3-cpudev-1234")
+
+    resp = client.get("/ui/overview")
+    assert resp.status_code == 200
+    body = resp.text
+    assert 'class="deploy-banner"' in body
+    assert "ma3-test-instance" in body
+    # short commit form (12 chars)
+    assert "abcdef012345" in body
+    assert "ma3-cpudev-1234" in body
+    # deployed_at is an ISO timestamp captured at boot; the label is enough
+    assert "DEPLOYED" in body.upper()
+
+
+def test_healthz_and_doctor_expose_deploy_identity(authed_client):
+    h = authed_client.get("/healthz").json()
+    assert "job_name" in h
+    assert "deployed_at" in h
+    d = authed_client.get("/v2/doctor").json()
+    assert "job_name" in d
+    assert "deployed_at" in d

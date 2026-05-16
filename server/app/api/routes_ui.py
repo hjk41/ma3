@@ -1,13 +1,47 @@
+from html import escape
+
 from fastapi import APIRouter
 from fastapi.responses import HTMLResponse
+
+from app.core.config import settings
 
 
 router = APIRouter(tags=["ui"])
 
 
+def _deploy_banner_html() -> str:
+    """Static server-rendered banner showing instance identity.
+
+    Keeping this server-side (rather than client-side fetch /healthz) makes
+    deploy info visible even when the JS code paths fail. Empty fields are
+    rendered as "—" so the layout is stable across dev/test/prod.
+    """
+
+    def cell(label: str, value: str | None) -> str:
+        shown = escape(value) if value else "—"
+        return (
+            f'<span class="dep-cell"><span class="dep-label">{escape(label)}</span>'
+            f'<code class="dep-value">{shown}</code></span>'
+        )
+
+    commit_short = (settings.git_commit or "")[:12] or None
+    return (
+        '<div class="deploy-banner" title="Server deployment identity. ' \
+        'Mismatches between expected and shown commit/job indicate a stale ' \
+        'reverse-proxy backend.">'
+        + cell("instance", settings.instance_id)
+        + cell("commit", commit_short)
+        + cell("deployed", settings.started_at)
+        + cell("job", settings.job_name)
+        + cell("base url", settings.public_base_url)
+        + "</div>"
+    )
+
+
 @router.get("/ui", response_class=HTMLResponse)
 @router.get("/ui/{page}", response_class=HTMLResponse)
 def ui(page: str = "overview") -> str:
+    deploy_banner = _deploy_banner_html()
     return f"""<!doctype html>
 <html>
 <head>
@@ -24,10 +58,15 @@ def ui(page: str = "overview") -> str:
     .muted {{ color: #667085; }}
     .pager a {{ margin-right: 1rem; }}
     code {{ background: #f2f4f7; padding: .1rem .25rem; border-radius: .25rem; }}
+    .deploy-banner {{ display: flex; flex-wrap: wrap; gap: .75rem 1.25rem; padding: .55rem .85rem; margin-bottom: 1rem; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: .5rem; font-size: .85rem; }}
+    .deploy-banner .dep-cell {{ display: flex; gap: .35rem; align-items: baseline; }}
+    .deploy-banner .dep-label {{ color: #64748b; text-transform: uppercase; letter-spacing: .04em; font-size: .7rem; }}
+    .deploy-banner .dep-value {{ background: transparent; padding: 0; color: #0f172a; }}
   </style>
 </head>
 <body>
   <h1>ma3 Knowledge Observatory</h1>
+  {deploy_banner}
   <nav>
     <a href="/ui/overview">Overview</a>
     <a href="/ui/topics">Topics</a>

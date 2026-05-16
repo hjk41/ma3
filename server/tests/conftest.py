@@ -50,6 +50,7 @@ def _isolated_settings(tmp_path):
     orig_public_base_url = config.settings.public_base_url
     orig_instance_id = config.settings.instance_id
     orig_git_commit = config.settings.git_commit
+    orig_job_name = config.settings.job_name
     orig_op_log_dir = config.settings.op_log_dir
     orig_log_archive_dir = config.settings.log_archive_dir
     orig_log_local_retention_days = config.settings.log_local_retention_days
@@ -69,6 +70,7 @@ def _isolated_settings(tmp_path):
     object.__setattr__(config.settings, "public_base_url", None)
     object.__setattr__(config.settings, "instance_id", None)
     object.__setattr__(config.settings, "git_commit", None)
+    object.__setattr__(config.settings, "job_name", None)
     object.__setattr__(config.settings, "op_log_dir", tmp_path / "ops")
     object.__setattr__(config.settings, "log_archive_dir", tmp_path / "archive")
     object.__setattr__(config.settings, "log_local_retention_days", 2)
@@ -93,6 +95,7 @@ def _isolated_settings(tmp_path):
     object.__setattr__(config.settings, "public_base_url", orig_public_base_url)
     object.__setattr__(config.settings, "instance_id", orig_instance_id)
     object.__setattr__(config.settings, "git_commit", orig_git_commit)
+    object.__setattr__(config.settings, "job_name", orig_job_name)
     object.__setattr__(config.settings, "op_log_dir", orig_op_log_dir)
     object.__setattr__(config.settings, "log_archive_dir", orig_log_archive_dir)
     object.__setattr__(config.settings, "log_local_retention_days", orig_log_local_retention_days)
