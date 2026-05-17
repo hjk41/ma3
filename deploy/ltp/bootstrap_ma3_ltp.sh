@@ -323,7 +323,7 @@ curl -fsS "http://127.0.0.1:${MA3_PORT}/v2/doctor" | python3 -m json.tool
 
 log "installing daily log archive cron entry"
 if command -v cron >/dev/null 2>&1; then
-  (crontab -l 2>/dev/null | grep -v 'archive_logs.sh' || true; echo "7 3 * * * cd '$MA3_REPO_DIR/server' && . '$MA3_WORKDIR/ma3.env' && bash '$MA3_REPO_DIR/deploy/ltp/archive_logs.sh' >> /var/log/ma3/archive.log 2>&1") | crontab -
+  (crontab -l 2>/dev/null | grep -v 'archive_logs.sh' || true; echo "7 3 * * * cd '$MA3_REPO_DIR/server' && set -a && . '$MA3_WORKDIR/ma3.env' && set +a && bash '$MA3_REPO_DIR/deploy/ltp/archive_logs.sh' >> /var/log/ma3/archive.log 2>&1") | crontab -
   cron || true
 fi
 
