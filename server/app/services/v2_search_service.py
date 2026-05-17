@@ -287,6 +287,7 @@ def _build_agent_context_impl(
             "task_type": payload.task_type,
             "target": payload.target.model_dump(),
             "tags": payload.tags,
+            "problem": payload.problem,
         },
         perf=perf_summary,
     )

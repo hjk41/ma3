@@ -52,6 +52,7 @@ def post_search(
             "task_type": payload.task_type,
             "target": payload.target.model_dump(),
             "tags": payload.tags,
+            "problem": payload.problem,
         },
         perf=summary,
     )

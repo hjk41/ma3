@@ -442,7 +442,7 @@ def call_mcp_tool(tool_name: str, arguments: dict[str, Any], auth: McpAuthContex
             caller=auth.caller_summary,
             error_type=error_type,
             payload_summary={
-                "has_problem": bool(arguments.get("problem")),
+                "problem": arguments.get("problem"),
                 "include_full_json": bool(arguments.get("include_full_json")),
                 "dry_run": bool(arguments.get("dry_run")),
             },
