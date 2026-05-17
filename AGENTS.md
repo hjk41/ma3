@@ -119,9 +119,25 @@ but the short checklist:
    show `AgentAction` in `$defs` and `actions.items.$ref=#/$defs/AgentAction`.
    `ma3_validate` dry-run must return `{ok: true}` for a known-good
    payload.
-8. **Final-backup-after-candidate-up** to minimize drift:
-   - on prod container: `bash deploy/ltp/backup_postgres.sh`
-   - on candidate: `kill $(cat /root/ma3-instance/ma3.pid)`
+8. **Sync old-instance data to candidate BEFORE the traffic flip.** Both
+   the Postgres dump AND the in-container op_log must reach CephFS while
+   the old container is still alive, otherwise everything written
+   between the last cron backup and the flip is lost when the old job
+   stops (op_logs are container-local; the daily 03:07 cron only
+   archives *yesterday*'s file, so today's JSONL is invisible to the new
+   instance without an explicit force-archive).
+   - **Postgres**: on the OLD prod container,
+     `bash deploy/ltp/backup_postgres.sh` → writes to
+     `$MA3_BACKUP_DIR` on CephFS and updates `latest` manifest.
+   - **Op logs**: hit the OLD instance's
+     `POST /v2/logs/archive` (no auth) — compresses every
+     completed JSONL and ships it to
+     `$MA3_LOG_ARCHIVE_DIR/<old-instance-id>/`. Today's open JSONL is
+     skipped by design; if you need it, SSH into the OLD job
+     (`/proc/<uvicorn-pid>` lookup → `gzip -c
+     /var/log/ma3/ops/$(date -u +%F).jsonl > /mnt/cephfs/.../forced.jsonl.gz`)
+     before stopping uvicorn.
+   - On candidate: `kill $(cat /root/ma3-instance/ma3.pid)`
    - `bash deploy/ltp/restore_postgres.sh` with
      `MA3_BACKUP_MANIFEST=latest`
    - `python server/scripts/migrate_v1_to_v2_cases.py --apply` (idempotent)
@@ -199,6 +215,8 @@ shellcheck deploy/ltp/*.sh                                         # if shellche
 | `instance_id: null` after manual uvicorn restart | env not sourced | `set -a; . ma3.env; set +a` before nohup |
 | `state: RUNNING` after `executionType=STOPPED` | LTP transitions are async | trust the 202 and external probe; don't block |
 | `record_count` drift between prod and candidate | candidate restored from old cron backup | take final backup AFTER candidate is up, restore, then flip |
+| Pre-cutover op_logs lost after old job stops | container-local JSONL, daily cron only archives yesterday | hit `POST /v2/logs/archive` on the OLD instance before stopping uvicorn; force-gzip today's JSONL to CephFS if it matters |
+| `archive_logs.sh` cron run prints `MA3_LOG_ARCHIVE_DIR is required` | cron `. ma3.env` doesn't export vars to child bash | bootstrap cron line must use `set -a; . ma3.env; set +a` before `bash archive_logs.sh` |
 
 ## Production identity (as of 2026-05-16)
 
