@@ -1,9 +1,10 @@
 from html import escape
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 from fastapi.responses import HTMLResponse
 
 from app.core.config import settings
+from app.core.security import ResolvedPrincipal, current_principal
 
 
 router = APIRouter(tags=["ui"])
@@ -36,6 +37,132 @@ def _deploy_banner_html() -> str:
         + cell("base url", settings.public_base_url)
         + "</div>"
     )
+
+
+def _management_html(title: str, page: str, principal: ResolvedPrincipal) -> str:
+    deploy_banner = _deploy_banner_html()
+    if principal.kind == "anonymous":
+        body = """
+        <section class="card">
+          <h2>Sign in required</h2>
+          <p>Sign in at <a href="https://auth.zhilicon.com">auth.zhilicon.com</a>, then reload this page.</p>
+        </section>
+        """
+        script = ""
+    elif page == "admin-keys" and not principal.is_admin_bypass:
+        body = "<section class=\"card\"><h2>Admin required</h2><p>This page requires ma3 global admin access.</p></section>"
+        script = ""
+    else:
+        body = '<div id="app">Loading...</div>'
+        script = f"""
+  <script>
+    const page = {page!r};
+    const app = document.getElementById("app");
+    const esc = (value) => String(value ?? "").replace(/[&<>\\"']/g, ch => ({{"&":"&amp;","<":"&lt;",">":"&gt;","\\\"":"&quot;","'":"&#39;"}}[ch]));
+    async function api(url, options = {{}}) {{
+      const resp = await fetch(url, {{credentials: "include", ...options, headers: {{"Content-Type": "application/json", ...(options.headers || {{}})}}}});
+      const text = await resp.text();
+      const body = text ? JSON.parse(text) : null;
+      if (!resp.ok) throw new Error(JSON.stringify(body || {{status: resp.status}}));
+      return body;
+    }}
+    function libRows(libs) {{
+      return (libs || []).map(l => `<tr><td><code>${{esc(l.library_id)}}</code></td><td>${{esc(l.name || "")}}</td><td>${{esc(l.role)}}</td><td>${{esc(l.source || "")}}</td><td>${{l.is_public ? "yes" : "no"}}</td></tr>`).join("");
+    }}
+    async function renderMe() {{
+      const who = await api("/v3/auth/whoami");
+      const keys = await api("/v3/auth/keys");
+      app.innerHTML = `
+        <h2>Your access</h2>
+        <pre>${{esc(JSON.stringify(who.principal, null, 2))}}</pre>
+        <h3>Libraries</h3><table><thead><tr><th>ID</th><th>Name</th><th>Role</th><th>Source</th><th>Public</th></tr></thead><tbody>${{libRows(who.libraries)}}</tbody></table>
+        <h3>Your API keys</h3>
+        <form id="key-form"><input name="label" placeholder="label" required /> <input name="scope" placeholder="optional comma-separated library ids" style="width:26rem" /> <button>Issue key</button></form>
+        <pre id="new-key"></pre>
+        <table><thead><tr><th>ID</th><th>Label</th><th>Scope</th><th>Last used</th><th>Revoked</th><th></th></tr></thead><tbody>${{keys.map(k => `<tr><td><code>${{esc(k.key_id)}}</code></td><td>${{esc(k.label)}}</td><td>${{esc((k.scope_libraries || []).join(", "))}}</td><td>${{esc(k.last_used_at || "")}}</td><td>${{esc(k.revoked_at || "")}}</td><td><button data-revoke="${{esc(k.key_id)}}">Revoke</button></td></tr>`).join("")}}</tbody></table>`;
+      document.getElementById("key-form").addEventListener("submit", async event => {{
+        event.preventDefault();
+        const form = new FormData(event.currentTarget);
+        const scope = String(form.get("scope") || "").split(",").map(x => x.trim()).filter(Boolean);
+        const issued = await api("/v3/auth/keys", {{method: "POST", body: JSON.stringify({{label: form.get("label"), scope_libraries: scope.length ? scope : null}})}});
+        document.getElementById("new-key").textContent = JSON.stringify(issued, null, 2);
+      }});
+      document.querySelectorAll("button[data-revoke]").forEach(btn => btn.addEventListener("click", async () => {{ await fetch(`/v3/auth/keys/${{btn.dataset.revoke}}`, {{method:"DELETE", credentials:"include"}}); location.reload(); }}));
+    }}
+    async function renderLibs() {{
+      const who = await api("/v3/auth/whoami");
+      app.innerHTML = `
+        <h2>Libraries</h2>
+        <form id="lib-form"><input name="name" placeholder="name" required /> <input name="description" placeholder="description" style="width:24rem" /> <label><input name="is_public" type="checkbox" /> public</label> <button>Create library</button></form>
+        <table><thead><tr><th>ID</th><th>Name</th><th>Role</th><th>Source</th><th>Public</th></tr></thead><tbody>${{libRows(who.libraries)}}</tbody></table>`;
+      document.getElementById("lib-form").addEventListener("submit", async event => {{
+        event.preventDefault();
+        const form = new FormData(event.currentTarget);
+        await api("/v3/libraries", {{method:"POST", body: JSON.stringify({{name: form.get("name"), description: form.get("description") || "", is_public: Boolean(form.get("is_public"))}})}});
+        location.reload();
+      }});
+    }}
+    async function renderAdminKeys() {{
+      const keys = await api("/v3/auth/keys/all");
+      const audit = await api("/v3/auth/audit?limit=50");
+      app.innerHTML = `
+        <h2>Admin keys</h2>
+        <p class="muted">Bulk xyz issuance is available via <code>server/scripts/issue_xyz_keys_for_users.py</code>.</p>
+        <h3>All API keys</h3><table><thead><tr><th>ID</th><th>Principal</th><th>Label</th><th>Scope</th><th>Last used</th><th>Revoked</th></tr></thead><tbody>${{keys.map(k => `<tr><td><code>${{esc(k.key_id)}}</code></td><td>${{esc(k.principal_id)}}</td><td>${{esc(k.label)}}</td><td>${{esc((k.scope_libraries || []).join(", "))}}</td><td>${{esc(k.last_used_at || "")}}</td><td>${{esc(k.revoked_at || "")}}</td></tr>`).join("")}}</tbody></table>
+        <h3>Recent audit</h3><pre>${{esc(JSON.stringify(audit, null, 2))}}</pre>`;
+    }}
+    (page === "me" ? renderMe() : page === "libs" ? renderLibs() : renderAdminKeys()).catch(err => app.innerHTML = `<pre>${{esc(err.stack || err)}}</pre>`);
+  </script>
+        """
+    return f"""<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>{escape(title)}</title>
+  <style>
+    body {{ font-family: system-ui, sans-serif; margin: 2rem; color: #172033; }}
+    nav a {{ margin-right: 1rem; }}
+    pre {{ background: #f5f5f5; padding: 1rem; overflow: auto; }}
+    table {{ border-collapse: collapse; width: 100%; margin-top: 1rem; }}
+    th, td {{ border-bottom: 1px solid #ddd; padding: .5rem; text-align: left; vertical-align: top; }}
+    th {{ background: #f8fafc; }}
+    .muted {{ color: #667085; }}
+    .card {{ background: #f8fafc; border: 1px solid #e2e8f0; border-radius: .5rem; padding: 1rem; }}
+    code {{ background: #f2f4f7; padding: .1rem .25rem; border-radius: .25rem; }}
+    .deploy-banner {{ display: flex; flex-wrap: wrap; gap: .75rem 1.25rem; padding: .55rem .85rem; margin-bottom: 1rem; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: .5rem; font-size: .85rem; }}
+    .deploy-banner .dep-cell {{ display: flex; gap: .35rem; align-items: baseline; }}
+    .deploy-banner .dep-label {{ color: #64748b; text-transform: uppercase; letter-spacing: .04em; font-size: .7rem; }}
+    .deploy-banner .dep-value {{ background: transparent; padding: 0; color: #0f172a; }}
+  </style>
+</head>
+<body>
+  <h1>{escape(title)}</h1>
+  {deploy_banner}
+  <nav>
+    <a href="/ui/overview">Overview</a>
+    <a href="/ui/me">Me</a>
+    <a href="/ui/libs">Libraries</a>
+    <a href="/ui/admin/keys">Admin Keys</a>
+  </nav>
+  {body}
+  {script}
+</body>
+</html>"""
+
+
+@router.get("/ui/me", response_class=HTMLResponse)
+def ui_me(principal: ResolvedPrincipal = Depends(current_principal)) -> str:
+    return _management_html("ma3 — Your access", "me", principal)
+
+
+@router.get("/ui/libs", response_class=HTMLResponse)
+def ui_libs(principal: ResolvedPrincipal = Depends(current_principal)) -> str:
+    return _management_html("ma3 — Libraries", "libs", principal)
+
+
+@router.get("/ui/admin/keys", response_class=HTMLResponse)
+def ui_admin_keys(principal: ResolvedPrincipal = Depends(current_principal)) -> str:
+    return _management_html("ma3 — Admin keys", "admin-keys", principal)
 
 
 @router.get("/ui", response_class=HTMLResponse)
@@ -73,6 +200,9 @@ def ui(page: str = "overview") -> str:
     <a href="/ui/cases">Cases</a>
     <a href="/ui/search-explain">Search Explain</a>
     <a href="/ui/quality-actions">Quality Actions</a>
+    <a href="/ui/me">Me</a>
+    <a href="/ui/libs">Libraries</a>
+    <a href="/ui/admin/keys">Admin Keys</a>
   </nav>
   <p>Current page: <strong>{page}</strong></p>
   <p><label>API Key (optional, saved locally): <input id="api-key" type="password" style="width:28rem" placeholder="X-API-Key for private libraries" /></label> <button id="save-api-key" type="button">Save</button> <button id="clear-api-key" type="button">Clear</button></p>

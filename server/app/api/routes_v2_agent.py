@@ -1,6 +1,6 @@
-from fastapi import APIRouter, Depends, Header
+from fastapi import APIRouter, Depends
 
-from app.core.security import _extract_raw, _is_admin_key, require_write_library_id, resolve_optional_token, ResolvedToken
+from app.core.security import ResolvedPrincipal, current_principal, v3_write_library
 from app.models.v2 import (
     SearchFeedbackRequest,
     SearchFeedbackResponse,
@@ -9,7 +9,7 @@ from app.models.v2 import (
     V2AgentReportRequest,
     V2AgentReportResponse,
 )
-from app.services.library_service import accessible_library_ids
+from app.services.library_service import effective_library_ids
 from app.services.op_log_service import write_op_log
 from app.services.v2_agent_service import ingest_v2_agent_report
 from app.services.v2_search_service import build_agent_context
@@ -22,22 +22,15 @@ router = APIRouter(prefix="/v2/agent", tags=["v2-agent"])
 search_router = APIRouter(prefix="/v2/search", tags=["v2-search"])
 
 
-def _is_admin(x_api_key: str | None, authorization: str | None) -> bool:
-    raw = _extract_raw(x_api_key, authorization)
-    return bool(raw and _is_admin_key(raw))
-
-
 @router.post("/context", response_model=V2AgentContextResponse)
 def post_context(
     payload: V2AgentContextRequest,
-    token: ResolvedToken | None = Depends(resolve_optional_token),
-    x_api_key: str | None = Header(default=None, alias="X-API-Key"),
-    authorization: str | None = Header(default=None),
+    principal: ResolvedPrincipal = Depends(current_principal),
 ) -> V2AgentContextResponse:
     return build_agent_context(
         payload,
-        accessible_library_ids(token, is_admin=_is_admin(x_api_key, authorization)),
-        library_id=token.library_id if token else None,
+        effective_library_ids(principal),
+        library_id=principal.library_id,
         route="/v2/agent/context",
     )
 
@@ -45,29 +38,25 @@ def post_context(
 @router.post("/report", response_model=V2AgentReportResponse)
 def post_report(
     payload: V2AgentReportRequest,
-    library_id: str | None = Depends(require_write_library_id),
-    token: ResolvedToken | None = Depends(resolve_optional_token),
-    x_api_key: str | None = Header(default=None, alias="X-API-Key"),
-    authorization: str | None = Header(default=None),
+    library_id: str | None = Depends(v3_write_library),
+    principal: ResolvedPrincipal = Depends(current_principal),
 ) -> V2AgentReportResponse:
     return ingest_v2_agent_report(
         payload,
         library_id=library_id,
-        accessible_library_ids=accessible_library_ids(token, is_admin=_is_admin(x_api_key, authorization)),
+        accessible_library_ids=effective_library_ids(principal),
     )
 
 
 @search_router.post("/explain", response_model=V2AgentContextResponse)
 def post_search_explain(
     payload: V2AgentContextRequest,
-    token: ResolvedToken | None = Depends(resolve_optional_token),
-    x_api_key: str | None = Header(default=None, alias="X-API-Key"),
-    authorization: str | None = Header(default=None),
+    principal: ResolvedPrincipal = Depends(current_principal),
 ) -> V2AgentContextResponse:
     return build_agent_context(
         payload.model_copy(update={"include_explain": True}),
-        accessible_library_ids(token, is_admin=_is_admin(x_api_key, authorization)),
-        library_id=token.library_id if token else None,
+        effective_library_ids(principal),
+        library_id=principal.library_id,
         route="/v2/search/explain",
     )
 

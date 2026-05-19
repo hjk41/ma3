@@ -1,14 +1,12 @@
-from fastapi import APIRouter, Depends, Header, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 
 from app.core.security import (
-    _extract_raw,
-    _is_admin_key,
-    hash_token,
+    ResolvedPrincipal,
+    current_principal,
+    legacy_token_from_principal,
     require_admin_key,
     require_library_admin,
-    require_write_library_id,
-    resolve_optional_token,
-    ResolvedToken,
+    require_library_write,
 )
 from app.models.library import (
     InviteCodeCreated,
@@ -22,6 +20,7 @@ from app.models.library import (
 )
 from app.models.record import Record
 from app.models.enums import RecordStatus
+from app.services.auth_service import bootstrap_library_admin
 from app.services.library_service import (
     create_invite_code,
     create_library,
@@ -29,7 +28,6 @@ from app.services.library_service import (
     use_invite_code,
 )
 from app.storage.repositories import (
-    InviteCodeRepository,
     LibraryRepository,
     RecordRepository,
     TokenRepository,
@@ -41,14 +39,12 @@ router = APIRouter(prefix="/libraries", tags=["libraries"])
 
 @router.get("/whoami", response_model=dict)
 def whoami(
-    token: ResolvedToken | None = Depends(resolve_optional_token),
-    x_api_key: str | None = Header(default=None, alias="X-API-Key"),
-    authorization: str | None = Header(default=None),
+    principal: ResolvedPrincipal = Depends(current_principal),
 ) -> dict:
     """Return identity info for the current credential."""
-    raw = _extract_raw(x_api_key, authorization)
-    if raw and _is_admin_key(raw):
-        return {"type": "admin"}
+    if principal.is_admin_bypass:
+        return {"type": "admin", "principal_id": principal.principal_id}
+    token = legacy_token_from_principal(principal)
     if token is not None:
         lib = LibraryRepository().get(token.library_id)
         return {
@@ -57,35 +53,42 @@ def whoami(
             "label": token.label,
             "role": token.role,
             "library": lib.model_dump() if lib else {"library_id": token.library_id},
+            "principal_id": principal.principal_id,
         }
-    return {"type": "anonymous"}
+    if principal.kind != "anonymous":
+        return {
+            "type": principal.kind,
+            "principal_id": principal.principal_id,
+            "label": principal.display_name,
+        }
+    return {"type": "anonymous", "principal_id": principal.principal_id}
 
 
 @router.post("", response_model=Library)
 def post_library(
     payload: LibraryCreate,
-    x_api_key: str | None = Header(default=None, alias="X-API-Key"),
-    authorization: str | None = Header(default=None),
+    principal: ResolvedPrincipal = Depends(current_principal),
 ) -> Library:
     """Create a library.
 
     - Global admin: can set any parent_library_id or none.
-    - Admin-role token: creates a child library under the token's own library.
-      The payload's parent_library_id is ignored; parent is always the token's library.
+    - Legacy admin-role token: creates a child library under the token's own library.
+    - v3 SSO/API key principal: creates a flat library and receives admin ACL.
     """
-    raw = _extract_raw(x_api_key, authorization)
-    if not raw:
+    if principal.kind == "anonymous":
         raise HTTPException(status_code=401, detail="authentication required")
-    if _is_admin_key(raw):
+    token = legacy_token_from_principal(principal)
+    if principal.is_admin_bypass:
         return create_library(payload)
-    from app.storage.repositories import TokenRepository
-    info = TokenRepository().get_by_hash(hash_token(raw))
-    if info is None:
-        raise HTTPException(status_code=401, detail="invalid token")
-    if info.role != "admin":
-        raise HTTPException(status_code=403, detail="admin-role token required to create libraries")
-    child_payload = payload.model_copy(update={"parent_library_id": info.library_id})
-    return create_library(child_payload)
+    if token is not None:
+        if token.role != "admin":
+            raise HTTPException(status_code=403, detail="admin-role token required to create libraries")
+        child_payload = payload.model_copy(update={"parent_library_id": token.library_id})
+        return create_library(child_payload)
+    flat_payload = payload.model_copy(update={"parent_library_id": None})
+    lib = create_library(flat_payload)
+    bootstrap_library_admin(lib.library_id, principal.principal_id, actor=principal)
+    return lib
 
 
 @router.delete("/{library_id}", status_code=204)
@@ -93,11 +96,7 @@ def delete_library(
     library_id: str,
     _: str | None = Depends(require_library_admin),
 ) -> None:
-    """Delete a library, its tokens, and its records.
-
-    Requires admin-role token for this library (or an ancestor) or global admin key.
-    Returns 409 if the library still has child libraries — delete children first.
-    """
+    """Delete a library, its tokens, and its records."""
     children = LibraryRepository().list_children(library_id)
     if children:
         raise HTTPException(
@@ -113,20 +112,30 @@ def delete_library(
 
 @router.get("", response_model=list[Library])
 def list_libraries(
-    x_api_key: str | None = Header(default=None, alias="X-API-Key"),
-    authorization: str | None = Header(default=None),
+    principal: ResolvedPrincipal = Depends(current_principal),
 ) -> list[Library]:
-    """Public: returns only public libraries. Admin key: returns all."""
-    raw = _extract_raw(x_api_key, authorization)
-    if raw and _is_admin_key(raw):
+    """Return libraries visible to the caller."""
+    if principal.is_admin_bypass:
         return LibraryRepository().list_all()
-    return LibraryRepository().list_public()
+    from app.core.security import effective_libraries
+
+    allowed = set(effective_libraries(principal))
+    return [lib for lib in LibraryRepository().list_all() if lib.library_id in allowed]
 
 
 @router.get("/{library_id}", response_model=Library)
-def get_library(library_id: str) -> Library:
+def get_library(
+    library_id: str,
+    principal: ResolvedPrincipal = Depends(current_principal),
+) -> Library:
     lib = LibraryRepository().get(library_id)
-    if lib is None or not lib.is_public:
+    if lib is None:
+        raise HTTPException(status_code=404, detail="library not found")
+    if principal.is_admin_bypass or lib.is_public:
+        return lib
+    from app.core.security import effective_libraries
+
+    if library_id not in effective_libraries(principal):
         raise HTTPException(status_code=404, detail="library not found")
     return lib
 
@@ -168,14 +177,12 @@ def delete_token(
 @router.get("/{library_id}/drafts", response_model=list[Record])
 def list_drafts(
     library_id: str,
-    library_id_from_token: str | None = Depends(require_write_library_id),
+    _: str = Depends(require_library_write),
 ) -> list[Record]:
     """List all draft records in this library (pending human review)."""
     lib = LibraryRepository().get(library_id)
     if lib is None:
         raise HTTPException(status_code=404, detail="library not found")
-    if library_id_from_token is not None and library_id_from_token != library_id:
-        raise HTTPException(status_code=403, detail="token does not belong to this library")
     all_records = RecordRepository().list_by_library(library_id)
     return [r for r in all_records if r.status == RecordStatus.draft]
 
@@ -189,19 +196,13 @@ invites_router = APIRouter(prefix="/invites", tags=["invites"])
 def create_invite(
     _: None = Depends(require_admin_key),
 ) -> InviteCodeCreated:
-    """Create a one-time invite code (global admin only).
-    The raw code is shown once and never stored — save it immediately.
-    """
+    """Create a one-time invite code (global admin only)."""
     return create_invite_code()
 
 
 @router.post("/from-invite", response_model=UseInviteResponse)
 def post_library_from_invite(payload: UseInviteRequest) -> UseInviteResponse:
-    """Create a personal private library using an invite code.
-
-    No auth required — the invite code IS the credential.
-    Returns the library and its owner admin token (shown once — save it).
-    """
+    """Create a personal private library using an invite code."""
     try:
         return use_invite_code(payload)
     except ValueError as exc:

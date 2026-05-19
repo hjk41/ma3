@@ -1,7 +1,7 @@
 import secrets as _secrets
 
 from app.core.ids import new_id
-from app.core.security import ResolvedToken, hash_token
+from app.core.security import ResolvedPrincipal, ResolvedToken, effective_libraries, hash_token
 from app.core.time import utc_now_iso
 from app.models.library import (
     InviteCode,
@@ -14,6 +14,16 @@ from app.models.library import (
     UseInviteResponse,
 )
 from app.storage.repositories import InviteCodeRepository, LibraryRepository, TokenRepository
+
+
+def effective_library_ids(principal: ResolvedPrincipal | ResolvedToken | None, is_admin: bool = False) -> set[str]:
+    """Return readable library ids for a v3 principal.
+
+    ``ResolvedToken`` is accepted as a compatibility bridge for old call sites.
+    """
+    if isinstance(principal, ResolvedPrincipal):
+        return set(effective_libraries(principal).keys())
+    return accessible_library_ids(principal, is_admin=is_admin)
 
 
 def accessible_library_ids(token: ResolvedToken | None, is_admin: bool = False) -> set[str]:
@@ -56,6 +66,19 @@ def create_token(library_id: str, payload: TokenCreate) -> TokenCreated:
         label=payload.label,
         role=payload.role,
         created_at=now,
+    )
+    from app.core.auth import ensure_legacy_principal_for_token
+    from app.models.library import TokenInfo
+
+    ensure_legacy_principal_for_token(
+        TokenInfo(
+            token_id=token_id,
+            library_id=library_id,
+            label=payload.label,
+            role=payload.role,
+            created_at=now,
+        ),
+        hash_token(raw),
     )
     return TokenCreated(
         token_id=token_id,

@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends
 
-from app.core.security import require_write_library_id
+from app.core.security import v3_write_library
 from app.models.knowledge import KnowledgeCreate
 from app.models.record import Record
 from app.services.knowledge_service import create_knowledge
@@ -12,7 +12,7 @@ router = APIRouter(prefix="/knowledge", tags=["knowledge"])
 @router.post("", response_model=Record)
 def post_knowledge(
     payload: KnowledgeCreate,
-    library_id: str | None = Depends(require_write_library_id),
+    library_id: str | None = Depends(v3_write_library),
 ) -> Record:
     """Write a knowledge record using the Q&A mental model.
 

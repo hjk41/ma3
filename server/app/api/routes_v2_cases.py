@@ -1,18 +1,13 @@
-from fastapi import APIRouter, Depends, Header, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 
-from app.core.security import _extract_raw, _is_admin_key, require_write_library_id, resolve_optional_token, ResolvedToken
+from app.core.security import ResolvedPrincipal, current_principal, v3_write_library
 from app.models.v2 import Case, CaseUpdate, V2CaseRecordGroup
 from app.services.case_service import assert_case_writeable, update_case
-from app.services.library_service import accessible_library_ids
+from app.services.library_service import effective_library_ids
 from app.storage.v2_repositories import CaseRepository, V2GraphRepository, V2RecordRepository, filter_cases_by_topic
 
 
 router = APIRouter(prefix="/v2/cases", tags=["v2-cases"])
-
-
-def _admin(x_api_key: str | None, authorization: str | None) -> bool:
-    raw = _extract_raw(x_api_key, authorization)
-    return bool(raw and _is_admin_key(raw))
 
 
 @router.get("", response_model=list[Case])
@@ -22,11 +17,9 @@ def list_cases(
     offset: int = Query(default=0, ge=0),
     topic_kind: str | None = Query(default=None, pattern="^(product|component|tag|problem_family)$"),
     topic: str | None = Query(default=None),
-    token: ResolvedToken | None = Depends(resolve_optional_token),
-    x_api_key: str | None = Header(default=None, alias="X-API-Key"),
-    authorization: str | None = Header(default=None),
+    principal: ResolvedPrincipal = Depends(current_principal),
 ) -> list[Case]:
-    lib_ids = accessible_library_ids(token, is_admin=_admin(x_api_key, authorization))
+    lib_ids = effective_library_ids(principal)
     if topic_kind and topic:
         candidates = CaseRepository().list_accessible(
             lib_ids,
@@ -52,11 +45,9 @@ def list_cases(
 @router.get("/{case_id}", response_model=V2CaseRecordGroup)
 def get_case(
     case_id: str,
-    token: ResolvedToken | None = Depends(resolve_optional_token),
-    x_api_key: str | None = Header(default=None, alias="X-API-Key"),
-    authorization: str | None = Header(default=None),
+    principal: ResolvedPrincipal = Depends(current_principal),
 ) -> V2CaseRecordGroup:
-    lib_ids = accessible_library_ids(token, is_admin=_admin(x_api_key, authorization))
+    lib_ids = effective_library_ids(principal)
     cases = CaseRepository().list_by_ids_accessible({case_id}, lib_ids)
     if not cases:
         raise HTTPException(status_code=404, detail="case not found")
@@ -72,11 +63,10 @@ def get_case(
 def patch_case(
     case_id: str,
     payload: CaseUpdate,
-    library_id: str | None = Depends(require_write_library_id),
+    library_id: str | None = Depends(v3_write_library),
 ) -> Case:
     case = CaseRepository().get(case_id)
     if case is None:
         raise HTTPException(status_code=404, detail="case not found")
     assert_case_writeable(case, library_id)
     return update_case(case, payload)
-

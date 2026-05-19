@@ -61,6 +61,13 @@ def _isolated_settings(tmp_path):
     orig_db_pool_enabled = config.settings.db_pool_enabled
     orig_search_batch_graph_enabled = config.settings.search_batch_graph_enabled
     orig_search_index_mode = config.settings.search_index_mode
+    orig_auth_verify_url = config.settings.auth_verify_url
+    orig_auth_verify_timeout_seconds = config.settings.auth_verify_timeout_seconds
+    orig_auth_verify_cache_ttl_seconds = config.settings.auth_verify_cache_ttl_seconds
+    orig_auth_verify_cache_max_entries = config.settings.auth_verify_cache_max_entries
+    orig_auth_jwt_cookie = config.settings.auth_jwt_cookie
+    orig_auth_admin_users = config.settings.auth_admin_users
+    orig_xyz_library_id = config.settings.xyz_library_id
 
     db = tmp_path / "test.db"
     object.__setattr__(config.settings, "db_path", db)
@@ -81,6 +88,13 @@ def _isolated_settings(tmp_path):
     object.__setattr__(config.settings, "db_pool_enabled", True)
     object.__setattr__(config.settings, "search_batch_graph_enabled", True)
     object.__setattr__(config.settings, "search_index_mode", "jsonb_runtime")
+    object.__setattr__(config.settings, "auth_verify_url", "https://auth.zhilicon.com/verify")
+    object.__setattr__(config.settings, "auth_verify_timeout_seconds", 2.0)
+    object.__setattr__(config.settings, "auth_verify_cache_ttl_seconds", 60)
+    object.__setattr__(config.settings, "auth_verify_cache_max_entries", 2048)
+    object.__setattr__(config.settings, "auth_jwt_cookie", "gateway_token")
+    object.__setattr__(config.settings, "auth_admin_users", tuple())
+    object.__setattr__(config.settings, "xyz_library_id", None)
     # Point seed_path at a non-existent file so seed_if_empty() is a no-op
     object.__setattr__(config.settings, "seed_path", tmp_path / "no_seed.json")
 
@@ -106,6 +120,13 @@ def _isolated_settings(tmp_path):
     object.__setattr__(config.settings, "db_pool_enabled", orig_db_pool_enabled)
     object.__setattr__(config.settings, "search_batch_graph_enabled", orig_search_batch_graph_enabled)
     object.__setattr__(config.settings, "search_index_mode", orig_search_index_mode)
+    object.__setattr__(config.settings, "auth_verify_url", orig_auth_verify_url)
+    object.__setattr__(config.settings, "auth_verify_timeout_seconds", orig_auth_verify_timeout_seconds)
+    object.__setattr__(config.settings, "auth_verify_cache_ttl_seconds", orig_auth_verify_cache_ttl_seconds)
+    object.__setattr__(config.settings, "auth_verify_cache_max_entries", orig_auth_verify_cache_max_entries)
+    object.__setattr__(config.settings, "auth_jwt_cookie", orig_auth_jwt_cookie)
+    object.__setattr__(config.settings, "auth_admin_users", orig_auth_admin_users)
+    object.__setattr__(config.settings, "xyz_library_id", orig_xyz_library_id)
 
 
 # ── Autouse: mock embeddings ─────────────────────────────────────────────────

@@ -1,8 +1,8 @@
-from fastapi import APIRouter, Depends, Header, Response
+from fastapi import APIRouter, Depends, Response
 
-from app.core.security import _extract_raw, _is_admin_key, resolve_optional_token, ResolvedToken
+from app.core.security import ResolvedPrincipal, current_principal
 from app.services.doctor_service import server_doctor
-from app.services.library_service import accessible_library_ids
+from app.services.library_service import effective_library_ids
 from app.services.metrics_service import metrics
 from app.services.op_log_service import archive_completed_logs
 from app.services.v2_stats_service import knowledge_quality, overview, quality_actions, search_stats, topics
@@ -13,18 +13,12 @@ router = APIRouter(prefix="/v2", tags=["v2-stats"])
 metrics_router = APIRouter(tags=["metrics"])
 
 
-def _admin(x_api_key: str | None, authorization: str | None) -> bool:
-    raw = _extract_raw(x_api_key, authorization)
-    return bool(raw and _is_admin_key(raw))
-
 
 @router.get("/stats/overview", response_model=dict)
 def stats_overview(
-    token: ResolvedToken | None = Depends(resolve_optional_token),
-    x_api_key: str | None = Header(default=None, alias="X-API-Key"),
-    authorization: str | None = Header(default=None),
+    principal: ResolvedPrincipal = Depends(current_principal),
 ) -> dict:
-    return overview(accessible_library_ids(token, is_admin=_admin(x_api_key, authorization)))
+    return overview(effective_library_ids(principal))
 
 
 @router.get("/stats/search", response_model=dict)
@@ -34,29 +28,23 @@ def stats_search() -> dict:
 
 @router.get("/stats/knowledge-quality", response_model=dict)
 def stats_knowledge_quality(
-    token: ResolvedToken | None = Depends(resolve_optional_token),
-    x_api_key: str | None = Header(default=None, alias="X-API-Key"),
-    authorization: str | None = Header(default=None),
+    principal: ResolvedPrincipal = Depends(current_principal),
 ) -> dict:
-    return knowledge_quality(accessible_library_ids(token, is_admin=_admin(x_api_key, authorization)))
+    return knowledge_quality(effective_library_ids(principal))
 
 
 @router.get("/stats/quality-actions", response_model=dict)
 def stats_quality_actions(
-    token: ResolvedToken | None = Depends(resolve_optional_token),
-    x_api_key: str | None = Header(default=None, alias="X-API-Key"),
-    authorization: str | None = Header(default=None),
+    principal: ResolvedPrincipal = Depends(current_principal),
 ) -> dict:
-    return quality_actions(accessible_library_ids(token, is_admin=_admin(x_api_key, authorization)))
+    return quality_actions(effective_library_ids(principal))
 
 
 @router.get("/topics", response_model=TopicsResponse)
 def get_topics(
-    token: ResolvedToken | None = Depends(resolve_optional_token),
-    x_api_key: str | None = Header(default=None, alias="X-API-Key"),
-    authorization: str | None = Header(default=None),
+    principal: ResolvedPrincipal = Depends(current_principal),
 ) -> TopicsResponse:
-    return topics(accessible_library_ids(token, is_admin=_admin(x_api_key, authorization)))
+    return topics(effective_library_ids(principal))
 
 
 @router.post("/logs/archive", response_model=dict)

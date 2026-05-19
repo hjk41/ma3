@@ -3,6 +3,7 @@ import time
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
+from urllib.parse import urlparse
 
 
 @dataclass(frozen=True)
@@ -40,6 +41,13 @@ class Settings:
     db_pool_enabled: bool = field(init=False)
     search_batch_graph_enabled: bool = field(init=False)
     search_index_mode: str = field(init=False)
+    auth_verify_url: str | None = field(init=False)
+    auth_verify_timeout_seconds: float = field(init=False)
+    auth_verify_cache_ttl_seconds: int = field(init=False)
+    auth_verify_cache_max_entries: int = field(init=False)
+    auth_jwt_cookie: str = field(init=False)
+    auth_admin_users: tuple[str, ...] = field(init=False)
+    xyz_library_id: str | None = field(init=False)
 
     def __post_init__(self) -> None:
         project_dir = self.app_dir.parent
@@ -71,6 +79,31 @@ class Settings:
         db_pool_enabled = os.environ.get("MA3_DB_POOL_ENABLED", "1") != "0"
         search_batch_graph_enabled = os.environ.get("MA3_SEARCH_BATCH_GRAPH_ENABLED", "1") != "0"
         search_index_mode = os.environ.get("MA3_SEARCH_INDEX_MODE", "jsonb_runtime").strip() or "jsonb_runtime"
+        auth_verify_url_raw = os.environ.get(
+            "MA3_AUTH_VERIFY_URL",
+            "https://auth.zhilicon.com/verify",
+        ).strip()
+        auth_verify_url = auth_verify_url_raw or None
+        if auth_verify_url:
+            parsed = urlparse(auth_verify_url)
+            is_loopback_http = (
+                parsed.scheme == "http"
+                and parsed.hostname in {"127.0.0.1", "localhost", "::1"}
+            )
+            if parsed.scheme != "https" and not is_loopback_http:
+                raise ValueError(
+                    "MA3_AUTH_VERIFY_URL must be https://, except http:// loopback URLs in tests"
+                )
+        auth_verify_timeout_seconds = float(os.environ.get("MA3_AUTH_VERIFY_TIMEOUT_SECONDS", "2.0"))
+        auth_verify_cache_ttl_seconds = int(os.environ.get("MA3_AUTH_VERIFY_CACHE_TTL_SECONDS", "60"))
+        auth_verify_cache_max_entries = int(os.environ.get("MA3_AUTH_VERIFY_CACHE_MAX_ENTRIES", "2048"))
+        auth_jwt_cookie = os.environ.get("MA3_AUTH_JWT_COOKIE", "gateway_token").strip() or "gateway_token"
+        auth_admin_users = tuple(
+            item.strip()
+            for item in os.environ.get("MA3_AUTH_ADMIN_USERS", "").split(",")
+            if item.strip()
+        )
+        xyz_library_id = os.environ.get("MA3_XYZ_LIBRARY_ID") or None
         db_backend = "postgresql" if database_url else "sqlite"
         object.__setattr__(self, "project_dir", project_dir)
         object.__setattr__(self, "data_dir", data_dir)
@@ -95,6 +128,13 @@ class Settings:
         object.__setattr__(self, "db_pool_enabled", db_pool_enabled)
         object.__setattr__(self, "search_batch_graph_enabled", search_batch_graph_enabled)
         object.__setattr__(self, "search_index_mode", search_index_mode)
+        object.__setattr__(self, "auth_verify_url", auth_verify_url)
+        object.__setattr__(self, "auth_verify_timeout_seconds", auth_verify_timeout_seconds)
+        object.__setattr__(self, "auth_verify_cache_ttl_seconds", auth_verify_cache_ttl_seconds)
+        object.__setattr__(self, "auth_verify_cache_max_entries", auth_verify_cache_max_entries)
+        object.__setattr__(self, "auth_jwt_cookie", auth_jwt_cookie)
+        object.__setattr__(self, "auth_admin_users", auth_admin_users)
+        object.__setattr__(self, "xyz_library_id", xyz_library_id)
 
 
 settings = Settings()

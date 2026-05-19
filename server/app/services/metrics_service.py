@@ -22,6 +22,11 @@ class MetricsRegistry:
         self.mcp_tool_calls: dict[tuple[str, str], int] = defaultdict(int)
         self.mcp_tool_durations: dict[str, list[float]] = defaultdict(list)
         self.mcp_tool_errors: dict[tuple[str, str], int] = defaultdict(int)
+        self.auth_resolve_total: dict[tuple[str, str], int] = defaultdict(int)
+        self.auth_403_total: dict[str, int] = defaultdict(int)
+        self.auth_audit_total: dict[str, int] = defaultdict(int)
+        self.auth_verify_total: dict[str, int] = defaultdict(int)
+        self.auth_verify_durations: list[float] = []
 
     def record_http(self, method: str, route: str, status: int, duration: float) -> None:
         with self._lock:
@@ -62,6 +67,24 @@ class MetricsRegistry:
             if error_type:
                 self.mcp_tool_errors[(tool, error_type)] += 1
 
+    def record_auth_resolve(self, via: str, kind: str) -> None:
+        with self._lock:
+            self.auth_resolve_total[(via, kind)] += 1
+
+    def record_auth_403(self, reason: str) -> None:
+        with self._lock:
+            self.auth_403_total[reason] += 1
+
+    def record_auth_audit(self, action: str) -> None:
+        with self._lock:
+            self.auth_audit_total[action] += 1
+
+    def record_auth_verify(self, result: str, duration: float | None = None) -> None:
+        with self._lock:
+            self.auth_verify_total[result] += 1
+            if duration is not None:
+                self.auth_verify_durations.append(duration)
+
     def render_prometheus(self) -> str:
         lines = [
             "# HELP ma3_http_requests_total HTTP requests by route, method, and status.",
@@ -92,6 +115,35 @@ class MetricsRegistry:
                 lines.append(f'ma3_mcp_tool_duration_seconds_sum{{tool="{tool}"}} {sum(values):.6f}')
             for (tool, error_type), value in sorted(self.mcp_tool_errors.items()):
                 lines.append(f'ma3_mcp_tool_errors_total{{tool="{tool}",error_type="{error_type}"}} {value}')
+            lines.extend([
+                "# HELP ma3_auth_resolve_total Auth resolve calls by transport and principal kind.",
+                "# TYPE ma3_auth_resolve_total counter",
+            ])
+            for (via, kind), value in sorted(self.auth_resolve_total.items()):
+                lines.append(f'ma3_auth_resolve_total{{via="{via}",kind="{kind}"}} {value}')
+            lines.extend([
+                "# HELP ma3_auth_403_total Auth authorization failures by reason.",
+                "# TYPE ma3_auth_403_total counter",
+            ])
+            for reason, value in sorted(self.auth_403_total.items()):
+                lines.append(f'ma3_auth_403_total{{reason="{reason}"}} {value}')
+            try:
+                from app.storage.repositories import ApiKeyRepository
+
+                active_keys = ApiKeyRepository().count_active()
+            except Exception:
+                active_keys = 0
+            lines.extend([
+                "# HELP ma3_auth_keys_active Non-revoked, non-expired API keys.",
+                "# TYPE ma3_auth_keys_active gauge",
+                f"ma3_auth_keys_active {active_keys}",
+            ])
+            for action, value in sorted(self.auth_audit_total.items()):
+                lines.append(f'ma3_auth_audit_total{{action="{action}"}} {value}')
+            for result, value in sorted(self.auth_verify_total.items()):
+                lines.append(f'ma3_auth_verify_total{{result="{result}"}} {value}')
+            lines.append(f"ma3_auth_verify_latency_seconds_count {len(self.auth_verify_durations)}")
+            lines.append(f"ma3_auth_verify_latency_seconds_sum {sum(self.auth_verify_durations):.6f}")
             lines.extend([
                 "# HELP ma3_search_requests_total Search requests by candidate path.",
                 "# TYPE ma3_search_requests_total counter",
@@ -126,4 +178,3 @@ metrics = MetricsRegistry()
 
 def now() -> float:
     return time.perf_counter()
-

@@ -1,5 +1,6 @@
 import json
 
+from app.models.auth import AclEntry, ApiKeyInfo, AuthAuditEntry, Principal, PrincipalSummary
 from app.models.library import InviteCode, Library, TokenInfo
 from app.models.relation import RecordRelation
 from app.models.feedback import Feedback
@@ -54,6 +55,482 @@ _LIB_COLS = "library_id, name, description, is_public, parent_library_id, is_per
 
 def _load_json_payload(raw):
     return raw if isinstance(raw, dict) else json.loads(raw)
+
+
+def _load_json_list(raw) -> list[str] | None:
+    if raw is None:
+        return None
+    if isinstance(raw, list):
+        return [str(item) for item in raw]
+    return [str(item) for item in json.loads(raw)]
+
+
+def _row_to_principal(row) -> Principal:
+    return Principal(
+        principal_id=row["principal_id"],
+        kind=row["kind"],
+        display_name=row["display_name"],
+        sso_user=row["sso_user"],
+        created_at=row["created_at"],
+        is_admin=bool(row["is_admin"]),
+        metadata_json=_load_json_payload(row["metadata_json"] or "{}"),
+    )
+
+
+def _row_to_api_key(row) -> ApiKeyInfo:
+    return ApiKeyInfo(
+        key_id=row["key_id"],
+        principal_id=row["principal_id"],
+        label=row["label"],
+        scope_libraries=_load_json_list(row["scope_libraries"]),
+        created_at=row["created_at"],
+        created_by=row["created_by"],
+        last_used_at=row["last_used_at"],
+        expires_at=row["expires_at"],
+        revoked_at=row["revoked_at"],
+    )
+
+
+def _row_to_acl(row, principal: PrincipalSummary | None = None) -> AclEntry:
+    return AclEntry(
+        library_id=row["library_id"],
+        principal_id=row["principal_id"],
+        role=row["role"],
+        granted_at=row["granted_at"],
+        granted_by=row["granted_by"],
+        principal=principal,
+    )
+
+
+def _row_to_audit(row) -> AuthAuditEntry:
+    return AuthAuditEntry(
+        audit_id=row["audit_id"],
+        actor_principal_id=row["actor_principal_id"],
+        action=row["action"],
+        target_principal_id=row["target_principal_id"],
+        library_id=row["library_id"],
+        payload_json=_load_json_payload(row["payload_json"] or "{}"),
+        created_at=row["created_at"],
+    )
+
+
+class PrincipalRepository:
+    def upsert(self, principal: Principal) -> Principal:
+        with get_connection() as conn:
+            conn.execute(
+                _upsert(
+                    "principals",
+                    ["principal_id"],
+                    [
+                        "principal_id",
+                        "kind",
+                        "display_name",
+                        "sso_user",
+                        "created_at",
+                        "is_admin",
+                        "metadata_json",
+                    ],
+                ),
+                (
+                    principal.principal_id,
+                    principal.kind,
+                    principal.display_name,
+                    principal.sso_user,
+                    principal.created_at,
+                    principal.is_admin,
+                    _json_param(principal.metadata_json),
+                ),
+            )
+        return principal
+
+    def upsert_user(self, sso_user: str, display_name: str | None = None, *, is_admin: bool = False) -> Principal:
+        principal = Principal(
+            principal_id=f"user:{sso_user}",
+            kind="user",
+            display_name=display_name or sso_user,
+            sso_user=sso_user,
+            created_at=utc_now_iso(),
+            is_admin=is_admin,
+            metadata_json={},
+        )
+        self.upsert(principal)
+        found = self.get(principal.principal_id)
+        return found or principal
+
+    def upsert_service(self, name: str, display_name: str | None = None) -> Principal:
+        principal = Principal(
+            principal_id=f"service:{name}",
+            kind="service",
+            display_name=display_name or name,
+            sso_user=None,
+            created_at=utc_now_iso(),
+            is_admin=False,
+            metadata_json={},
+        )
+        self.upsert(principal)
+        found = self.get(principal.principal_id)
+        return found or principal
+
+    def upsert_legacy(self, principal_id: str, display_name: str, metadata: dict | None = None) -> Principal:
+        principal = Principal(
+            principal_id=principal_id,
+            kind="legacy",
+            display_name=display_name,
+            sso_user=None,
+            created_at=utc_now_iso(),
+            is_admin=False,
+            metadata_json=metadata or {},
+        )
+        self.upsert(principal)
+        found = self.get(principal.principal_id)
+        return found or principal
+
+    def get(self, principal_id: str) -> Principal | None:
+        with get_connection() as conn:
+            row = conn.execute(
+                """
+                SELECT principal_id, kind, display_name, sso_user, created_at, is_admin, metadata_json
+                FROM principals WHERE principal_id = ?
+                """,
+                (principal_id,),
+            ).fetchone()
+        return _row_to_principal(row) if row else None
+
+    def get_by_sso_user(self, sso_user: str) -> Principal | None:
+        with get_connection() as conn:
+            row = conn.execute(
+                """
+                SELECT principal_id, kind, display_name, sso_user, created_at, is_admin, metadata_json
+                FROM principals WHERE sso_user = ?
+                """,
+                (sso_user,),
+            ).fetchone()
+        return _row_to_principal(row) if row else None
+
+    def search(self, prefix: str | None = None, kind: str | None = None, limit: int = 20) -> list[Principal]:
+        conditions: list[str] = []
+        params: list = []
+        if prefix:
+            conditions.append("principal_id LIKE ?")
+            params.append(f"{prefix}%")
+        if kind:
+            conditions.append("kind = ?")
+            params.append(kind)
+        where = "WHERE " + " AND ".join(conditions) if conditions else ""
+        with get_connection() as conn:
+            rows = conn.execute(
+                f"""
+                SELECT principal_id, kind, display_name, sso_user, created_at, is_admin, metadata_json
+                FROM principals {where}
+                ORDER BY principal_id ASC
+                LIMIT ?
+                """,
+                params + [limit],
+            ).fetchall()
+        return [_row_to_principal(row) for row in rows]
+
+    def count(self) -> int:
+        with get_connection() as conn:
+            row = conn.execute("SELECT COUNT(*) AS count FROM principals").fetchone()
+        return int(row["count"])
+
+
+class ApiKeyRepository:
+    def upsert(self, info: ApiKeyInfo, key_hash: str) -> ApiKeyInfo:
+        with get_connection() as conn:
+            conn.execute(
+                _upsert(
+                    "api_keys",
+                    ["key_id"],
+                    [
+                        "key_id",
+                        "key_hash",
+                        "principal_id",
+                        "label",
+                        "scope_libraries",
+                        "created_at",
+                        "created_by",
+                        "last_used_at",
+                        "expires_at",
+                        "revoked_at",
+                    ],
+                ),
+                (
+                    info.key_id,
+                    key_hash,
+                    info.principal_id,
+                    info.label,
+                    _json_param(info.scope_libraries) if info.scope_libraries is not None else None,
+                    info.created_at,
+                    info.created_by,
+                    info.last_used_at,
+                    info.expires_at,
+                    info.revoked_at,
+                ),
+            )
+        return info
+
+    def get(self, key_id: str) -> ApiKeyInfo | None:
+        with get_connection() as conn:
+            row = conn.execute(
+                """
+                SELECT key_id, principal_id, label, scope_libraries, created_at, created_by,
+                       last_used_at, expires_at, revoked_at
+                FROM api_keys WHERE key_id = ?
+                """,
+                (key_id,),
+            ).fetchone()
+        return _row_to_api_key(row) if row else None
+
+    def get_by_hash(self, key_hash: str) -> tuple[ApiKeyInfo, Principal] | None:
+        with get_connection() as conn:
+            row = conn.execute(
+                """
+                SELECT k.key_id, k.principal_id, k.label, k.scope_libraries, k.created_at,
+                       k.created_by, k.last_used_at, k.expires_at, k.revoked_at,
+                       p.kind AS principal_kind, p.display_name, p.sso_user,
+                       p.created_at AS principal_created_at, p.is_admin, p.metadata_json
+                FROM api_keys k
+                JOIN principals p ON p.principal_id = k.principal_id
+                WHERE k.key_hash = ?
+                """,
+                (key_hash,),
+            ).fetchone()
+        if row is None:
+            return None
+        info = _row_to_api_key(row)
+        principal = Principal(
+            principal_id=row["principal_id"],
+            kind=row["principal_kind"],
+            display_name=row["display_name"],
+            sso_user=row["sso_user"],
+            created_at=row["principal_created_at"],
+            is_admin=bool(row["is_admin"]),
+            metadata_json=_load_json_payload(row["metadata_json"] or "{}"),
+        )
+        return info, principal
+
+    def list_by_principal(self, principal_id: str) -> list[ApiKeyInfo]:
+        with get_connection() as conn:
+            rows = conn.execute(
+                """
+                SELECT key_id, principal_id, label, scope_libraries, created_at, created_by,
+                       last_used_at, expires_at, revoked_at
+                FROM api_keys WHERE principal_id = ?
+                ORDER BY created_at DESC, key_id ASC
+                """,
+                (principal_id,),
+            ).fetchall()
+        return [_row_to_api_key(row) for row in rows]
+
+    def list_all(self, limit: int = 500) -> list[ApiKeyInfo]:
+        with get_connection() as conn:
+            rows = conn.execute(
+                """
+                SELECT key_id, principal_id, label, scope_libraries, created_at, created_by,
+                       last_used_at, expires_at, revoked_at
+                FROM api_keys
+                ORDER BY created_at DESC, key_id ASC
+                LIMIT ?
+                """,
+                (limit,),
+            ).fetchall()
+        return [_row_to_api_key(row) for row in rows]
+
+    def revoke(self, key_id: str, revoked_at: str) -> bool:
+        with get_connection() as conn:
+            cursor = conn.execute(
+                "UPDATE api_keys SET revoked_at = ? WHERE key_id = ? AND revoked_at IS NULL",
+                (revoked_at, key_id),
+            )
+        return cursor.rowcount > 0
+
+    def update_last_used_at(self, key_id: str, last_used_at: str) -> None:
+        with get_connection() as conn:
+            conn.execute(
+                "UPDATE api_keys SET last_used_at = ? WHERE key_id = ?",
+                (last_used_at, key_id),
+            )
+
+    def count_active(self, now_iso: str | None = None) -> int:
+        now_iso = now_iso or utc_now_iso()
+        with get_connection() as conn:
+            row = conn.execute(
+                """
+                SELECT COUNT(*) AS count
+                FROM api_keys
+                WHERE revoked_at IS NULL AND (expires_at IS NULL OR expires_at > ?)
+                """,
+                (now_iso,),
+            ).fetchone()
+        return int(row["count"])
+
+
+class LibraryAclRepository:
+    def upsert(self, entry: AclEntry) -> AclEntry:
+        with get_connection() as conn:
+            conn.execute(
+                _upsert(
+                    "library_acl",
+                    ["library_id", "principal_id"],
+                    ["library_id", "principal_id", "role", "granted_at", "granted_by"],
+                ),
+                (
+                    entry.library_id,
+                    entry.principal_id,
+                    entry.role,
+                    entry.granted_at,
+                    entry.granted_by,
+                ),
+            )
+        return entry
+
+    def get_role(self, library_id: str, principal_id: str) -> str | None:
+        with get_connection() as conn:
+            row = conn.execute(
+                "SELECT role FROM library_acl WHERE library_id = ? AND principal_id = ?",
+                (library_id, principal_id),
+            ).fetchone()
+        return row["role"] if row else None
+
+    def list_by_principal(self, principal_id: str) -> list[AclEntry]:
+        with get_connection() as conn:
+            rows = conn.execute(
+                """
+                SELECT library_id, principal_id, role, granted_at, granted_by
+                FROM library_acl WHERE principal_id = ?
+                ORDER BY library_id ASC
+                """,
+                (principal_id,),
+            ).fetchall()
+        return [_row_to_acl(row) for row in rows]
+
+    def list_by_library(self, library_id: str) -> list[AclEntry]:
+        with get_connection() as conn:
+            rows = conn.execute(
+                """
+                SELECT a.library_id, a.principal_id, a.role, a.granted_at, a.granted_by,
+                       p.kind, p.display_name
+                FROM library_acl a
+                LEFT JOIN principals p ON p.principal_id = a.principal_id
+                WHERE a.library_id = ?
+                ORDER BY a.principal_id ASC
+                """,
+                (library_id,),
+            ).fetchall()
+        entries: list[AclEntry] = []
+        for row in rows:
+            summary = None
+            if row["kind"] is not None:
+                summary = PrincipalSummary(
+                    principal_id=row["principal_id"],
+                    kind=row["kind"],
+                    display_name=row["display_name"],
+                )
+            entries.append(_row_to_acl(row, summary))
+        return entries
+
+    def delete(self, library_id: str, principal_id: str) -> bool:
+        with get_connection() as conn:
+            cursor = conn.execute(
+                "DELETE FROM library_acl WHERE library_id = ? AND principal_id = ?",
+                (library_id, principal_id),
+            )
+        return cursor.rowcount > 0
+
+    def count(self) -> int:
+        with get_connection() as conn:
+            row = conn.execute("SELECT COUNT(*) AS count FROM library_acl").fetchone()
+        return int(row["count"])
+
+    def count_admins(self, library_id: str) -> int:
+        with get_connection() as conn:
+            row = conn.execute(
+                "SELECT COUNT(*) AS count FROM library_acl WHERE library_id = ? AND role = 'admin'",
+                (library_id,),
+            ).fetchone()
+        return int(row["count"])
+
+
+class AuthAuditRepository:
+    def insert(self, entry: AuthAuditEntry) -> AuthAuditEntry:
+        with get_connection() as conn:
+            conn.execute(
+                _upsert(
+                    "auth_audit_log",
+                    ["audit_id"],
+                    [
+                        "audit_id",
+                        "actor_principal_id",
+                        "action",
+                        "target_principal_id",
+                        "library_id",
+                        "payload_json",
+                        "created_at",
+                    ],
+                ),
+                (
+                    entry.audit_id,
+                    entry.actor_principal_id,
+                    entry.action,
+                    entry.target_principal_id,
+                    entry.library_id,
+                    _json_param(entry.payload_json),
+                    entry.created_at,
+                ),
+            )
+        return entry
+
+    def list(
+        self,
+        *,
+        since: str | None = None,
+        actor: str | None = None,
+        action: str | None = None,
+        limit: int = 100,
+    ) -> list[AuthAuditEntry]:
+        conditions: list[str] = []
+        params: list = []
+        if since:
+            conditions.append("created_at >= ?")
+            params.append(since)
+        if actor:
+            conditions.append("actor_principal_id = ?")
+            params.append(actor)
+        if action:
+            conditions.append("action = ?")
+            params.append(action)
+        where = "WHERE " + " AND ".join(conditions) if conditions else ""
+        with get_connection() as conn:
+            rows = conn.execute(
+                f"""
+                SELECT audit_id, actor_principal_id, action, target_principal_id,
+                       library_id, payload_json, created_at
+                FROM auth_audit_log {where}
+                ORDER BY created_at DESC, audit_id ASC
+                LIMIT ?
+                """,
+                params + [limit],
+            ).fetchall()
+        return [_row_to_audit(row) for row in rows]
+
+    def count_by_action(self) -> dict[str, int]:
+        with get_connection() as conn:
+            rows = conn.execute(
+                "SELECT action, COUNT(*) AS count FROM auth_audit_log GROUP BY action"
+            ).fetchall()
+        return {row["action"]: int(row["count"]) for row in rows}
+
+    def count_admin_bypass_recent(self, since: str) -> int:
+        with get_connection() as conn:
+            row = conn.execute(
+                """
+                SELECT COUNT(*) AS count FROM auth_audit_log
+                WHERE action = 'principal.assume_admin' AND created_at >= ?
+                """,
+                (since,),
+            ).fetchone()
+        return int(row["count"])
 
 
 class RecordRepository:

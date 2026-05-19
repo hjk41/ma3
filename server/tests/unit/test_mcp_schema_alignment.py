@@ -22,7 +22,9 @@ These tests guarantee that:
 from __future__ import annotations
 
 from app.models.mcp_payloads import PAYLOAD_BY_TOOL, tool_input_schema
-from app.services.mcp_tool_service import list_mcp_tools
+from app.models.library import LibraryCreate
+from app.services.library_service import create_library
+from app.services.mcp_tool_service import call_mcp_tool, list_mcp_tools, resolve_mcp_auth
 
 
 EXPECTED_TOOLS = {
@@ -111,3 +113,11 @@ def test_ma3_validate_inner_tool_enum_covers_every_callable_tool():
     assert set(enum) == callable_tools, (
         "ma3_validate.tool_name enum must list every callable MCP tool except itself."
     )
+
+
+def test_ma3_whoami_response_includes_additive_libraries_array():
+    lib = create_library(LibraryCreate(name="public", is_public=True))
+    result = call_mcp_tool("ma3_whoami", {}, resolve_mcp_auth(None))
+    payload = result.structuredContent
+    assert payload["principal"]["kind"] == "anonymous"
+    assert {"library_id": lib.library_id, "role": "reader"} in payload["libraries"]

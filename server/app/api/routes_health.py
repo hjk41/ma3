@@ -21,4 +21,5 @@ def healthz() -> dict[str, str | list[str] | None]:
         "git_commit": settings.git_commit,
         "job_name": settings.job_name,
         "deployed_at": settings.started_at,
+        "auth_mode": "v3",
     }

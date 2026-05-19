@@ -258,6 +258,7 @@ def _initialize_sqlite() -> None:
             )
             """
         )
+        _initialize_auth_sqlite(conn)
         _initialize_v2_sqlite(conn)
 
 
@@ -357,7 +358,146 @@ def _initialize_postgres() -> None:
             """
         )
         _ensure_postgres_jsonb_payload(conn, "relations")
+        _initialize_auth_postgres(conn)
         _initialize_v2_postgres(conn)
+
+
+def _initialize_auth_sqlite(conn: DatabaseConnection) -> None:
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS principals (
+            principal_id TEXT PRIMARY KEY,
+            kind TEXT NOT NULL,
+            display_name TEXT NOT NULL,
+            sso_user TEXT,
+            created_at TEXT NOT NULL,
+            is_admin INTEGER NOT NULL DEFAULT 0,
+            metadata_json TEXT NOT NULL DEFAULT '{}'
+        )
+        """
+    )
+    conn.execute(
+        "CREATE UNIQUE INDEX IF NOT EXISTS idx_principals_sso_user "
+        "ON principals(sso_user) WHERE sso_user IS NOT NULL"
+    )
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS api_keys (
+            key_id TEXT PRIMARY KEY,
+            key_hash TEXT NOT NULL UNIQUE,
+            principal_id TEXT NOT NULL REFERENCES principals(principal_id),
+            label TEXT NOT NULL,
+            scope_libraries TEXT,
+            created_at TEXT NOT NULL,
+            created_by TEXT NOT NULL REFERENCES principals(principal_id),
+            last_used_at TEXT,
+            expires_at TEXT,
+            revoked_at TEXT
+        )
+        """
+    )
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_api_keys_principal ON api_keys(principal_id)")
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_api_keys_active ON api_keys(revoked_at) "
+        "WHERE revoked_at IS NULL"
+    )
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS library_acl (
+            library_id TEXT NOT NULL REFERENCES libraries(library_id) ON DELETE CASCADE,
+            principal_id TEXT NOT NULL REFERENCES principals(principal_id) ON DELETE CASCADE,
+            role TEXT NOT NULL CHECK (role IN ('reader','writer','admin')),
+            granted_at TEXT NOT NULL,
+            granted_by TEXT NOT NULL REFERENCES principals(principal_id),
+            PRIMARY KEY (library_id, principal_id)
+        )
+        """
+    )
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_acl_principal ON library_acl(principal_id)")
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS auth_audit_log (
+            audit_id TEXT PRIMARY KEY,
+            actor_principal_id TEXT NOT NULL,
+            action TEXT NOT NULL,
+            target_principal_id TEXT,
+            library_id TEXT,
+            payload_json TEXT NOT NULL DEFAULT '{}',
+            created_at TEXT NOT NULL
+        )
+        """
+    )
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_audit_created_at ON auth_audit_log(created_at)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_audit_actor ON auth_audit_log(actor_principal_id)")
+
+
+def _initialize_auth_postgres(conn: DatabaseConnection) -> None:
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS principals (
+            principal_id TEXT PRIMARY KEY,
+            kind TEXT NOT NULL,
+            display_name TEXT NOT NULL,
+            sso_user TEXT,
+            created_at TEXT NOT NULL,
+            is_admin BOOLEAN NOT NULL DEFAULT FALSE,
+            metadata_json JSONB NOT NULL DEFAULT '{}'::jsonb
+        )
+        """
+    )
+    conn.execute(
+        "CREATE UNIQUE INDEX IF NOT EXISTS idx_principals_sso_user "
+        "ON principals(sso_user) WHERE sso_user IS NOT NULL"
+    )
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS api_keys (
+            key_id TEXT PRIMARY KEY,
+            key_hash TEXT NOT NULL UNIQUE,
+            principal_id TEXT NOT NULL REFERENCES principals(principal_id),
+            label TEXT NOT NULL,
+            scope_libraries JSONB,
+            created_at TEXT NOT NULL,
+            created_by TEXT NOT NULL REFERENCES principals(principal_id),
+            last_used_at TEXT,
+            expires_at TEXT,
+            revoked_at TEXT
+        )
+        """
+    )
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_api_keys_principal ON api_keys(principal_id)")
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_api_keys_active ON api_keys(revoked_at) "
+        "WHERE revoked_at IS NULL"
+    )
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS library_acl (
+            library_id TEXT NOT NULL REFERENCES libraries(library_id) ON DELETE CASCADE,
+            principal_id TEXT NOT NULL REFERENCES principals(principal_id) ON DELETE CASCADE,
+            role TEXT NOT NULL CHECK (role IN ('reader','writer','admin')),
+            granted_at TEXT NOT NULL,
+            granted_by TEXT NOT NULL REFERENCES principals(principal_id),
+            PRIMARY KEY (library_id, principal_id)
+        )
+        """
+    )
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_acl_principal ON library_acl(principal_id)")
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS auth_audit_log (
+            audit_id TEXT PRIMARY KEY,
+            actor_principal_id TEXT NOT NULL,
+            action TEXT NOT NULL,
+            target_principal_id TEXT,
+            library_id TEXT,
+            payload_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+            created_at TEXT NOT NULL
+        )
+        """
+    )
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_audit_created_at ON auth_audit_log(created_at)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_audit_actor ON auth_audit_log(actor_principal_id)")
 
 
 def _ensure_postgres_jsonb_payload(conn: DatabaseConnection, table: str) -> None:

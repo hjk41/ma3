@@ -15,6 +15,7 @@ from app.api.routes_relations import router as relations_router
 from app.api.routes_records import router as records_router
 from app.api.routes_search import router as search_router
 from app.api.routes_ui import router as ui_router
+from app.api.routes_v3_auth import router as v3_auth_router
 from app.api.routes_v2_agent import router as v2_agent_router, search_router as v2_search_router
 from app.api.routes_v2_cases import router as v2_cases_router
 from app.api.routes_v2_stats import router as v2_stats_router, metrics_router
@@ -80,6 +81,7 @@ app.include_router(relations_router)
 app.include_router(search_router)
 app.include_router(mcp_router)
 app.include_router(ui_router)
+app.include_router(v3_auth_router)
 app.include_router(v2_agent_router)
 app.include_router(v2_search_router)
 app.include_router(v2_cases_router)

@@ -9,18 +9,18 @@ from fastapi import HTTPException
 from pydantic import ValidationError
 
 from app.core.config import settings
-from app.core.security import ResolvedToken, _is_admin_key, hash_token
+from app.core.security import ResolvedPrincipal, _resolve_from_raw_only, effective_libraries, primary_write_library_id
 from app.models.common import TargetRef
 from app.models.mcp import McpToolDescriptor, McpToolResult, McpToolValidationError
 from app.models.mcp_payloads import PAYLOAD_BY_TOOL, tool_input_schema
 from app.models.v2 import V2AgentContextRequest, V2AgentReportRequest, V2CaseRecordGroup
 from app.services.doctor_service import server_doctor
-from app.services.library_service import accessible_library_ids
+from app.services.library_service import effective_library_ids
 from app.services.metrics_service import metrics
 from app.services.op_log_service import write_op_log
 from app.services.v2_agent_service import ingest_v2_agent_report
 from app.services.v2_search_service import build_agent_context
-from app.storage.repositories import LibraryRepository, TokenRepository
+from app.storage.repositories import LibraryRepository
 from app.storage.v2_repositories import CaseRepository, V2GraphRepository, V2RecordRepository
 
 
@@ -31,46 +31,51 @@ MCP_TOOL_SCHEMA_VERSION = "ma3.mcp.v1"
 @dataclass(slots=True)
 class McpAuthContext:
     raw_present: bool
-    is_admin: bool
-    token: ResolvedToken | None
+    principal: ResolvedPrincipal
 
     @property
     def readable_library_ids(self) -> set[str]:
-        return accessible_library_ids(self.token, is_admin=self.is_admin)
+        return effective_library_ids(self.principal)
+
+    @property
+    def writable_library_ids(self) -> set[str]:
+        return set(effective_libraries(self.principal, role_at_least="writer"))
 
     @property
     def caller_summary(self) -> dict[str, Any]:
-        if self.is_admin:
-            return {"type": "admin"}
-        if self.token is not None:
+        if self.principal.is_admin_bypass:
+            return {
+                "type": "admin",
+                "principal_id": self.principal.principal_id,
+                "kind": self.principal.kind,
+                "via": self.principal.via,
+            }
+        if self.principal.kind == "legacy":
             return {
                 "type": "library_token",
-                "token_id": self.token.token_id,
-                "library_id": self.token.library_id,
-                "role": self.token.role,
-                "label": self.token.label,
+                "principal_id": self.principal.principal_id,
+                "kind": self.principal.kind,
+                "via": self.principal.via,
+                "token_id": self.principal.token_id,
+                "library_id": self.principal.library_id,
+                "role": self.principal.role,
+                "label": self.principal.label,
             }
-        return {"type": "anonymous"}
+        if self.principal.kind != "anonymous":
+            return {
+                "type": self.principal.kind,
+                "principal_id": self.principal.principal_id,
+                "kind": self.principal.kind,
+                "via": self.principal.via,
+                "api_key_id": self.principal.api_key_id,
+                "label": self.principal.display_name,
+            }
+        return {"type": "anonymous", "principal_id": self.principal.principal_id, "kind": "anonymous", "via": "anonymous"}
 
 
 def resolve_mcp_auth(raw: str | None) -> McpAuthContext:
-    if not raw:
-        return McpAuthContext(raw_present=False, is_admin=False, token=None)
-    if _is_admin_key(raw):
-        return McpAuthContext(raw_present=True, is_admin=True, token=None)
-    info = TokenRepository().get_by_hash(hash_token(raw))
-    if info is None:
-        raise HTTPException(status_code=401, detail="auth_invalid")
-    return McpAuthContext(
-        raw_present=True,
-        is_admin=False,
-        token=ResolvedToken(
-            token_id=info.token_id,
-            library_id=info.library_id,
-            label=info.label,
-            role=info.role,
-        ),
-    )
+    principal = _resolve_from_raw_only(raw)
+    return McpAuthContext(raw_present=bool(raw), principal=principal)
 
 
 _TOOL_DESCRIPTIONS: dict[str, str] = {
@@ -279,13 +284,14 @@ def _context_summary(compact: dict[str, Any]) -> str:
 
 
 def _require_write_library_id(auth: McpAuthContext) -> str | None:
-    if auth.is_admin:
-        return None
-    if auth.token is None:
-        raise HTTPException(status_code=401, detail="auth_missing")
-    if auth.token.role not in {"writer", "admin"}:
-        raise HTTPException(status_code=403, detail="permission_denied")
-    return auth.token.library_id
+    try:
+        return primary_write_library_id(auth.principal)
+    except HTTPException as exc:
+        if exc.status_code == 401:
+            raise HTTPException(status_code=401, detail="auth_missing") from exc
+        if exc.status_code == 403:
+            raise HTTPException(status_code=403, detail="permission_denied") from exc
+        raise
 
 
 def call_mcp_tool(tool_name: str, arguments: dict[str, Any], auth: McpAuthContext) -> McpToolResult:
@@ -304,7 +310,7 @@ def call_mcp_tool(tool_name: str, arguments: dict[str, Any], auth: McpAuthContex
             resp = build_agent_context(
                 req,
                 auth.readable_library_ids,
-                library_id=auth.token.library_id if auth.token else None,
+                library_id=auth.principal.library_id,
                 route="/mcp/ma3_context",
             )
             full = resp.model_dump(mode="json")
@@ -316,7 +322,7 @@ def call_mcp_tool(tool_name: str, arguments: dict[str, Any], auth: McpAuthContex
             resp = build_agent_context(
                 req,
                 auth.readable_library_ids,
-                library_id=auth.token.library_id if auth.token else None,
+                library_id=auth.principal.library_id,
                 route="/mcp/ma3_search_explain",
             )
             full = resp.model_dump(mode="json")
@@ -379,6 +385,7 @@ def call_mcp_tool(tool_name: str, arguments: dict[str, Any], auth: McpAuthContex
         if tool_name == "ma3_whoami":
             visible = []
             all_visible = auth.readable_library_ids
+            role_map = effective_libraries(auth.principal)
             for lib in LibraryRepository().list_all():
                 if lib.library_id in all_visible:
                     visible.append({
@@ -387,7 +394,21 @@ def call_mcp_tool(tool_name: str, arguments: dict[str, Any], auth: McpAuthContex
                         "is_public": lib.is_public,
                         "is_personal": lib.is_personal,
                     })
-            full = {"identity": auth.caller_summary, "visible_libraries": visible}
+            full = {
+                "identity": auth.caller_summary,
+                "principal": {
+                    "principal_id": auth.principal.principal_id,
+                    "kind": auth.principal.kind,
+                    "display_name": auth.principal.display_name,
+                    "via": auth.principal.via,
+                    "admin_bypass": auth.principal.is_admin_bypass,
+                },
+                "libraries": [
+                    {"library_id": lib_id, "role": role}
+                    for lib_id, role in sorted(role_map.items())
+                ],
+                "visible_libraries": visible,
+            }
             summary = f"ma3_whoami: {auth.caller_summary.get('type')} visible_libraries={len(visible)}"
             return _tool_result(summary, full, include_full_json=False)
 
