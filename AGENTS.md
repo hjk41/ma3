@@ -118,7 +118,15 @@ but the short checklist:
 7. **Sanity-check the schema** before flipping traffic: `tools/list` must
    show `AgentAction` in `$defs` and `actions.items.$ref=#/$defs/AgentAction`.
    `ma3_validate` dry-run must return `{ok: true}` for a known-good
-   payload.
+   payload. For v3 builds, additionally:
+   - `curl http://127.0.0.1:$MA3_PORT/healthz | jq .auth_mode` must return
+     `"v3"`.
+   - `curl http://127.0.0.1:$MA3_PORT/v3/auth/whoami` returns
+     `kind=anonymous` with the public-libraries reader summary.
+   - With a known legacy token (or one freshly minted via the still-mounted
+     v2 `/libraries/{id}/tokens` admin route),
+     `curl -H "X-API-Key: <legacy>" .../v3/auth/whoami` returns
+     `kind=legacy`, and `.../libraries/whoami` still returns the v2 shape.
 8. **Sync old-instance data to candidate BEFORE the traffic flip.** Both
    the Postgres dump AND the in-container op_log must reach CephFS while
    the old container is still alive, otherwise everything written
@@ -141,6 +149,12 @@ but the short checklist:
    - `bash deploy/ltp/restore_postgres.sh` with
      `MA3_BACKUP_MANIFEST=latest`
    - `python server/scripts/migrate_v1_to_v2_cases.py --apply` (idempotent)
+   - `python server/scripts/migrate_v2_tokens_to_v3.py --apply` (idempotent;
+     materializes v2 `tokens` rows as `legacy:<token_id>` principals +
+     `api_keys` + `library_acl`. Resolver has a lazy fallback for v2 tokens
+     even without this script, but `/v3/auth/whoami` will only show
+     `kind=legacy` after it runs. Bootstrap also runs this automatically
+     when `MA3_RUN_V2_TO_V3_MIGRATION=1`, which is the default.)
    - restart uvicorn with **full env**:
      `set -a; . /root/ma3-instance/ma3.env; set +a; export MA3_JOB_NAME=...; nohup .venv/bin/python -m uvicorn app.main:app --host 0.0.0.0 --port $MA3_PORT ...`
      Forgetting `set -a; . ma3.env` makes `instance_id` and `git_commit`
@@ -217,18 +231,37 @@ shellcheck deploy/ltp/*.sh                                         # if shellche
 | `record_count` drift between prod and candidate | candidate restored from old cron backup | take final backup AFTER candidate is up, restore, then flip |
 | Pre-cutover op_logs lost after old job stops | container-local JSONL, daily cron only archives yesterday | hit `POST /v2/logs/archive` on the OLD instance before stopping uvicorn; force-gzip today's JSONL to CephFS if it matters |
 | `archive_logs.sh` cron run prints `MA3_LOG_ARCHIVE_DIR is required` | cron `. ma3.env` doesn't export vars to child bash | bootstrap cron line must use `set -a; . ma3.env; set +a` before `bash archive_logs.sh` |
+| LTP job retry / manual `stop`+`start` "just works" — no `deliver_assets` step | ma3 bootstrap is git-clone-on-boot, not artifact-based like inferhub2 | every (re)start re-runs `bootstrap_ma3_ltp.sh`, which: re-clones the repo at `MA3_GIT_COMMIT`, rebuilds the venv, restores Postgres from the CephFS manifest, runs idempotent v1→v2 and v2→v3 migrations, and re-launches uvicorn. Do NOT add an inferhub-style artifact step; that pattern does not apply here. |
+| After a v3 job retry, `/v3/auth/whoami` shows `kind=anonymous` for an old v2 token | the bootstrap-time v2→v3 migration was disabled or the script is missing in this commit | resolver's lazy `legacy:` fallback still authenticates the token (writes go through), but principal materialization needs the script. Run `python server/scripts/migrate_v2_tokens_to_v3.py --apply` once, or ensure `MA3_RUN_V2_TO_V3_MIGRATION=1` (the default) is set. |
 
-## Production identity (as of 2026-05-16)
+## Production identity (as of 2026-05-19)
 
 | Field | Value |
 |---|---|
 | URL | https://ma3.zhilicon.com |
 | Backend | 10.100.193.54:18191 |
 | Job | chuntao.hong~ma3-v2-prod-20260516-140109 |
-| Commit | 25669aca74ac565c8c419f2657ed939d8a3ab701 |
+| Commit | 30a067399fc399fe0b06bae55ebb87dfbb128ea0 |
 | DNS proxy | dns-manager record `ma3` |
 | Backup dir | /mnt/cephfs/home/chuntao.hong/ma3_v2_backups |
-| PG | localhost:auto-detect / ma3db / ma3user |
+| PG | localhost:5433 / ma3db / ma3user |
+
+In-flight v3 candidate (NOT serving traffic, awaiting confirmation):
+
+| Field | Value |
+|---|---|
+| Job | chuntao.hong~ma3-v3-cand-20260519-141711 |
+| Backend | 10.100.193.54:18193 |
+| Commit | 7c84ae6444414ec3b077b5774c93b9f8050dc5a2 (branch `v3-auth`) |
+| Verified | `/v3/auth/whoami` in all 4 modes; migration `migrated_tokens=4` |
+
+v3 candidates additionally require these env vars at submit time:
+`MA3_AUTH_VERIFY_URL` (default `https://auth.zhilicon.com/verify`),
+`MA3_AUTH_ADMIN_USERS` (comma-separated SSO usernames that may receive
+admin bypass — the JWT `admin=true` claim alone is NOT sufficient),
+`MA3_XYZ_LIBRARY_ID` (id of the company-shared engineering library —
+currently `lib_ca4043b1c70d` "行云致理"). ma3 does NOT hold the JWT
+signing secret; verification is online via the `/verify` endpoint.
 
 Rollback: PATCH the dns-manager `ma3` record back to the previous
 backend IP:port. Keep at least one prior `ma3-v2-prod-*` job's
