@@ -35,10 +35,11 @@ a separate ACL keyed on that identity.
 
 - **One key, many libraries.** A credential resolves to a `principal` whose
   effective access is the union of ACL grants on libraries.
-- **Identity is grounded in SSO.** `auth.zhilicon.com` issues the JWT that
-  proves "I am chuntao.hong". ma3 trusts the JWT (HS256 with a shared
-  secret already used by `web_portal` and `inferhub`) and lazily creates a
-  `principal` row on first sight of a user.
+- **Identity is grounded in SSO.** `auth.zhilicon.com` issues a JWT cookie
+  `gateway_token` on `.zhilicon.com`. ma3 does **not** hold the JWT signing
+  secret; instead it calls `auth.zhilicon.com/verify` to validate the
+  cookie online and lazily creates a `principal` row on first sight of a
+  user. Verification results are cached briefly to amortize the cost.
 - **Admin retains a single break-glass credential.** `MA3_API_KEY` still
   bypasses ACL — this is the "root" key, only the operator holds it.
 - **Compatible cutover.** Every v2 token still works on day 1 with the
@@ -142,10 +143,14 @@ into the same `ResolvedPrincipal` value:
    path for agents, MCP, CLI. Hash, look up in `api_keys`, walk to its
    `principal`. Update `last_used_at` opportunistically.
 2. **`Cookie: gateway_token=<jwt>`** — primary path for the Web UI.
-   Verify HS256 with `MA3_AUTH_JWT_SECRET`, read `user` and `admin`
-   claims, upsert `principal:user:<user>`. If `admin=true`, the principal
-   also gets the `admin_bypass` flag for this request (treat as global
-   admin without holding `MA3_API_KEY`).
+   ma3 calls `GET $MA3_AUTH_VERIFY_URL?token=<jwt>` (default
+   `https://auth.zhilicon.com/verify`) and trusts `{valid, user, admin,
+   exp}` from the response. The JWT signing secret never lives on ma3.
+   Successful results are cached for `MA3_AUTH_VERIFY_CACHE_TTL`
+   (default 60 s) keyed by SHA-256(jwt). If `admin=true` in the response,
+   the principal also gets `admin_bypass` for this request — but only
+   when the username is also in `MA3_AUTH_ADMIN_USERS` (ma3-owned
+   allowlist; the gateway flag alone is not sufficient).
 3. **`Authorization: Bearer <admin-key>`** — break-glass; matches
    `settings.api_key`. Returns the synthetic admin principal.
 
@@ -153,13 +158,19 @@ Order: API key first (explicit > cookie), then cookie, then anonymous
 (public-libraries-only). Admin key wins over both; admin can still scope
 itself to a single library by passing a key instead.
 
-`auth.zhilicon.com` itself is never called at request-time — verification
-is offline JWT validation. Logout and login UI live on the auth gateway;
-ma3 just trusts the cookie.
+`auth.zhilicon.com/verify` is called once per cache-window per cookie;
+under steady-state traffic that is well under one call per minute per
+user. ma3 has no copy of the signing secret, so a `web_portal` secret
+rotation does not require a redeploy here.
 
 ## 6. UI / management surface
 
-Three new (or expanded) UI pages, all behind the SSO cookie:
+The web UI is the primary face for humans, but **every UI action has a
+JSON API equivalent** under `/v3/auth/*` and `/v3/libraries/*` so
+scripts and agents can self-serve too. UI pages are thin wrappers over
+those APIs.
+
+### 6.1 New management pages (SSO-authenticated)
 
 - `/ui/me` — "Your access": list of libraries you can read/write/admin,
   your API keys, scopes, last-used timestamps. Self-revoke. Create new key.
@@ -168,8 +179,23 @@ Three new (or expanded) UI pages, all behind the SSO cookie:
 - `/ui/admin/keys` — admin-only: issue per-user xyz key, rotate the
   shared xyz key, list/revoke any key, view audit log of recent grants.
 
-All three are backed by JSON APIs (next section) so agents/scripts can do
-the same things headlessly.
+### 6.2 Existing Knowledge Observatory pages
+
+`/ui/overview`, `/ui/topics`, `/ui/cases`, `/ui/search-explain`,
+`/ui/quality-actions` (from v2) **stay where they are**. Access policy
+in v3:
+
+- Any authenticated principal (API key OR SSO cookie) may load them.
+- The data shown is **scoped to the principal's `effective_libraries`**.
+  Counts, topic histograms, case lists, search-explain results all
+  respect ACL. A user who has access only to `lib_foo` will see only
+  `lib_foo`'s data, not the global `xyz` totals.
+- Admin-bypass principals see the global, unfiltered view.
+- Anonymous callers still see the public-libraries-only subset (same as
+  v2 behavior).
+
+This keeps the Knowledge Observatory useful for everyone while
+preserving the "I cannot see what I do not have access to" invariant.
 
 ## 7. HTTP surface (high level)
 
@@ -253,10 +279,11 @@ Key *use* is not audited per request (too much volume); aggregate
 | risk | mitigation |
 |---|---|
 | auth.zhilicon.com cookie verification regressions break web UI | API key path is independent of cookies; UI fall-back is "log in again". MCP/agents untouched. |
+| `auth.zhilicon.com/verify` unavailable / slow | short positive cache (60s) absorbs most blips; on cache miss + verify timeout we fall back to anonymous (no false admin); UI shows "auth gateway unavailable". Agent (API-key) path is unaffected. |
 | dual-read (`api_keys` + legacy `tokens`) lets the same raw secret resolve to two principals after manual editing | resolver returns the *first* hit; legacy table is read-only after migration script runs; integrity test enforces no overlap. |
 | Bulk per-user xyz key issuance leaks raw secrets | secrets are shown once in the admin UI, otherwise stored only as hash; admin UI logs every issue + recipient. |
 | ACL change races with in-flight requests | each route resolves ACL fresh per request; revocation is effective on the next request. |
-| `MA3_AUTH_JWT_SECRET` rotation | identical procedure to `inferhub` (rolling re-deploy, known-leaked-list check); doc inherits inferhub runbook. |
+| `MA3_AUTH_JWT_SECRET` rotation | not applicable — ma3 does not hold the signing secret. `auth.zhilicon.com` rotation is transparent (we only see the verify response). |
 
 ## 12. Success criteria
 

@@ -41,20 +41,20 @@ New env vars (read in `app/core/config.py`):
 
 | name | default | meaning |
 |---|---|---|
-| `MA3_AUTH_JWT_SECRET` | unset → JWT disabled | HS256 secret shared with `auth.zhilicon.com`. Must be present in prod. |
-| `MA3_AUTH_JWT_ISSUER` | `auth.zhilicon.com` | claim `iss` we accept (if claim present). |
-| `MA3_AUTH_JWT_COOKIE` | `gateway_token` | cookie name. |
-| `MA3_AUTH_JWT_LEEWAY_SECONDS` | `60` | clock skew tolerance. |
-| `MA3_AUTH_KNOWN_LEAKED_SECRETS` | empty | comma-separated SHA-256 prefixes of secrets we refuse to use, mirroring the inferhub pattern. |
-| `MA3_AUTH_ADMIN_USERS` | empty | comma-separated SSO usernames that are allowed to receive `admin_bypass` from the SSO cookie. The JWT `admin=true` claim alone is NOT sufficient; the username must also appear here. |
+| `MA3_AUTH_VERIFY_URL` | `https://auth.zhilicon.com/verify` | Online verify endpoint. ma3 calls `GET <url>?token=<jwt>` on cookie-bearing requests and trusts `{valid, user, admin, exp}` from the response. ma3 does NOT hold the JWT signing secret. |
+| `MA3_AUTH_VERIFY_TIMEOUT_SECONDS` | `2.0` | Per-call timeout for `/verify`. On timeout or non-2xx the resolver falls back to anonymous (the cookie is ignored, never silently elevated). |
+| `MA3_AUTH_VERIFY_CACHE_TTL_SECONDS` | `60` | Positive-result cache TTL keyed by `sha256(jwt)`. Negative results are NOT cached (so revocation/expiry is visible immediately). Hard cap at the JWT's own `exp` claim — never cache past expiry. |
+| `MA3_AUTH_VERIFY_CACHE_MAX_ENTRIES` | `2048` | LRU bound on the in-memory cache. |
+| `MA3_AUTH_JWT_COOKIE` | `gateway_token` | cookie name (matches `web_portal` / `inferhub2`). |
+| `MA3_AUTH_ADMIN_USERS` | empty | comma-separated SSO usernames that are allowed to receive `admin_bypass` from the SSO cookie. A verify response with `admin=true` alone is NOT sufficient; the username must also appear here. |
 
 Existing `MA3_API_KEY` continues to be the admin break-glass. Behavior
 unchanged.
 
-`Settings.__post_init__` validates: if `MA3_AUTH_JWT_SECRET` is set, its
-SHA-256 must not be in `MA3_AUTH_KNOWN_LEAKED_SECRETS`, and it must be ≥ 32
-bytes. On dev SQLite, JWT secret can stay unset and SSO routes will reply
-`503 sso_disabled`.
+`Settings.__post_init__` validates `MA3_AUTH_VERIFY_URL` parses as an HTTPS
+URL (or `http://` only when host is loopback for tests). When the URL is
+unset SSO routes return `503 sso_disabled`; the API-key path still
+works fully.
 
 ## 2. Database schema
 
@@ -182,21 +182,32 @@ Resolution order:
       legacy principal `legacy:<token_id>` (created lazily on first
       hit if migration script hasn't run yet — covers dev).
    d. otherwise → 401 `auth_invalid`.
-2. no raw key, cookie present → verify JWT; load/upsert
-   `principal_id = "user:" + claims.user`.
-   `is_admin_bypass = bool(claims.admin) and claims.user in settings.auth_admin_users`.
-   ma3 does NOT trust `admin=true` on its own — the username must be in
-   the ma3-owned allowlist `MA3_AUTH_ADMIN_USERS`. `via='sso_cookie'`.
+2. no raw key, cookie present → call `verify_sso_cookie(jwt)`:
+   - LRU cache lookup on `sha256(jwt)`; on hit (still inside TTL and JWT
+     `exp`), reuse the cached `{user, admin, exp}` payload.
+   - On miss, `GET MA3_AUTH_VERIFY_URL?token=<jwt>` with the configured
+     timeout. 2xx + `valid=true` → cache (TTL=min(configured TTL,
+     exp-now)) and return. Anything else (timeout, non-2xx, network
+     error, `valid=false`, missing `user`) → return `None`; do NOT cache.
+   - On success, load/upsert `principal_id = "user:" + payload.user`.
+     `is_admin_bypass = bool(payload.admin) and payload.user in settings.auth_admin_users`.
+     ma3 does NOT trust the gateway's `admin` flag on its own — the
+     username must be in the ma3-owned allowlist `MA3_AUTH_ADMIN_USERS`.
+     `via='sso_cookie'`.
+   - On failure → fall through to step 3 (anonymous). Cookies never
+     produce a 401 by themselves; many endpoints are public.
 3. nothing → `ResolvedPrincipal(kind='anonymous', via='anonymous', ...)`.
 
 JWT verifier:
 
-- HS256 only.
-- Reject `alg=none`.
-- Validate `exp` with leeway; reject if `nbf > now + leeway`; if `iss`
-  claim is present, it must equal `settings.auth_jwt_issuer`.
-- On decode failure: log and treat as anonymous (do not 401 — many
-  endpoints are public). Legacy and admin paths are unaffected.
+- ma3 does **NOT** decode the JWT locally. The only thing ma3 inspects
+  pre-verify is the base64-decoded payload's `exp` claim (best-effort,
+  unverified) — used purely to cap the cache TTL; cryptographic trust
+  comes from `auth.zhilicon.com/verify` only.
+- The verify HTTP client is module-level (`httpx.Client`) with the
+  configured timeout, no retries; failures fall back to anonymous.
+- Negative responses are not cached, so revocation propagates to ma3
+  within one verify call (typically < 100 ms).
 
 `PrincipalRepository.upsert_user(sso_user, display_name)` is the one
 write path used by JWT resolution. It is `INSERT ... ON CONFLICT DO
@@ -382,7 +393,12 @@ that returns `True` so v2 tests continue to pass; v3 callers ignore it.
 
 ## 6. UI
 
-Three new server-rendered HTML pages in `routes_ui.py`:
+UI is the primary face for humans but **not** the only entry point —
+every UI action must have a JSON API equivalent under `/v3/auth/*`
+or `/v3/libraries/*`. UI pages are thin server-rendered wrappers that
+call those APIs via fetch().
+
+### 6.1 New management pages (SSO-required)
 
 - `/ui/me` — uses the SSO cookie. Lists `effective_libraries`, "your API
   keys" (label, last-used, scope), "Issue new key" form (label + optional
@@ -392,6 +408,29 @@ Three new server-rendered HTML pages in `routes_ui.py`:
 - `/ui/admin/keys` — guarded by `require_global_admin`. Bulk-issue
   per-user xyz key (textarea of SSO usernames, one per line). Rotate
   the shared xyz key. Recent audit log.
+
+If the SSO cookie is missing or `/verify` rejects it, these pages serve
+a small "Sign in at auth.zhilicon.com" landing — same fallback as the
+inferhub2 portal.
+
+### 6.2 Existing Knowledge Observatory pages
+
+`/ui/overview`, `/ui/topics`, `/ui/cases`, `/ui/search-explain`,
+`/ui/quality-actions` (from v2) stay where they are. v3 changes only
+the data scope:
+
+- Resolve `current_principal` for the request (SSO cookie OR `X-API-Key`
+  for headless ops — both work).
+- Pass `effective_library_ids(principal)` into every data fetch on the
+  page. The service-layer queries already accept this set; this is the
+  same hook v2 used (via `accessible_library_ids`).
+- Admin-bypass principals: pass `None` (or the unfiltered superset),
+  matching v2 admin behavior.
+- Anonymous: same as v2 — public libraries only.
+
+No new gating; just a stricter scope filter on data. The HTML rendering
+is unchanged; only the rows/aggregates the page shows narrow when the
+viewer has limited access.
 
 Pages are progressive — backed by the JSON APIs above; no JavaScript
 beyond a small fetch helper for form submission. Match the existing
@@ -463,7 +502,8 @@ allowed on an existing key beyond `revoke`. It triggers an audit row.)
   - admin key → admin bypass
   - api_key + sso cookie naming different user → 400 conflict
   - revoked / expired api_key → 401
-  - JWT expired / `alg=none` / wrong iss → anonymous
+  - verify endpoint timeout / 5xx / `valid=false` → anonymous; cookie ignored
+  - verify endpoint returns `admin=true` but user not in allowlist → user principal, NO admin bypass
   - lazy `legacy:` resolution covers a token row with no migration done
 - `test_auth_acl.py`
   - grant requires actor to hold equal-or-higher role
@@ -512,6 +552,8 @@ preserved as-is (the v2 shape is additive-extended, not changed).
 - `ma3_auth_403_total{reason}` — `acl_missing`, `scope_excluded`, etc.
 - `ma3_auth_keys_active` — gauge of non-revoked, non-expired keys.
 - `ma3_auth_audit_total{action}` — counter of audit writes.
+- `ma3_auth_verify_total{result}` — `cache_hit`, `cache_miss_ok`, `cache_miss_fail`, `timeout`, `network_error`.
+- `ma3_auth_verify_latency_seconds` — histogram for `/verify` round-trips.
 
 `/v2/doctor` adds a new `auth` section: `{ principals, api_keys_active,
 acl_entries, legacy_tokens, admin_bypass_used_recent }`.
@@ -527,8 +569,11 @@ these insertions and the explicit no-flip rule the user asked for.
 2. Submit a NEW LTP job (do not reuse the prod job name) following
    playbook steps 2–7 unchanged. The new job listens on a new
    `MA3_PORT`. Add env vars:
-   - `MA3_AUTH_JWT_SECRET=<copied from inferhub2 production env>`
+   - `MA3_AUTH_VERIFY_URL=https://auth.zhilicon.com/verify`
+   - `MA3_AUTH_ADMIN_USERS=chuntao.hong`
    - `MA3_XYZ_LIBRARY_ID=<resolved by inspection of prod /libraries>`
+   No cross-service secrets need to be extracted; ma3 verifies cookies
+   online via the gateway.
 3. After candidate is `RUNNING`, SSH in and execute, inside the
    candidate's venv:
    ```
