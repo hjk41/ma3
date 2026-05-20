@@ -282,8 +282,17 @@ if [[ "$MA3_PG_ARCHIVE_ENABLE" == "1" ]]; then
   install -m 0755 "$MA3_REPO_DIR/deploy/ltp/pg_restore_walk.sh" /opt/ma3/pg_restore_walk.sh
   mkdir -p "$MA3_PG_ARCHIVE_DIR" "${MA3_BACKUP_DIR}/basebackups/${MA3_INSTANCE_ID}" "${MA3_BACKUP_DIR}/op_logs/${MA3_INSTANCE_ID}"
   chown -R postgres:postgres /opt/ma3 2>/dev/null || true
-  # Render archive settings via ALTER SYSTEM so we don't rewrite postgresql.conf
-  PGPASSWORD="$PGPASSWORD" psql -h "$PGHOST" -p "$PGPORT" -U "$PGUSER" -d "$PGDATABASE" <<SQL
+  # archive_command runs as the postgres OS user; ensure it can write the
+  # archive dir + the audit log + the flock dir. CephFS-mounted dirs may
+  # not allow chown across the FUSE boundary, so fall back to 0777 if
+  # chown is denied — never fail bootstrap on this.
+  chown postgres:postgres "$MA3_PG_ARCHIVE_DIR" 2>/dev/null || chmod 0777 "$MA3_PG_ARCHIVE_DIR" || true
+  mkdir -p /var/log/ma3 /tmp/ma3-archive
+  chmod 0777 /var/log/ma3 /tmp/ma3-archive 2>/dev/null || true
+  # ALTER SYSTEM requires superuser; ma3user is not. Use the postgres OS
+  # user via local-socket peer trust (works on the LTP container's
+  # default Debian/Ubuntu PG cluster).
+  sudo -u postgres psql -d "$PGDATABASE" <<SQL
 ALTER SYSTEM SET archive_mode      = 'on';
 ALTER SYSTEM SET archive_command   = 'MA3_PG_ARCHIVE_DIR=${MA3_PG_ARCHIVE_DIR} /opt/ma3/pg_archive.sh %p %f';
 ALTER SYSTEM SET archive_timeout   = '${MA3_PG_ARCHIVE_TIMEOUT_SECONDS}s';
@@ -291,8 +300,8 @@ ALTER SYSTEM SET max_wal_senders   = 3;
 ALTER SYSTEM SET wal_keep_size     = '512MB';
 SQL
   # archive_mode requires a restart to take effect; SIGHUP (reload) for the rest
-  PGPASSWORD="$PGPASSWORD" psql -h "$PGHOST" -p "$PGPORT" -U "$PGUSER" -tAc 'SELECT pg_reload_conf();' >/dev/null
-  if ! PGPASSWORD="$PGPASSWORD" psql -h "$PGHOST" -p "$PGPORT" -U "$PGUSER" -tAc 'SHOW archive_mode;' | grep -qi '^on$'; then
+  sudo -u postgres psql -d "$PGDATABASE" -tAc 'SELECT pg_reload_conf();' >/dev/null
+  if ! sudo -u postgres psql -d "$PGDATABASE" -tAc 'SHOW archive_mode;' | grep -qi '^on$'; then
     log "archive_mode is off; restarting Postgres once to enable"
     pg_ctlcluster 16 main restart 2>/dev/null || pg_ctlcluster 15 main restart 2>/dev/null || true
     # wait for PG back

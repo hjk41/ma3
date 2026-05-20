@@ -16,9 +16,11 @@
 #   MA3_BACKUP_DIR                 required
 #   MA3_INSTANCE_ID                required
 #   MA3_PG_ARCHIVE_DIR             default $MA3_BACKUP_DIR/wal/<inst>
-#   PGUSER, PGHOST, PGPORT, PGPASSWORD  Postgres connection (PGPASSWORD
-#                                  pulled from ma3.env)
 #   MA3_REPO_DIR                   used to find pg_pitr_gc.sh
+#
+# pg_basebackup is invoked as the postgres OS user via local-socket peer
+# auth, so PGUSER/PGPASSWORD are not consumed here. The cron must be
+# triggered as root (default) or as a user that can `sudo -u postgres`.
 
 set -euo pipefail
 IFS=$'\n\t'
@@ -27,9 +29,6 @@ log() { printf '[%s] pg_basebackup_cron: %s\n' "$(date -u +%FT%TZ)" "$*" >&2; }
 
 : "${MA3_BACKUP_DIR:?MA3_BACKUP_DIR required}"
 : "${MA3_INSTANCE_ID:?MA3_INSTANCE_ID required}"
-: "${PGUSER:?PGUSER required}"
-: "${PGHOST:=127.0.0.1}"
-: "${PGPORT:=5433}"
 : "${MA3_PG_ARCHIVE_DIR:=$MA3_BACKUP_DIR/wal/$MA3_INSTANCE_ID}"
 : "${MA3_REPO_DIR:=/root/ma3-instance/repo}"
 
@@ -44,9 +43,14 @@ fi
 ts=$(date -u +%Y%m%d-%H%M%SZ)
 dest="$MA3_BACKUP_DIR/basebackups/$MA3_INSTANCE_ID/$ts"
 mkdir -p "$dest"
+# pg_basebackup runs as postgres OS user; it must be able to write into $dest.
+# CephFS may not allow chown across the FUSE boundary, fall back to chmod 0777.
+chown postgres:postgres "$dest" 2>/dev/null || chmod 0777 "$dest" || true
 
 log "pg_basebackup -> $dest"
-if ! pg_basebackup -h "$PGHOST" -p "$PGPORT" -U "$PGUSER" \
+# pg_basebackup needs replication permission; run as the postgres OS
+# user via local socket peer trust (no password needed).
+if ! sudo -u postgres pg_basebackup \
       -F t -X stream -z -P -D "$dest" >&2; then
   log "pg_basebackup FAILED; cleaning up partial dir"
   rm -rf -- "$dest"
@@ -73,7 +77,7 @@ cat > "$dest/manifest.json.tmp" <<JSON
   "instance_id": "$MA3_INSTANCE_ID",
   "created_at": "$(date -u +%FT%TZ)",
   "start_lsn": "$start_lsn",
-  "pg_version": $(psql -h "$PGHOST" -p "$PGPORT" -U "$PGUSER" -tAc 'SHOW server_version_num;' 2>/dev/null || echo 0)
+  "pg_version": $(sudo -u postgres psql -tAc 'SHOW server_version_num;' 2>/dev/null || echo 0)
 }
 JSON
 mv -- "$dest/manifest.json.tmp" "$dest/manifest.json"
