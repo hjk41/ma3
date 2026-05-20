@@ -94,8 +94,15 @@ def archive_completed_logs() -> dict:
     if settings.log_archive_dir:
         target_dir = settings.log_archive_dir / (settings.instance_id or "unknown-instance")
         target_dir.mkdir(parents=True, exist_ok=True)
+        # If op_logs already live on CephFS at the same effective path
+        # (MA3_OP_LOG_REALTIME_CEPHFS=1), skip the redundant copy step —
+        # the gzipped files are already durable.
+        same_dir = settings.op_log_dir.resolve() == target_dir.resolve()
         for gz in sorted(settings.op_log_dir.glob("*.jsonl.gz")):
             target = target_dir / gz.name
+            if same_dir:
+                archived.append(str(target))
+                continue
             shutil.copy2(gz, target)
             archived.append(str(target))
         manifest = {

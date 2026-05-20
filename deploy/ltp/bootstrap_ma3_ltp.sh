@@ -49,7 +49,20 @@ MA3_DELTA_URL="${MA3_DELTA_URL:-}"
 MA3_RUN_V1_TO_V2_MIGRATION="${MA3_RUN_V1_TO_V2_MIGRATION:-1}"
 MA3_RUN_V2_TO_V3_MIGRATION="${MA3_RUN_V2_TO_V3_MIGRATION:-1}"
 MA3_MANIFEST_DIR="${MA3_MANIFEST_DIR:-${MA3_BACKUP_DIR}/instances}"
-MA3_OP_LOG_DIR="${MA3_OP_LOG_DIR:-/var/log/ma3/ops}"
+
+# v3 PITR realtime backup
+MA3_PG_ARCHIVE_ENABLE="${MA3_PG_ARCHIVE_ENABLE:-1}"
+MA3_PG_ARCHIVE_DIR="${MA3_PG_ARCHIVE_DIR:-${MA3_BACKUP_DIR}/wal/${MA3_INSTANCE_ID}}"
+MA3_PG_ARCHIVE_TIMEOUT_SECONDS="${MA3_PG_ARCHIVE_TIMEOUT_SECONDS:-60}"
+MA3_PG_BASEBACKUP_INTERVAL_MIN="${MA3_PG_BASEBACKUP_INTERVAL_MIN:-30}"
+MA3_PG_BASEBACKUP_RETENTION="${MA3_PG_BASEBACKUP_RETENTION:-4}"
+MA3_PG_OLD_INSTANCE_RETENTION_DAYS="${MA3_PG_OLD_INSTANCE_RETENTION_DAYS:-7}"
+MA3_OP_LOG_REALTIME_CEPHFS="${MA3_OP_LOG_REALTIME_CEPHFS:-1}"
+if [[ "$MA3_OP_LOG_REALTIME_CEPHFS" == "1" && -n "${MA3_BACKUP_DIR:-}" ]]; then
+  MA3_OP_LOG_DIR="${MA3_OP_LOG_DIR:-${MA3_BACKUP_DIR}/op_logs/${MA3_INSTANCE_ID}}"
+else
+  MA3_OP_LOG_DIR="${MA3_OP_LOG_DIR:-/var/log/ma3/ops}"
+fi
 MA3_LOG_ARCHIVE_DIR="${MA3_LOG_ARCHIVE_DIR:-${MA3_BACKUP_DIR}/logs}"
 MA3_LOG_LOCAL_RETENTION_DAYS="${MA3_LOG_LOCAL_RETENTION_DAYS:-2}"
 MA3_V1_TO_V2_REPORT="${MA3_V1_TO_V2_REPORT:-${MA3_WORKDIR}/v1_to_v2_migration_report.json}"
@@ -239,10 +252,56 @@ python3 -m venv "$MA3_VENV"
 "$MA3_VENV/bin/pip" install -r "$MA3_REPO_DIR/$MA3_REQUIREMENTS_FILE"
 
 log "restoring database backup"
-MA3_BACKUP_MANIFEST="$MA3_BACKUP_MANIFEST" \
-MA3_BACKUP_DIR="$MA3_BACKUP_DIR" \
-PGHOST="$PGHOST" PGPORT="$PGPORT" PGDATABASE="$PGDATABASE" PGUSER="$PGUSER" PGPASSWORD="$PGPASSWORD" \
-  bash "$MA3_REPO_DIR/deploy/ltp/restore_postgres.sh"
+if [[ "$MA3_BACKUP_MANIFEST" == "latest_pitr" ]]; then
+  if [[ -f "${MA3_BACKUP_DIR}/pitr_manifest.json" ]]; then
+    log "PITR restore via pitr_manifest.json"
+    MA3_BACKUP_DIR="$MA3_BACKUP_DIR" \
+    MA3_INSTANCE_ID="$MA3_INSTANCE_ID" \
+    PGDATA="$(psql -h "$PGHOST" -p "$PGPORT" -U "$PGUSER" -tAc 'SHOW data_directory;' 2>/dev/null || echo "")" \
+    PGHOST="$PGHOST" PGPORT="$PGPORT" PGUSER="$PGUSER" PGPASSWORD="$PGPASSWORD" \
+      bash "$MA3_REPO_DIR/deploy/ltp/restore_pitr.sh"
+  else
+    log "MA3_BACKUP_MANIFEST=latest_pitr but no pitr_manifest.json yet — falling back to legacy restore"
+    MA3_BACKUP_MANIFEST=latest \
+    MA3_BACKUP_DIR="$MA3_BACKUP_DIR" \
+    PGHOST="$PGHOST" PGPORT="$PGPORT" PGDATABASE="$PGDATABASE" PGUSER="$PGUSER" PGPASSWORD="$PGPASSWORD" \
+      bash "$MA3_REPO_DIR/deploy/ltp/restore_postgres.sh"
+  fi
+else
+  MA3_BACKUP_MANIFEST="$MA3_BACKUP_MANIFEST" \
+  MA3_BACKUP_DIR="$MA3_BACKUP_DIR" \
+  PGHOST="$PGHOST" PGPORT="$PGPORT" PGDATABASE="$PGDATABASE" PGUSER="$PGUSER" PGPASSWORD="$PGPASSWORD" \
+    bash "$MA3_REPO_DIR/deploy/ltp/restore_postgres.sh"
+fi
+
+# Configure WAL archiving (idempotent — only restarts PG on first enable)
+if [[ "$MA3_PG_ARCHIVE_ENABLE" == "1" ]]; then
+  log "configuring Postgres WAL archiving"
+  mkdir -p /opt/ma3
+  install -m 0755 "$MA3_REPO_DIR/deploy/ltp/pg_archive.sh"      /opt/ma3/pg_archive.sh
+  install -m 0755 "$MA3_REPO_DIR/deploy/ltp/pg_restore_walk.sh" /opt/ma3/pg_restore_walk.sh
+  mkdir -p "$MA3_PG_ARCHIVE_DIR" "${MA3_BACKUP_DIR}/basebackups/${MA3_INSTANCE_ID}" "${MA3_BACKUP_DIR}/op_logs/${MA3_INSTANCE_ID}"
+  chown -R postgres:postgres /opt/ma3 2>/dev/null || true
+  # Render archive settings via ALTER SYSTEM so we don't rewrite postgresql.conf
+  PGPASSWORD="$PGPASSWORD" psql -h "$PGHOST" -p "$PGPORT" -U "$PGUSER" -d "$PGDATABASE" <<SQL
+ALTER SYSTEM SET archive_mode      = 'on';
+ALTER SYSTEM SET archive_command   = 'MA3_PG_ARCHIVE_DIR=${MA3_PG_ARCHIVE_DIR} /opt/ma3/pg_archive.sh %p %f';
+ALTER SYSTEM SET archive_timeout   = '${MA3_PG_ARCHIVE_TIMEOUT_SECONDS}s';
+ALTER SYSTEM SET max_wal_senders   = 3;
+ALTER SYSTEM SET wal_keep_size     = '512MB';
+SQL
+  # archive_mode requires a restart to take effect; SIGHUP (reload) for the rest
+  PGPASSWORD="$PGPASSWORD" psql -h "$PGHOST" -p "$PGPORT" -U "$PGUSER" -tAc 'SELECT pg_reload_conf();' >/dev/null
+  if ! PGPASSWORD="$PGPASSWORD" psql -h "$PGHOST" -p "$PGPORT" -U "$PGUSER" -tAc 'SHOW archive_mode;' | grep -qi '^on$'; then
+    log "archive_mode is off; restarting Postgres once to enable"
+    pg_ctlcluster 16 main restart 2>/dev/null || pg_ctlcluster 15 main restart 2>/dev/null || true
+    # wait for PG back
+    for _ in $(seq 1 30); do
+      pg_isready -h "$PGHOST" -p "$PGPORT" -U "$PGUSER" >/dev/null 2>&1 && break
+      sleep 1
+    done
+  fi
+fi
 
 if [[ "$MA3_ENABLE_DELTA" == "1" ]]; then
   if [[ -z "$MA3_DELTA_URL" ]]; then
@@ -304,6 +363,19 @@ MA3_SEARCH_INDEX_MODE=${MA3_SEARCH_INDEX_MODE}
 MA3_AUTH_VERIFY_URL=${MA3_AUTH_VERIFY_URL:-}
 MA3_AUTH_ADMIN_USERS=${MA3_AUTH_ADMIN_USERS:-}
 MA3_XYZ_LIBRARY_ID=${MA3_XYZ_LIBRARY_ID:-}
+MA3_PG_ARCHIVE_ENABLE=${MA3_PG_ARCHIVE_ENABLE}
+MA3_PG_ARCHIVE_DIR=${MA3_PG_ARCHIVE_DIR}
+MA3_PG_ARCHIVE_TIMEOUT_SECONDS=${MA3_PG_ARCHIVE_TIMEOUT_SECONDS}
+MA3_PG_BASEBACKUP_INTERVAL_MIN=${MA3_PG_BASEBACKUP_INTERVAL_MIN}
+MA3_PG_BASEBACKUP_RETENTION=${MA3_PG_BASEBACKUP_RETENTION}
+MA3_PG_OLD_INSTANCE_RETENTION_DAYS=${MA3_PG_OLD_INSTANCE_RETENTION_DAYS}
+MA3_OP_LOG_REALTIME_CEPHFS=${MA3_OP_LOG_REALTIME_CEPHFS}
+MA3_BACKUP_DIR=${MA3_BACKUP_DIR}
+PGUSER=${PGUSER}
+PGHOST=${PGHOST}
+PGPORT=${PGPORT}
+PGPASSWORD=${PGPASSWORD}
+MA3_REPO_DIR=${MA3_REPO_DIR}
 HF_HUB_OFFLINE=${HF_HUB_OFFLINE:-1}
 EOF
 chmod 600 "${MA3_WORKDIR}/ma3.env"
@@ -343,6 +415,20 @@ log "installing daily log archive cron entry"
 if command -v cron >/dev/null 2>&1; then
   (crontab -l 2>/dev/null | grep -v 'archive_logs.sh' || true; echo "7 3 * * * cd '$MA3_REPO_DIR/server' && set -a && . '$MA3_WORKDIR/ma3.env' && set +a && bash '$MA3_REPO_DIR/deploy/ltp/archive_logs.sh' >> /var/log/ma3/archive.log 2>&1") | crontab -
   cron || true
+fi
+
+if [[ "$MA3_PG_ARCHIVE_ENABLE" == "1" ]]; then
+  log "installing pg_basebackup cron (every ${MA3_PG_BASEBACKUP_INTERVAL_MIN}m)"
+  if command -v cron >/dev/null 2>&1; then
+    (crontab -l 2>/dev/null | grep -v 'pg_basebackup_cron.sh' || true; \
+     echo "*/${MA3_PG_BASEBACKUP_INTERVAL_MIN} * * * * set -a && . '$MA3_WORKDIR/ma3.env' && set +a && bash '$MA3_REPO_DIR/deploy/ltp/pg_basebackup_cron.sh' >> /var/log/ma3/basebackup.log 2>&1") | crontab -
+    cron || true
+  fi
+  log "seeding initial basebackup for $MA3_INSTANCE_ID"
+  set -a; . "$MA3_WORKDIR/ma3.env"; set +a
+  if ! bash "$MA3_REPO_DIR/deploy/ltp/pg_basebackup_cron.sh"; then
+    log "WARNING: initial basebackup failed; cron will retry. ma3 startup is NOT blocked."
+  fi
 fi
 
 INSTANCE_MANIFEST="${MA3_MANIFEST_DIR}/${MA3_INSTANCE_ID}.json"
