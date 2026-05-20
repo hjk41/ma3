@@ -21,6 +21,8 @@ from app.models.auth import (
     Principal,
     PrincipalBlock,
     PrincipalSummary,
+    Role,
+    RoleAssignment,
     ServicePrincipalCreateRequest,
     WhoamiResponse,
 )
@@ -39,7 +41,7 @@ from app.services.auth_service import (
     search_principals,
 )
 from app.services.library_service import create_library
-from app.storage.repositories import ApiKeyRepository, AuthAuditRepository, LibraryRepository
+from app.storage.repositories import ApiKeyRepository, AuthAuditRepository, LibraryRepository, RoleRepository, RoleAssignmentRepository
 
 
 router = APIRouter(tags=["v3-auth"])
@@ -57,12 +59,26 @@ def _whoami(principal: ResolvedPrincipal) -> WhoamiResponse:
         libraries=effective_library_details(principal),
         api_key=api_key,
         admin_bypass=principal.is_admin_bypass,
+        roles=RoleAssignmentRepository().list_by_principal(principal.principal_id) if principal.kind not in {"anonymous", "admin"} else [],
     )
 
 
 @router.get("/v3/auth/whoami", response_model=WhoamiResponse)
 def whoami(principal: ResolvedPrincipal = Depends(current_principal)) -> WhoamiResponse:
     return _whoami(principal)
+
+
+@router.get("/v3/roles", response_model=list[Role])
+def get_roles(_: ResolvedPrincipal = Depends(require_authenticated)) -> list[Role]:
+    return RoleRepository().list()
+
+
+@router.get("/v3/auth/permissions/me", response_model=dict)
+def get_my_permissions(principal: ResolvedPrincipal = Depends(current_principal)) -> dict:
+    from app.core.auth import effective_permissions
+
+    by_library = {lib.library_id: sorted(effective_permissions(principal, lib.library_id)) for lib in effective_library_details(principal)}
+    return {"global": sorted(effective_permissions(principal)), "by_library": by_library}
 
 
 @router.post("/v3/auth/keys", response_model=ApiKeyIssued)

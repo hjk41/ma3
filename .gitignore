@@ -8,3 +8,7 @@ client/.env
 tmp-*.json
 *_ingest_*.json
 
+
+server/app/web/node_modules/
+server/app/web/dist/
+server/app/web/*.tsbuildinfo

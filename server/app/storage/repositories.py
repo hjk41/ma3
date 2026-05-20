@@ -1,6 +1,6 @@
 import json
 
-from app.models.auth import AclEntry, ApiKeyInfo, AuthAuditEntry, Principal, PrincipalSummary
+from app.models.auth import AclEntry, ApiKeyInfo, AuthAuditEntry, Principal, PrincipalSummary, Role, RoleAssignment, ROLE_TO_LIBRARY_ROLE
 from app.models.library import InviteCode, Library, TokenInfo
 from app.models.relation import RecordRelation
 from app.models.feedback import Feedback
@@ -99,6 +99,39 @@ def _row_to_acl(row, principal: PrincipalSummary | None = None) -> AclEntry:
         granted_at=row["granted_at"],
         granted_by=row["granted_by"],
         principal=principal,
+    )
+
+
+def _row_to_role(row) -> Role:
+    return Role(
+        role_name=row["role_name"],
+        scope_type=row["scope_type"],
+        permissions=_load_json_list(row["permissions_json"]) or [],
+        description=row["description"],
+        created_at=row["created_at"],
+    )
+
+
+def _row_to_role_assignment(row, principal: PrincipalSummary | None = None) -> RoleAssignment:
+    return RoleAssignment(
+        scope_type=row["scope_type"],
+        scope_id=row["scope_id"],
+        principal_id=row["principal_id"],
+        role_name=row["role_name"],
+        granted_at=row["granted_at"],
+        granted_by=row["granted_by"],
+        principal=principal,
+    )
+
+
+def _role_assignment_to_acl(entry: RoleAssignment) -> AclEntry:
+    return AclEntry(
+        library_id=entry.scope_id or "",
+        principal_id=entry.principal_id,
+        role=ROLE_TO_LIBRARY_ROLE.get(entry.role_name, "reader"),
+        granted_at=entry.granted_at,
+        granted_by=entry.granted_by,
+        principal=entry.principal,
     )
 
 
@@ -449,6 +482,139 @@ class LibraryAclRepository:
                 "SELECT COUNT(*) AS count FROM library_acl WHERE library_id = ? AND role = 'admin'",
                 (library_id,),
             ).fetchone()
+        return int(row["count"])
+
+
+class RoleRepository:
+    def upsert(self, role: Role) -> Role:
+        with get_connection() as conn:
+            conn.execute(
+                _upsert(
+                    "roles",
+                    ["role_name"],
+                    ["role_name", "scope_type", "permissions_json", "description", "created_at"],
+                ),
+                (role.role_name, role.scope_type, _json_param(role.permissions), role.description, role.created_at),
+            )
+        return role
+
+    def list(self) -> list[Role]:
+        with get_connection() as conn:
+            rows = conn.execute(
+                """
+                SELECT role_name, scope_type, permissions_json, description, created_at
+                FROM roles ORDER BY role_name ASC
+                """
+            ).fetchall()
+        return [_row_to_role(row) for row in rows]
+
+    def get(self, role_name: str) -> Role | None:
+        with get_connection() as conn:
+            row = conn.execute(
+                """
+                SELECT role_name, scope_type, permissions_json, description, created_at
+                FROM roles WHERE role_name = ?
+                """,
+                (role_name,),
+            ).fetchone()
+        return _row_to_role(row) if row else None
+
+
+class RoleAssignmentRepository:
+    def upsert(self, entry: RoleAssignment) -> RoleAssignment:
+        with get_connection() as conn:
+            conn.execute(
+                """
+                DELETE FROM role_assignments
+                WHERE scope_type = ? AND COALESCE(scope_id, '') = COALESCE(?, '') AND principal_id = ?
+                """,
+                (entry.scope_type, entry.scope_id, entry.principal_id),
+            )
+            conn.execute(
+                """
+                INSERT INTO role_assignments(scope_type, scope_id, principal_id, role_name, granted_at, granted_by)
+                VALUES (?, ?, ?, ?, ?, ?)
+                """,
+                (entry.scope_type, entry.scope_id, entry.principal_id, entry.role_name, entry.granted_at, entry.granted_by),
+            )
+        return entry
+
+    def list_by_principal(self, principal_id: str) -> list[RoleAssignment]:
+        with get_connection() as conn:
+            rows = conn.execute(
+                """
+                SELECT scope_type, scope_id, principal_id, role_name, granted_at, granted_by
+                FROM role_assignments WHERE principal_id = ?
+                ORDER BY scope_type ASC, scope_id ASC, role_name ASC
+                """,
+                (principal_id,),
+            ).fetchall()
+        return [_row_to_role_assignment(row) for row in rows]
+
+    def list_by_scope(self, scope_type: str, scope_id: str | None = None) -> list[RoleAssignment]:
+        with get_connection() as conn:
+            rows = conn.execute(
+                """
+                SELECT a.scope_type, a.scope_id, a.principal_id, a.role_name, a.granted_at, a.granted_by,
+                       p.kind, p.display_name
+                FROM role_assignments a
+                LEFT JOIN principals p ON p.principal_id = a.principal_id
+                WHERE a.scope_type = ? AND COALESCE(a.scope_id, '') = COALESCE(?, '')
+                ORDER BY a.principal_id ASC
+                """,
+                (scope_type, scope_id),
+            ).fetchall()
+        entries: list[RoleAssignment] = []
+        for row in rows:
+            summary = None
+            if row["kind"] is not None:
+                summary = PrincipalSummary(
+                    principal_id=row["principal_id"],
+                    kind=row["kind"],
+                    display_name=row["display_name"],
+                )
+            entries.append(_row_to_role_assignment(row, summary))
+        return entries
+
+    def get_library_role(self, library_id: str, principal_id: str) -> str | None:
+        with get_connection() as conn:
+            row = conn.execute(
+                """
+                SELECT role_name FROM role_assignments
+                WHERE scope_type = 'library' AND scope_id = ? AND principal_id = ?
+                """,
+                (library_id, principal_id),
+            ).fetchone()
+        return ROLE_TO_LIBRARY_ROLE.get(row["role_name"]) if row else None
+
+    def list_library_acl(self, library_id: str) -> list[AclEntry]:
+        return [_role_assignment_to_acl(entry) for entry in self.list_by_scope("library", library_id)]
+
+    def count_library_admins(self, library_id: str) -> int:
+        with get_connection() as conn:
+            row = conn.execute(
+                """
+                SELECT COUNT(*) AS count FROM role_assignments
+                WHERE scope_type = 'library' AND scope_id = ? AND role_name = 'library_admin'
+                """,
+                (library_id,),
+            ).fetchone()
+        return int(row["count"])
+
+    def delete(self, scope_type: str, scope_id: str | None, principal_id: str) -> bool:
+        with get_connection() as conn:
+            cursor = conn.execute(
+                """
+                DELETE FROM role_assignments
+                WHERE scope_type = ? AND COALESCE(scope_id, '') = COALESCE(?, '') AND principal_id = ?
+                """,
+                (scope_type, scope_id, principal_id),
+            )
+        return cursor.rowcount > 0
+
+    def count(self) -> int:
+        with get_connection() as conn:
+            row = conn.execute("SELECT COUNT(*) AS count FROM role_assignments").fetchone()
         return int(row["count"])
 
 

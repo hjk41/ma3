@@ -2,8 +2,12 @@ import threading
 import time
 from uuid import uuid4
 
-from fastapi import FastAPI, Request
+from pathlib import Path
 
+from fastapi import FastAPI, Request
+from fastapi.staticfiles import StaticFiles
+
+from app.api.routes_auth import router as auth_router
 from app.api.routes_agent import router as agent_router
 from app.api.routes_docs import router as docs_router
 from app.api.routes_feedback import router as feedback_router
@@ -81,9 +85,14 @@ app.include_router(relations_router)
 app.include_router(search_router)
 app.include_router(mcp_router)
 app.include_router(ui_router)
+app.include_router(auth_router)
 app.include_router(v3_auth_router)
 app.include_router(v2_agent_router)
 app.include_router(v2_search_router)
 app.include_router(v2_cases_router)
 app.include_router(v2_stats_router)
 app.include_router(metrics_router)
+
+
+_web_dist = Path(__file__).resolve().parent / "web" / "dist"
+app.mount("/ui", StaticFiles(directory=str(_web_dist), html=True, check_dir=False), name="ui")

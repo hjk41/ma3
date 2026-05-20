@@ -63,6 +63,7 @@ def _isolated_settings(tmp_path):
     orig_search_index_mode = config.settings.search_index_mode
     orig_auth_verify_url = config.settings.auth_verify_url
     orig_auth_verify_timeout_seconds = config.settings.auth_verify_timeout_seconds
+    orig_auth_login_url = config.settings.auth_login_url
     orig_auth_verify_cache_ttl_seconds = config.settings.auth_verify_cache_ttl_seconds
     orig_auth_verify_cache_max_entries = config.settings.auth_verify_cache_max_entries
     orig_auth_jwt_cookie = config.settings.auth_jwt_cookie
@@ -90,6 +91,7 @@ def _isolated_settings(tmp_path):
     object.__setattr__(config.settings, "search_index_mode", "jsonb_runtime")
     object.__setattr__(config.settings, "auth_verify_url", "https://auth.zhilicon.com/verify")
     object.__setattr__(config.settings, "auth_verify_timeout_seconds", 2.0)
+    object.__setattr__(config.settings, "auth_login_url", "https://auth.zhilicon.com/login")
     object.__setattr__(config.settings, "auth_verify_cache_ttl_seconds", 60)
     object.__setattr__(config.settings, "auth_verify_cache_max_entries", 2048)
     object.__setattr__(config.settings, "auth_jwt_cookie", "gateway_token")
@@ -122,6 +124,7 @@ def _isolated_settings(tmp_path):
     object.__setattr__(config.settings, "search_index_mode", orig_search_index_mode)
     object.__setattr__(config.settings, "auth_verify_url", orig_auth_verify_url)
     object.__setattr__(config.settings, "auth_verify_timeout_seconds", orig_auth_verify_timeout_seconds)
+    object.__setattr__(config.settings, "auth_login_url", orig_auth_login_url)
     object.__setattr__(config.settings, "auth_verify_cache_ttl_seconds", orig_auth_verify_cache_ttl_seconds)
     object.__setattr__(config.settings, "auth_verify_cache_max_entries", orig_auth_verify_cache_max_entries)
     object.__setattr__(config.settings, "auth_jwt_cookie", orig_auth_jwt_cookie)
@@ -147,15 +150,64 @@ def _mock_embeddings(monkeypatch):
     monkeypatch.setattr("app.services.embedding_service.embed_text", _mock_embed_text)
 
 
+# ── Test HTTP client without anyio thread portals ─────────────────────────────
+class _SimpleASGIClient:
+    def __init__(self, app):
+        self.app = app
+        self.headers: dict[str, str] = {}
+        self.cookies: dict[str, str] = {}
+
+    def close(self):
+        return None
+
+    def request(self, method: str, url: str, *, json=None, headers=None, cookies=None, follow_redirects: bool = False, **kwargs):
+        import asyncio
+        import httpx
+        from httpx import ASGITransport
+
+        merged_headers = {**self.headers, **(headers or {})}
+        merged_cookies = {**self.cookies, **(cookies or {})}
+
+        async def _run():
+            async with httpx.AsyncClient(
+                transport=ASGITransport(self.app),
+                base_url="http://testserver",
+                headers=merged_headers,
+                cookies=merged_cookies,
+                follow_redirects=follow_redirects,
+            ) as ac:
+                return await ac.request(method, url, json=json, **kwargs)
+
+        return asyncio.run(_run())
+
+    def get(self, url: str, **kwargs):
+        return self.request("GET", url, **kwargs)
+
+    def post(self, url: str, **kwargs):
+        return self.request("POST", url, **kwargs)
+
+    def patch(self, url: str, **kwargs):
+        return self.request("PATCH", url, **kwargs)
+
+    def put(self, url: str, **kwargs):
+        return self.request("PUT", url, **kwargs)
+
+    def delete(self, url: str, **kwargs):
+        return self.request("DELETE", url, **kwargs)
+
+
+@pytest.fixture(autouse=True)
+def _patch_anyio_threadpool(monkeypatch):
+    async def _run_sync(func, *args, abandon_on_cancel=False, cancellable=None, limiter=None):
+        return func(*args)
+    monkeypatch.setattr("anyio.to_thread.run_sync", _run_sync)
+
 # ── HTTP client fixtures ──────────────────────────────────────────────────────
 
 @pytest.fixture
 def client():
-    """Unauthenticated TestClient."""
-    # The database is initialized by _isolated_settings, so unit tests do not
-    # need FastAPI lifespan startup.  Avoiding the context manager also avoids
-    # TestClient/anyio socket restrictions in sandboxed CI.
-    c = TestClient(app_module.app)
+    """Unauthenticated ASGI client."""
+    c = _SimpleASGIClient(app_module.app)
     try:
         yield c
     finally:

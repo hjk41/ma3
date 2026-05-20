@@ -15,7 +15,7 @@ from fastapi import Depends, Header, HTTPException, Request, status
 
 from app.core.config import settings
 from app.core.time import utc_now_iso
-from app.models.auth import EffectiveLibrary, ROLE_ORDER, ResolvedPrincipal
+from app.models.auth import BUILTIN_ROLES, LIBRARY_ROLE_TO_ROLE, Permission, EffectiveLibrary, ROLE_ORDER, ROLE_TO_LIBRARY_ROLE, ResolvedPrincipal, RoleAssignment
 from app.models.library import TokenInfo
 from app.services.metrics_service import metrics
 from app.storage.repositories import (
@@ -23,6 +23,7 @@ from app.storage.repositories import (
     LibraryAclRepository,
     LibraryRepository,
     PrincipalRepository,
+    RoleAssignmentRepository,
     TokenRepository,
 )
 
@@ -36,6 +37,7 @@ class ResolvedToken:
 
 
 _WRITE_ROLES = frozenset({"writer", "admin"})
+_LIBRARY_ROLE_NAMES = {"library_reader", "library_writer", "library_admin"}
 _ADMIN_PRINCIPAL = ResolvedPrincipal(
     principal_id="admin:root",
     kind="admin",
@@ -137,6 +139,13 @@ def _cache_put(key: str, result: VerifyResult, jwt_exp: int | None) -> None:
 
 def clear_sso_verify_cache() -> None:
     _verify_cache.clear()
+
+
+def _cookie_domain_for_host(host: str) -> str | None:
+    hostname = (host or "").split(":", 1)[0].strip().lower()
+    if hostname.endswith(".zhilicon.com"):
+        return ".zhilicon.com"
+    return None
 
 
 def verify_sso_cookie(jwt: str) -> VerifyResult | None:
@@ -393,6 +402,57 @@ def _stronger_role(existing: str | None, new: str) -> str:
     return existing
 
 
+def _assignment_library_role(assignment: RoleAssignment) -> str | None:
+    if assignment.scope_type != "library" or not assignment.scope_id:
+        return None
+    return ROLE_TO_LIBRARY_ROLE.get(assignment.role_name)
+
+
+def role_assignments_for(principal_id: str) -> list[RoleAssignment]:
+    if principal_id in {"anonymous", "admin:root"}:
+        return []
+    return RoleAssignmentRepository().list_by_principal(principal_id)
+
+
+def effective_permissions(principal: ResolvedPrincipal, library_id: str | None = None) -> set[str]:
+    if principal.is_admin_bypass:
+        return {"*"}
+    perms: set[str] = set()
+    if principal.kind == "anonymous":
+        return perms
+    assigned_for_library = False
+    for assignment in role_assignments_for(principal.principal_id):
+        role_perms = BUILTIN_ROLES.get(assignment.role_name, [])
+        if assignment.scope_type == "system":
+            perms.update(role_perms)
+        elif assignment.scope_type == "library" and assignment.scope_id == library_id:
+            perms.update(role_perms)
+            assigned_for_library = True
+    if library_id is not None and not assigned_for_library and principal.kind != "anonymous":
+        # Transitional fallback for v2/v3 legacy credentials before RBAC migration.
+        for entry in LibraryAclRepository().list_by_principal(principal.principal_id):
+            if entry.library_id == library_id:
+                perms.update(BUILTIN_ROLES.get(LIBRARY_ROLE_TO_ROLE.get(entry.role, ""), []))
+                break
+    return perms
+
+
+def has_permission(principal: ResolvedPrincipal, perm: Permission | str, *, library_id: str | None = None) -> bool:
+    wanted = perm.value if isinstance(perm, Permission) else str(perm)
+    perms = effective_permissions(principal, library_id)
+    return "*" in perms or wanted in perms
+
+
+def require_permission(principal: ResolvedPrincipal, perm: Permission | str, *, library_id: str | None = None) -> None:
+    wanted = perm.value if isinstance(perm, Permission) else str(perm)
+    if not has_permission(principal, wanted, library_id=library_id):
+        metrics.record_auth_403("permission_denied")
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail={"error": "permission_denied", "missing": wanted, "library": library_id},
+        )
+
+
 def effective_libraries(principal: ResolvedPrincipal, role_at_least: str = "reader") -> dict[str, str]:
     if principal.is_admin_bypass:
         return {
@@ -406,8 +466,18 @@ def effective_libraries(principal: ResolvedPrincipal, role_at_least: str = "read
         roles[lib.library_id] = _stronger_role(roles.get(lib.library_id), "reader")
 
     if principal.kind != "anonymous":
+        assignments = RoleAssignmentRepository().list_by_principal(principal.principal_id)
+        assigned_libs: set[str] = set()
+        for assignment in assignments:
+            role = _assignment_library_role(assignment)
+            if role and assignment.scope_id:
+                roles[assignment.scope_id] = _stronger_role(roles.get(assignment.scope_id), role)
+                assigned_libs.add(assignment.scope_id)
+        # Transitional fallback: legacy library_acl rows still count when no
+        # v3.1 assignment exists for that principal/library.
         for entry in LibraryAclRepository().list_by_principal(principal.principal_id):
-            roles[entry.library_id] = _stronger_role(roles.get(entry.library_id), entry.role)
+            if entry.library_id not in assigned_libs:
+                roles[entry.library_id] = _stronger_role(roles.get(entry.library_id), entry.role)
 
     if principal.api_key_scope is not None:
         roles = {lib_id: role for lib_id, role in roles.items() if lib_id in principal.api_key_scope}
@@ -418,13 +488,16 @@ def effective_libraries(principal: ResolvedPrincipal, role_at_least: str = "read
         if ROLE_ORDER[role] >= ROLE_ORDER[role_at_least]
     }
 
-
 def effective_library_details(principal: ResolvedPrincipal) -> list[EffectiveLibrary]:
     roles = effective_libraries(principal)
-    explicit = {
-        entry.library_id: entry.role
-        for entry in LibraryAclRepository().list_by_principal(principal.principal_id)
-    } if principal.kind not in {"anonymous", "admin"} else {}
+    explicit: dict[str, str] = {}
+    if principal.kind not in {"anonymous", "admin"}:
+        for assignment in RoleAssignmentRepository().list_by_principal(principal.principal_id):
+            role = _assignment_library_role(assignment)
+            if role and assignment.scope_id:
+                explicit[assignment.scope_id] = role
+        for entry in LibraryAclRepository().list_by_principal(principal.principal_id):
+            explicit.setdefault(entry.library_id, entry.role)
     libs = {lib.library_id: lib for lib in LibraryRepository().list_all()}
     out: list[EffectiveLibrary] = []
     for lib_id, role in sorted(roles.items()):
@@ -526,7 +599,7 @@ def require_library_write(
     principal: ResolvedPrincipal = Depends(resolve_principal),
 ) -> str:
     role = require_library_read(library_id, principal)
-    if role not in _WRITE_ROLES:
+    if not has_permission(principal, Permission.RECORD_WRITE, library_id=library_id):
         metrics.record_auth_403("write_missing")
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="writer role required")
     return role
@@ -538,8 +611,8 @@ def require_library_admin(
 ) -> str | None:
     if principal.is_admin_bypass:
         return None
-    role = require_library_read(library_id, principal)
-    if role != "admin":
+    require_library_read(library_id, principal)
+    if not has_permission(principal, Permission.LIBRARY_MANAGE_ACL, library_id=library_id):
         metrics.record_auth_403("admin_missing")
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="admin-role token for this library required")
     return library_id

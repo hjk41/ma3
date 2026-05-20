@@ -42,6 +42,7 @@ class Settings:
     search_batch_graph_enabled: bool = field(init=False)
     search_index_mode: str = field(init=False)
     auth_verify_url: str | None = field(init=False)
+    auth_login_url: str = field(init=False)
     auth_verify_timeout_seconds: float = field(init=False)
     auth_verify_cache_ttl_seconds: int = field(init=False)
     auth_verify_cache_max_entries: int = field(init=False)
@@ -94,6 +95,7 @@ class Settings:
                 raise ValueError(
                     "MA3_AUTH_VERIFY_URL must be https://, except http:// loopback URLs in tests"
                 )
+        auth_login_url = os.environ.get("MA3_AUTH_LOGIN_URL", "https://auth.zhilicon.com/login").strip() or "https://auth.zhilicon.com/login"
         auth_verify_timeout_seconds = float(os.environ.get("MA3_AUTH_VERIFY_TIMEOUT_SECONDS", "2.0"))
         auth_verify_cache_ttl_seconds = int(os.environ.get("MA3_AUTH_VERIFY_CACHE_TTL_SECONDS", "60"))
         auth_verify_cache_max_entries = int(os.environ.get("MA3_AUTH_VERIFY_CACHE_MAX_ENTRIES", "2048"))
@@ -129,6 +131,7 @@ class Settings:
         object.__setattr__(self, "search_batch_graph_enabled", search_batch_graph_enabled)
         object.__setattr__(self, "search_index_mode", search_index_mode)
         object.__setattr__(self, "auth_verify_url", auth_verify_url)
+        object.__setattr__(self, "auth_login_url", auth_login_url)
         object.__setattr__(self, "auth_verify_timeout_seconds", auth_verify_timeout_seconds)
         object.__setattr__(self, "auth_verify_cache_ttl_seconds", auth_verify_cache_ttl_seconds)
         object.__setattr__(self, "auth_verify_cache_max_entries", auth_verify_cache_max_entries)

@@ -158,7 +158,7 @@ if ! command -v pg_isready >/dev/null 2>&1 || ! command -v python3 >/dev/null 2>
     log "installing missing runtime packages with apt-get"
     export DEBIAN_FRONTEND=noninteractive
     apt-get update
-    apt-get install -y --no-install-recommends git curl ca-certificates python3 python3-venv python3-pip postgresql postgresql-client cron
+    apt-get install -y --no-install-recommends git curl ca-certificates python3 python3-venv python3-pip postgresql postgresql-client cron nodejs npm
   else
     die "missing runtime packages and apt-get is unavailable; use an image with git/curl/python3-venv/PostgreSQL"
   fi
@@ -368,6 +368,35 @@ else
   log "skipping v2-to-v3 token migration (MA3_RUN_V2_TO_V3_MIGRATION=${MA3_RUN_V2_TO_V3_MIGRATION})"
 fi
 
+if [[ -f "$MA3_REPO_DIR/server/scripts/migrate_v3_to_v3_1_rbac.py" ]]; then
+  log "running v3-to-v3.1 RBAC migration (idempotent)"
+  cd "$MA3_REPO_DIR/server"
+  MA3_DATABASE_URL="postgresql://${PGUSER}:${PGPASSWORD}@${PGHOST}:${PGPORT}/${PGDATABASE}" \
+    "$MA3_VENV/bin/python3" scripts/migrate_v3_to_v3_1_rbac.py --apply
+fi
+
+if ! command -v node >/dev/null 2>&1; then
+  if command -v apt-get >/dev/null 2>&1; then
+    log "installing nodejs/npm for web SPA build"
+    export DEBIAN_FRONTEND=noninteractive
+    apt-get update
+    apt-get install -y --no-install-recommends nodejs npm
+  else
+    die "nodejs/npm missing and apt-get is unavailable"
+  fi
+fi
+
+if [[ -d "$MA3_REPO_DIR/server/app/web" ]]; then
+  cd "$MA3_REPO_DIR/server/app/web"
+  if [[ ! -f dist/index.html ]] || [[ "$(find src index.html package.json -newer dist/index.html -print -quit 2>/dev/null)" ]]; then
+    log "building web SPA"
+    npm ci --silent
+    npm run build
+  else
+    log "web SPA dist is fresh; skipping build"
+  fi
+fi
+
 log "writing root-only env file"
 cat > "${MA3_WORKDIR}/ma3.env" <<EOF
 MA3_DATABASE_URL=postgresql://${PGUSER}:${PGPASSWORD}@${PGHOST}:${PGPORT}/${PGDATABASE}
@@ -391,6 +420,7 @@ MA3_DB_POOL_TIMEOUT_SECONDS=${MA3_DB_POOL_TIMEOUT_SECONDS}
 MA3_SEARCH_BATCH_GRAPH_ENABLED=${MA3_SEARCH_BATCH_GRAPH_ENABLED}
 MA3_SEARCH_INDEX_MODE=${MA3_SEARCH_INDEX_MODE}
 MA3_AUTH_VERIFY_URL=${MA3_AUTH_VERIFY_URL:-}
+MA3_AUTH_LOGIN_URL=${MA3_AUTH_LOGIN_URL:-}
 MA3_AUTH_ADMIN_USERS=${MA3_AUTH_ADMIN_USERS:-}
 MA3_XYZ_LIBRARY_ID=${MA3_XYZ_LIBRARY_ID:-}
 MA3_PG_ARCHIVE_ENABLE=${MA3_PG_ARCHIVE_ENABLE}

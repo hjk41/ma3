@@ -1,0 +1,5 @@
+import { useEffect, useState } from 'react';
+import { useParams } from 'react-router-dom';
+import { api } from '../api/client';
+import { Card, Badge } from '../components/ui';
+export function LibraryDetail(){ const { id }=useParams(); const [lib,setLib]=useState<any>(); const [acl,setAcl]=useState<any[]>([]); useEffect(()=>{ if(id){api.getLibrary(id).then(setLib); api.listAcl(id).then(setAcl).catch(()=>setAcl([]));}},[id]); return <div className="max-w-5xl mx-auto px-8 py-8 space-y-6"><Card title={lib?.name||id}><p className="text-slate-600">{lib?.description}</p><p className="text-xs text-slate-400">{lib?.library_id}</p></Card><Card title="ACL"><table className="w-full text-sm"><tbody>{acl.map(a=><tr key={a.principal_id} className="border-b"><td className="py-2">{a.principal_id}</td><td><Badge label={a.role}/></td><td>{a.granted_by}</td></tr>)}</tbody></table></Card><Card title="Records preview"><p className="text-slate-400">First-page record preview placeholder for v3.1.</p></Card></div> }

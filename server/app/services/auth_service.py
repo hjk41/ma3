@@ -17,12 +17,14 @@ from app.models.auth import (
     Principal,
     PrincipalSummary,
     ROLE_ORDER,
+    LIBRARY_ROLE_TO_ROLE,
 )
 from app.services.metrics_service import metrics
 from app.storage.repositories import (
     ApiKeyRepository,
     AuthAuditRepository,
     LibraryAclRepository,
+    RoleAssignmentRepository,
     LibraryRepository,
     PrincipalRepository,
 )
@@ -162,7 +164,18 @@ def list_all_api_keys() -> list[ApiKeyInfo]:
 
 
 def list_principal_libraries(principal_id: str) -> dict[str, str]:
-    return {entry.library_id: entry.role for entry in LibraryAclRepository().list_by_principal(principal_id)}
+    from app.core.auth import effective_libraries
+    principal = PrincipalRepository().get(principal_id)
+    if principal is None:
+        return {}
+    rp = ResolvedPrincipal(
+        principal_id=principal.principal_id,
+        kind=principal.kind,
+        display_name=principal.display_name,
+        via="api_key",
+        is_admin_bypass=False,
+    )
+    return effective_libraries(rp)
 
 
 def _can_grant(actor: ResolvedPrincipal, library_id: str, role: str) -> None:
@@ -188,7 +201,15 @@ def grant_library_access(library_id: str, principal_id: str, role: str, *, actor
         granted_at=utc_now_iso(),
         granted_by=_fk_actor_id(actor, principal_id),
     )
-    LibraryAclRepository().upsert(entry)
+    from app.models.auth import RoleAssignment
+    RoleAssignmentRepository().upsert(RoleAssignment(
+        scope_type="library",
+        scope_id=library_id,
+        principal_id=principal_id,
+        role_name=LIBRARY_ROLE_TO_ROLE[role],
+        granted_at=entry.granted_at,
+        granted_by=entry.granted_by,
+    ))
     audit_auth_event(
         actor_principal_id=_actor_id(actor),
         action="acl.grant",
@@ -213,7 +234,15 @@ def bootstrap_library_admin(library_id: str, principal_id: str, *, actor: Resolv
         granted_at=utc_now_iso(),
         granted_by=_fk_actor_id(actor, principal_id),
     )
-    LibraryAclRepository().upsert(entry)
+    from app.models.auth import RoleAssignment
+    RoleAssignmentRepository().upsert(RoleAssignment(
+        scope_type="library",
+        scope_id=library_id,
+        principal_id=principal_id,
+        role_name="library_admin",
+        granted_at=entry.granted_at,
+        granted_by=entry.granted_by,
+    ))
     audit_auth_event(
         actor_principal_id=_actor_id(actor),
         action="acl.grant",
@@ -226,11 +255,11 @@ def bootstrap_library_admin(library_id: str, principal_id: str, *, actor: Resolv
 
 def revoke_library_access(library_id: str, principal_id: str, *, actor: ResolvedPrincipal) -> None:
     _can_grant(actor, library_id, "admin")
-    repo = LibraryAclRepository()
-    existing = repo.get_role(library_id, principal_id)
-    if existing == "admin" and repo.count_admins(library_id) <= 1:
+    repo = RoleAssignmentRepository()
+    existing = repo.get_library_role(library_id, principal_id) or LibraryAclRepository().get_role(library_id, principal_id)
+    if existing == "admin" and repo.count_library_admins(library_id) <= 1:
         raise HTTPException(status_code=409, detail="cannot_remove_last_admin")
-    changed = repo.delete(library_id, principal_id)
+    changed = repo.delete("library", library_id, principal_id)
     if changed:
         audit_auth_event(
             actor_principal_id=_actor_id(actor),
@@ -242,7 +271,10 @@ def revoke_library_access(library_id: str, principal_id: str, *, actor: Resolved
 
 
 def list_library_acl(library_id: str) -> list[AclEntry]:
-    return LibraryAclRepository().list_by_library(library_id)
+    entries = RoleAssignmentRepository().list_library_acl(library_id)
+    assigned = {entry.principal_id for entry in entries}
+    entries.extend(entry for entry in LibraryAclRepository().list_by_library(library_id) if entry.principal_id not in assigned)
+    return entries
 
 
 def search_principals(prefix: str | None, kind: str | None = None, limit: int = 20) -> list[Principal]:

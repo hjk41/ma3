@@ -123,6 +123,7 @@ def initialize_database(run_backfill: bool = True) -> None:
         _initialize_sqlite()
 
     seed_if_empty()
+    _seed_builtin_roles()
     if run_backfill:
         backfill_search_indexes()
 
@@ -376,10 +377,7 @@ def _initialize_auth_sqlite(conn: DatabaseConnection) -> None:
         )
         """
     )
-    conn.execute(
-        "CREATE UNIQUE INDEX IF NOT EXISTS idx_principals_sso_user "
-        "ON principals(sso_user) WHERE sso_user IS NOT NULL"
-    )
+    conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_principals_sso_user ON principals(sso_user) WHERE sso_user IS NOT NULL")
     conn.execute(
         """
         CREATE TABLE IF NOT EXISTS api_keys (
@@ -397,10 +395,7 @@ def _initialize_auth_sqlite(conn: DatabaseConnection) -> None:
         """
     )
     conn.execute("CREATE INDEX IF NOT EXISTS idx_api_keys_principal ON api_keys(principal_id)")
-    conn.execute(
-        "CREATE INDEX IF NOT EXISTS idx_api_keys_active ON api_keys(revoked_at) "
-        "WHERE revoked_at IS NULL"
-    )
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_api_keys_active ON api_keys(revoked_at) WHERE revoked_at IS NULL")
     conn.execute(
         """
         CREATE TABLE IF NOT EXISTS library_acl (
@@ -414,6 +409,32 @@ def _initialize_auth_sqlite(conn: DatabaseConnection) -> None:
         """
     )
     conn.execute("CREATE INDEX IF NOT EXISTS idx_acl_principal ON library_acl(principal_id)")
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS roles (
+            role_name TEXT PRIMARY KEY,
+            scope_type TEXT NOT NULL,
+            permissions_json TEXT NOT NULL DEFAULT '[]',
+            description TEXT NOT NULL DEFAULT '',
+            created_at TEXT NOT NULL
+        )
+        """
+    )
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS role_assignments (
+            scope_type TEXT NOT NULL,
+            scope_id TEXT,
+            principal_id TEXT NOT NULL REFERENCES principals(principal_id) ON DELETE CASCADE,
+            role_name TEXT NOT NULL REFERENCES roles(role_name),
+            granted_at TEXT NOT NULL,
+            granted_by TEXT NOT NULL REFERENCES principals(principal_id)
+        )
+        """
+    )
+    conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_role_assignments_unique ON role_assignments(scope_type, COALESCE(scope_id, ''), principal_id)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_role_assignments_principal ON role_assignments(principal_id)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_role_assignments_scope ON role_assignments(scope_type, scope_id)")
     conn.execute(
         """
         CREATE TABLE IF NOT EXISTS auth_audit_log (
@@ -445,10 +466,7 @@ def _initialize_auth_postgres(conn: DatabaseConnection) -> None:
         )
         """
     )
-    conn.execute(
-        "CREATE UNIQUE INDEX IF NOT EXISTS idx_principals_sso_user "
-        "ON principals(sso_user) WHERE sso_user IS NOT NULL"
-    )
+    conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_principals_sso_user ON principals(sso_user) WHERE sso_user IS NOT NULL")
     conn.execute(
         """
         CREATE TABLE IF NOT EXISTS api_keys (
@@ -466,10 +484,7 @@ def _initialize_auth_postgres(conn: DatabaseConnection) -> None:
         """
     )
     conn.execute("CREATE INDEX IF NOT EXISTS idx_api_keys_principal ON api_keys(principal_id)")
-    conn.execute(
-        "CREATE INDEX IF NOT EXISTS idx_api_keys_active ON api_keys(revoked_at) "
-        "WHERE revoked_at IS NULL"
-    )
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_api_keys_active ON api_keys(revoked_at) WHERE revoked_at IS NULL")
     conn.execute(
         """
         CREATE TABLE IF NOT EXISTS library_acl (
@@ -483,6 +498,32 @@ def _initialize_auth_postgres(conn: DatabaseConnection) -> None:
         """
     )
     conn.execute("CREATE INDEX IF NOT EXISTS idx_acl_principal ON library_acl(principal_id)")
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS roles (
+            role_name TEXT PRIMARY KEY,
+            scope_type TEXT NOT NULL,
+            permissions_json JSONB NOT NULL DEFAULT '[]'::jsonb,
+            description TEXT NOT NULL DEFAULT '',
+            created_at TEXT NOT NULL
+        )
+        """
+    )
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS role_assignments (
+            scope_type TEXT NOT NULL,
+            scope_id TEXT,
+            principal_id TEXT NOT NULL REFERENCES principals(principal_id) ON DELETE CASCADE,
+            role_name TEXT NOT NULL REFERENCES roles(role_name),
+            granted_at TEXT NOT NULL,
+            granted_by TEXT NOT NULL REFERENCES principals(principal_id)
+        )
+        """
+    )
+    conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_role_assignments_unique ON role_assignments(scope_type, COALESCE(scope_id, ''), principal_id)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_role_assignments_principal ON role_assignments(principal_id)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_role_assignments_scope ON role_assignments(scope_type, scope_id)")
     conn.execute(
         """
         CREATE TABLE IF NOT EXISTS auth_audit_log (
@@ -499,6 +540,31 @@ def _initialize_auth_postgres(conn: DatabaseConnection) -> None:
     conn.execute("CREATE INDEX IF NOT EXISTS idx_audit_created_at ON auth_audit_log(created_at)")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_audit_actor ON auth_audit_log(actor_principal_id)")
 
+
+def _seed_builtin_roles() -> None:
+    from app.core.time import utc_now_iso
+    from app.models.auth import BUILTIN_ROLES, ROLE_SCOPE_TYPES
+
+    now = utc_now_iso()
+    with get_connection() as conn:
+        for role_name, permissions in BUILTIN_ROLES.items():
+            if is_postgres():
+                conn.execute(
+                    """
+                    INSERT INTO roles(role_name, scope_type, permissions_json, description, created_at)
+                    VALUES (?, ?, ?, ?, ?)
+                    ON CONFLICT (role_name) DO NOTHING
+                    """,
+                    (role_name, ROLE_SCOPE_TYPES.get(role_name, "library"), _json_param(permissions), f"Built-in {role_name}", now),
+                )
+            else:
+                conn.execute(
+                    """
+                    INSERT OR IGNORE INTO roles(role_name, scope_type, permissions_json, description, created_at)
+                    VALUES (?, ?, ?, ?, ?)
+                    """,
+                    (role_name, ROLE_SCOPE_TYPES.get(role_name, "library"), _json_param(permissions), f"Built-in {role_name}", now),
+                )
 
 def _ensure_postgres_jsonb_payload(conn: DatabaseConnection, table: str) -> None:
     """Normalize legacy PostgreSQL JSON payload columns to JSONB.
