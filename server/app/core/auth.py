@@ -89,6 +89,17 @@ def _is_admin_key(raw: str) -> bool:
     return secrets.compare_digest(raw, settings.api_key)
 
 
+def _has_system_admin_assignment(principal_id: str) -> bool:
+    """Whether this principal carries an explicit system_admin role grant."""
+    try:
+        for assignment in RoleAssignmentRepository().list_by_principal(principal_id):
+            if assignment.scope_type == "system" and assignment.role_name == "system_admin":
+                return True
+    except Exception:
+        return False
+    return False
+
+
 def _http() -> httpx.Client:
     global _http_client
     if _http_client is None:
@@ -196,7 +207,13 @@ def _principal_from_user_verify(result: VerifyResult) -> ResolvedPrincipal:
         result.display_name,
         is_admin=result.admin,
     )
-    admin_bypass = bool(result.admin and result.user in settings.auth_admin_users)
+    # admin_bypass is true if EITHER the JWT claims admin AND the user is in
+    # the ma3-owned allowlist, OR the user already holds an explicit
+    # system_admin role assignment in the DB (which the v3->v3.1 migration
+    # writes for every MA3_AUTH_ADMIN_USERS member).
+    by_claim = bool(result.admin and result.user in settings.auth_admin_users)
+    by_grant = bool(_has_system_admin_assignment(principal.principal_id))
+    admin_bypass = by_claim or by_grant
     resolved = ResolvedPrincipal(
         principal_id=principal.principal_id,
         kind=principal.kind,
@@ -210,7 +227,7 @@ def _principal_from_user_verify(result: VerifyResult) -> ResolvedPrincipal:
         audit_auth_event(
             actor_principal_id=principal.principal_id,
             action="principal.assume_admin",
-            payload={"via": "sso_cookie"},
+            payload={"via": "sso_cookie", "by_claim": by_claim, "by_grant": by_grant},
         )
     return resolved
 
