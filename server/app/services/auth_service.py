@@ -281,6 +281,10 @@ def search_principals(prefix: str | None, kind: str | None = None, limit: int = 
     return PrincipalRepository().search(prefix=prefix, kind=kind, limit=limit)
 
 
+def get_principal(principal_id: str) -> Principal | None:
+    return PrincipalRepository().get(principal_id)
+
+
 def principal_summary(principal: Principal) -> PrincipalSummary:
     return PrincipalSummary(
         principal_id=principal.principal_id,

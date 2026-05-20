@@ -30,10 +30,13 @@ from app.models.library import Library, LibraryCreate
 from app.services.auth_service import (
     bootstrap_library_admin,
     create_service_principal,
+    create_user_principal,
+    get_principal,
     issue_api_key,
     list_all_api_keys,
     list_api_keys,
     list_library_acl,
+    list_principal_libraries,
     principal_summary,
     revoke_api_key,
     revoke_library_access,
@@ -128,12 +131,63 @@ def get_principals(
     return [principal_summary(item) for item in search_principals(prefix, kind, limit)]
 
 
+@router.get("/v3/auth/principals/{principal_id:path}")
+def get_principal_detail(
+    principal_id: str,
+    _: ResolvedPrincipal = Depends(require_authenticated),
+) -> dict:
+    p = get_principal(principal_id)
+    if p is None:
+        raise HTTPException(status_code=404, detail="principal_not_found")
+    libs = list_principal_libraries(principal_id)
+    keys = list_api_keys(principal_id)
+    return {
+        "principal": p.model_dump() if hasattr(p, "model_dump") else dict(p),
+        "libraries": [{"library_id": lid, "role": role} for lid, role in libs.items()],
+        "api_keys": [k.model_dump() if hasattr(k, "model_dump") else dict(k) for k in keys],
+    }
+
+
 @router.post("/v3/auth/principals/service", response_model=Principal)
 def post_service_principal(
     payload: ServicePrincipalCreateRequest,
     actor: ResolvedPrincipal = Depends(require_global_admin),
 ) -> Principal:
     return create_service_principal(payload.name, display_name=payload.display_name, actor=actor)
+
+
+@router.post("/v3/admin/issue_xyz_keys", response_model=dict)
+def post_issue_xyz_keys(
+    payload: dict,
+    actor: ResolvedPrincipal = Depends(require_global_admin),
+) -> dict:
+    """Bulk-issue per-user xyz library keys. Admin only."""
+    from app.core.config import settings as _settings
+    xyz = (payload.get("xyz_library_id") or _settings.xyz_library_id or "").strip()
+    if not xyz:
+        raise HTTPException(status_code=400, detail="xyz_library_id_unset")
+    usernames = payload.get("usernames") or []
+    if not isinstance(usernames, list) or not usernames:
+        raise HTTPException(status_code=400, detail="usernames_required")
+    issued: list[dict] = []
+    failed: list[dict] = []
+    for raw_name in usernames:
+        name = str(raw_name).strip()
+        if not name:
+            continue
+        try:
+            create_user_principal(name, name)
+            result = issue_api_key(
+                principal_id=f"user:{name}",
+                label=f"xyz default for {name}",
+                scope_libraries=[xyz],
+                expires_at=None,
+                actor=actor,
+            )
+            issued.append({"username": name, "raw": result.raw, "key_id": result.info.key_id})
+        except Exception as exc:  # noqa: BLE001
+            failed.append({"username": name, "error": str(exc)})
+    return {"issued": issued, "failed": failed}
 
 
 @router.get("/v3/auth/audit", response_model=list[AuthAuditEntry])
