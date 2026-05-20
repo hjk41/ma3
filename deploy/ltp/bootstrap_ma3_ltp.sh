@@ -255,11 +255,27 @@ log "restoring database backup"
 if [[ "$MA3_BACKUP_MANIFEST" == "latest_pitr" ]]; then
   if [[ -f "${MA3_BACKUP_DIR}/pitr_manifest.json" ]]; then
     log "PITR restore via pitr_manifest.json"
+    # SHOW data_directory needs superuser; ma3user can't run it. Try
+    # sudo -u postgres first, then fall back to pg_lsclusters, then to
+    # the standard Debian/Ubuntu path.
+    DETECTED_PGDATA="$(sudo -u postgres psql -tAc 'SHOW data_directory;' 2>/dev/null || true)"
+    if [[ -z "$DETECTED_PGDATA" ]] && command -v pg_lsclusters >/dev/null 2>&1; then
+      DETECTED_PGDATA="$(pg_lsclusters -h 2>/dev/null | awk '$4=="online"{print $6;exit}' || true)"
+    fi
+    DETECTED_PGDATA="${DETECTED_PGDATA:-/var/lib/postgresql/16/main}"
+    log "PGDATA resolved to ${DETECTED_PGDATA}"
     MA3_BACKUP_DIR="$MA3_BACKUP_DIR" \
     MA3_INSTANCE_ID="$MA3_INSTANCE_ID" \
-    PGDATA="$(psql -h "$PGHOST" -p "$PGPORT" -U "$PGUSER" -tAc 'SHOW data_directory;' 2>/dev/null || echo "")" \
+    PGDATA="$DETECTED_PGDATA" \
     PGHOST="$PGHOST" PGPORT="$PGPORT" PGUSER="$PGUSER" PGPASSWORD="$PGPASSWORD" \
-      bash "$MA3_REPO_DIR/deploy/ltp/restore_pitr.sh"
+      bash "$MA3_REPO_DIR/deploy/ltp/restore_pitr.sh" || {
+        rc=$?
+        log "PITR restore exited rc=$rc; falling back to legacy pg_dump restore"
+        MA3_BACKUP_MANIFEST=latest \
+        MA3_BACKUP_DIR="$MA3_BACKUP_DIR" \
+        PGHOST="$PGHOST" PGPORT="$PGPORT" PGDATABASE="$PGDATABASE" PGUSER="$PGUSER" PGPASSWORD="$PGPASSWORD" \
+          bash "$MA3_REPO_DIR/deploy/ltp/restore_postgres.sh"
+      }
   else
     log "MA3_BACKUP_MANIFEST=latest_pitr but no pitr_manifest.json yet — falling back to legacy restore"
     MA3_BACKUP_MANIFEST=latest \
