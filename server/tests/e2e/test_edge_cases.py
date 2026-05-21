@@ -205,6 +205,39 @@ def test_list_records_pagination(authed_client, lib_with_token):
     assert page1["total"] == page2["total"]
 
 
+def test_list_records_can_filter_by_library_id(authed_client):
+    lib_a = authed_client.post("/libraries", json={"name": "lib-a", "is_public": False}).json()
+    lib_b = authed_client.post("/libraries", json={"name": "lib-b", "is_public": False}).json()
+    token_a = authed_client.post(
+        f"/libraries/{lib_a['library_id']}/tokens",
+        json={"label": "writer-a", "role": "writer"},
+    ).json()["token"]
+    token_b = authed_client.post(
+        f"/libraries/{lib_b['library_id']}/tokens",
+        json={"label": "writer-b", "role": "writer"},
+    ).json()["token"]
+
+    authed_client.post(
+        "/agent/ingest",
+        json=make_ingest_payload(problem="issue a", result_summary="fix a"),
+        headers={"X-API-Key": token_a},
+    )
+    authed_client.post(
+        "/agent/ingest",
+        json=make_ingest_payload(problem="issue b", result_summary="fix b"),
+        headers={"X-API-Key": token_b},
+    )
+
+    page_a = authed_client.get(f"/records?library_id={lib_a['library_id']}&limit=10", headers={"X-API-Key": token_a})
+    assert page_a.status_code == 200
+    rows_a = page_a.json()["records"]
+    assert rows_a
+    assert all(row["library_id"] == lib_a["library_id"] for row in rows_a)
+
+    denied = authed_client.get(f"/records?library_id={lib_b['library_id']}&limit=10", headers={"X-API-Key": token_a})
+    assert denied.status_code == 403
+
+
 # ── Invite code flow ──────────────────────────────────────────────────────────
 
 def test_invite_code_creates_library_and_token(authed_client, client):

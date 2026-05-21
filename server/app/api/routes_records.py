@@ -47,12 +47,21 @@ def list_records(
     offset: int = Query(default=0, ge=0),
     limit: int = Query(default=20, ge=1, le=100),
     status: Optional[str] = Query(default="active", description="Filter by status: active, draft, invalid, or 'all'"),
+    library_id: Optional[str] = Query(default=None, description="Filter to one accessible library"),
     principal: ResolvedPrincipal = Depends(current_principal),
 ) -> dict:
     """Browse accessible records with pagination."""
     lib_ids = effective_library_ids(principal)
+    if library_id is not None:
+        if not principal.is_admin_bypass and library_id not in lib_ids:
+            raise HTTPException(status_code=403, detail="no access to this library")
+        lib_ids = {library_id}
     status_filter = None if status == "all" else status
-    own_library_id = principal.library_id if (principal.library_id and status_filter == "active") else None
+    own_library_id = (
+        principal.library_id
+        if (principal.library_id and status_filter == "active" and (library_id is None or principal.library_id == library_id))
+        else None
+    )
     records, total = RecordRepository().list_page(
         library_ids=lib_ids,
         status=status_filter,

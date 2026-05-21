@@ -27,4 +27,5 @@ export const api = {
   audit: () => request<any[]>('/v3/auth/audit?limit=50'),
   doctor: () => request<any>('/v2/doctor'),
   overview: () => request<any>('/v2/stats/overview'),
+  listRecords: (params = 'limit=20&status=active') => request<any>(`/records?${params}`),
 };

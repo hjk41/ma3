@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { api } from '../api/client';
-import { Card } from '../components/ui';
+import { Card, Empty } from '../components/ui';
 
 function readNumber(source: any, keys: string[]) {
   for (const key of keys) {
@@ -12,6 +12,21 @@ function readNumber(source: any, keys: string[]) {
 
 function percent(value: number, total: number) {
   return total > 0 ? Math.round((value / total) * 100) : 0;
+}
+
+function humanizeKey(key: string) {
+  return key
+    .replace(/_/g, ' ')
+    .replace(/\b\w/g, char => char.toUpperCase());
+}
+
+function StatCard({ title, value, subtitle }: { title: string; value: string | number; subtitle: string }) {
+  return (
+    <Card title={title}>
+      <div className="text-2xl font-bold text-slate-800">{value}</div>
+      <div className="text-xs text-slate-400">{subtitle}</div>
+    </Card>
+  );
 }
 
 export function ObservatoryPage() {
@@ -48,34 +63,25 @@ export function ObservatoryPage() {
         </p>
       </div>
 
-      <div className="grid grid-cols-4 gap-3">
-        <Card title="Records">
-          <div className="text-2xl font-bold text-slate-800">{recordsTotal}</div>
-          <div className="text-xs text-slate-400">records_total</div>
-        </Card>
-        <Card title="Cases">
-          <div className="text-2xl font-bold text-slate-800">{casesTotal}</div>
-          <div className="text-xs text-slate-400">cases_total</div>
-        </Card>
-        <Card title="Libraries">
-          <div className="text-2xl font-bold text-slate-800">{librariesTotal}</div>
-          <div className="text-xs text-slate-400">libraries_total</div>
-        </Card>
-        <Card title="Draft %">
-          <div className="text-2xl font-bold text-slate-800">{draftPct}%</div>
-          <div className="text-xs text-slate-400">draft records</div>
-        </Card>
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
+        <StatCard title="Records" value={recordsTotal} subtitle="Total records" />
+        <StatCard title="Cases" value={casesTotal} subtitle="Total cases" />
+        <StatCard title="Libraries" value={librariesTotal} subtitle="Accessible libraries" />
+        <StatCard title="Draft share" value={`${draftPct}%`} subtitle="Records in draft" />
       </div>
 
       <Card title="Status distribution">
         {statusRows.length === 0 ? (
-          <p className="text-sm text-slate-400">No status distribution available.</p>
+          <Empty
+            title="No status metric emitted"
+            message="The overview endpoint did not return a status distribution block. This is different from a zero-count distribution."
+          />
         ) : (
           <table className="w-full text-sm">
             <tbody>
               {statusRows.map(row => (
                 <tr key={row.status} className="border-b last:border-0">
-                  <td className="py-2 w-36 font-medium text-slate-700">{row.status}</td>
+                  <td className="py-2 w-36 font-medium text-slate-700">{humanizeKey(row.status)}</td>
                   <td className="py-2 w-20 text-slate-500">{row.count}</td>
                   <td className="py-2">
                     <div className="h-2 rounded bg-slate-100 overflow-hidden">
@@ -93,18 +99,19 @@ export function ObservatoryPage() {
       </Card>
 
       <Card title="Case coverage">
-        <div className="grid grid-cols-3 gap-3 text-sm">
-          {Object.entries(coverage).length === 0 ? (
-            <p className="text-slate-400">No coverage block available.</p>
-          ) : (
-            Object.entries(coverage).map(([key, value]) => (
+        {Object.entries(coverage).length === 0 ? (
+          <Empty title="No coverage metric emitted" message="The overview endpoint did not return a case_coverage block." />
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-sm">
+            {Object.entries(coverage).map(([key, value]) => (
               <div key={key} className="rounded border border-slate-100 p-3">
-                <div className="text-xs uppercase tracking-wide text-slate-400">{key}</div>
+                <div className="text-xs uppercase tracking-wide text-slate-400">{humanizeKey(key)}</div>
                 <div className="mt-1 text-lg font-semibold text-slate-800">{String(value)}</div>
+                <div className="mt-1 text-[11px] text-slate-400">{key}</div>
               </div>
-            ))
-          )}
-        </div>
+            ))}
+          </div>
+        )}
       </Card>
     </div>
   );

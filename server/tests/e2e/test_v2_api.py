@@ -138,9 +138,10 @@ def test_v2_stats_doctor_metrics_and_feedback(authed_client):
     assert topics.status_code == 200
     assert topics.json()["products"]
 
-    ui = authed_client.get("/ui/overview")
+    ui = authed_client.get("/")
     assert ui.status_code == 200
-    assert "ma3 Knowledge Observatory" in ui.text
+    assert "ma3 Knowledge Network" in ui.text
+    assert authed_client.get("/ui/overview").status_code == 404
 
 
 def test_topics_link_to_filtered_cases_with_pagination(authed_client):
@@ -181,13 +182,8 @@ def test_topics_link_to_filtered_cases_with_pagination(authed_client):
     assert first["case_assignment"]["case"]["case_id"] in component_ids
     assert second["case_assignment"]["case"]["case_id"] not in component_ids
 
-    topics_page = authed_client.get("/ui/topics")
-    assert topics_page.status_code == 200
-    assert "/ui/cases?topic_kind=" in topics_page.text
-    cases_page = authed_client.get("/ui/cases?topic_kind=tag&topic=topic-filter&limit=1&offset=0")
-    assert cases_page.status_code == 200
-    assert "topic_kind" in cases_page.text
-    assert "Next" in cases_page.text
+    assert authed_client.get("/ui/topics").status_code == 404
+    assert authed_client.get("/ui/cases?topic_kind=tag&topic=topic-filter&limit=1&offset=0").status_code == 404
 
 
 def test_search_explain_interactive_ui_and_feedback(authed_client):
@@ -198,16 +194,10 @@ def test_search_explain_interactive_ui_and_feedback(authed_client):
         result_summary="Search explain UI seed",
     ))
 
-    page = authed_client.get("/ui/search-explain")
+    page = authed_client.get("/observatory")
     assert page.status_code == 200
-    assert "Run Search Explain" in page.text
-    assert "API Key (optional" in page.text
-    assert "localStorage" in page.text
-    assert "/v2/search/explain" in page.text
-    assert "score_breakdown" in page.text
-    assert "debug_candidates" in page.text
-    assert "candidate_pool_limit" in page.text
-    assert "/v2/search/feedback" in page.text
+    assert "ma3 Knowledge Network" in page.text
+    assert authed_client.get("/ui/search-explain").status_code == 404
 
     explain = authed_client.post("/v2/search/explain", json={
         "problem": "search explain ui seed",

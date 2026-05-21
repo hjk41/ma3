@@ -37,6 +37,25 @@ function TabButton({ active, onClick, children }: { active: boolean; onClick: ()
   );
 }
 
+function humanizeKey(key: string) {
+  return key
+    .replace(/_/g, ' ')
+    .replace(/\b\w/g, char => char.toUpperCase());
+}
+
+function relativeTime(value: string | undefined) {
+  if (!value) return '—';
+  const time = new Date(value).getTime();
+  if (Number.isNaN(time)) return value;
+  const seconds = Math.max(0, Math.round((Date.now() - time) / 1000));
+  if (seconds < 60) return `${seconds}s ago`;
+  const minutes = Math.round(seconds / 60);
+  if (minutes < 60) return `${minutes}m ago`;
+  const hours = Math.round(minutes / 60);
+  if (hours < 48) return `${hours}h ago`;
+  return `${Math.round(hours / 24)}d ago`;
+}
+
 export function AdminConsole() {
   const { whoami } = useUser();
   const [tab, setTab] = useState<Tab>('principals');
@@ -229,24 +248,27 @@ export function AdminConsole() {
 
       {tab === 'audit' && (
         <Card title="Audit">
+          <p className="mb-4 text-sm text-slate-500">
+            Latest authorization and administration events. Use Load more for older rows.
+          </p>
           <table className="w-full text-sm">
             <thead>
               <tr className="text-left text-xs uppercase tracking-wide text-slate-400">
-                <th className="pb-2">created_at</th>
-                <th className="pb-2">actor</th>
-                <th className="pb-2">action</th>
-                <th className="pb-2">target</th>
-                <th className="pb-2">library_id</th>
+                <th className="pb-2">Time</th>
+                <th className="pb-2">Actor</th>
+                <th className="pb-2">Action</th>
+                <th className="pb-2">Target</th>
+                <th className="pb-2">Library</th>
               </tr>
             </thead>
             <tbody>
               {audit.map(row => (
                 <tr key={row.audit_id} className="border-b last:border-0">
-                  <td className="py-2 text-xs text-slate-500">{row.created_at}</td>
-                  <td>{row.actor_principal_id}</td>
+                  <td className="py-2 text-xs text-slate-500" title={row.created_at}>{relativeTime(row.created_at)}</td>
+                  <td><code className="text-xs">{row.actor_principal_id}</code></td>
                   <td><Badge label={row.action} color="blue" /></td>
-                  <td>{row.target_principal_id || '—'}</td>
-                  <td>{row.library_id || '—'}</td>
+                  <td>{row.target_principal_id ? <code className="text-xs">{row.target_principal_id}</code> : '—'}</td>
+                  <td>{row.library_id ? <code className="text-xs">{row.library_id}</code> : '—'}</td>
                 </tr>
               ))}
             </tbody>
@@ -265,13 +287,26 @@ export function AdminConsole() {
 
       {tab === 'backup' && (
         <Card title="Backup">
-          <div className="grid grid-cols-2 gap-3 text-sm">
-            {Object.entries(backup).map(([key, value]) => (
-              <div key={key} className="rounded border border-slate-100 p-3">
-                <div className="text-xs uppercase tracking-wide text-slate-400">{key}</div>
-                <div className="mt-1 break-all text-slate-800">{String(value)}</div>
+          <div className="space-y-4">
+            <div className={`rounded-md border p-3 ${backup?.degraded ? 'border-yellow-200 bg-yellow-50' : 'border-green-200 bg-green-50'}`}>
+              <div className="flex items-center gap-2">
+                <Badge label={backup?.degraded ? 'Degraded' : 'Healthy'} color={backup?.degraded ? 'yellow' : 'green'} />
+                <span className="text-sm text-slate-700">
+                  {backup?.degraded
+                    ? 'Backup or WAL archiving is behind. Check /v2/doctor and the LTP backup cron before cutover.'
+                    : 'Backup signals are currently healthy.'}
+                </span>
               </div>
-            ))}
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
+              {Object.entries(backup).map(([key, value]) => (
+                <div key={key} className="rounded border border-slate-100 p-3">
+                  <div className="text-xs uppercase tracking-wide text-slate-400">{humanizeKey(key)}</div>
+                  <div className="mt-1 break-all text-slate-800">{String(value)}</div>
+                  <div className="mt-1 text-[11px] text-slate-400">{key}</div>
+                </div>
+              ))}
+            </div>
           </div>
         </Card>
       )}
@@ -279,6 +314,9 @@ export function AdminConsole() {
       {tab === 'bulk' && (
         <Card title="Bulk xyz keys">
           <div className="space-y-3">
+            <p className="text-sm text-slate-500">
+              Enter one SSO username per line. Raw secrets are returned once; copy them immediately.
+            </p>
             <textarea
               value={usernames}
               onChange={event => setUsernames(event.target.value)}

@@ -95,4 +95,4 @@ app.include_router(metrics_router)
 
 
 _web_dist = Path(__file__).resolve().parent / "web" / "dist"
-app.mount("/ui", StaticFiles(directory=str(_web_dist), html=True, check_dir=False), name="ui")
+app.mount("/assets", StaticFiles(directory=str(_web_dist / "assets"), check_dir=False), name="ui-assets")

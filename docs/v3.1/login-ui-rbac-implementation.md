@@ -1,3 +1,5 @@
+> 2026-05-21 update: the routing portions of this document are superseded by `root-ui-polish-design.md`: the browser UI is served at `/` and known root deep links only; `/ui` and `/ui/*` are intentionally not retained. MCP stays at `/mcp`.
+
 # ma3 v3.1 — Login + UI + RBAC Implementation Spec
 
 Status: implementation spec 2026-05-20
@@ -24,7 +26,7 @@ right policy.
 | `app/core/auth.py` | edit | (a) cookie domain helper (§3); (b) `has_permission()` + `require_permission()`; (c) `Permission` enum + role bundles; (d) bypass for system_admin assignment + `MA3_AUTH_ADMIN_USERS`. |
 | `app/api/routes_auth.py` | NEW | `/auth/login` (302), `/auth/callback` (cookie set + 302), `/auth/logout`. |
 | `app/api/routes_v3_auth.py` | edit | add `GET /v3/roles`, `GET /v3/auth/permissions/me`; whoami response gains `roles[]`. |
-| `app/api/routes_ui.py` | rewrite | replace string-HTML routes with one SPA fall-through: `GET /ui/{path:path}` serves `app/web/dist/index.html` (or `assets/<file>`). |
+| `app/api/routes_ui.py` | rewrite | replace string-HTML routes with explicit root SPA routes: `GET /`, `/me`, `/libs`, `/libs/{id}`, `/keys`, `/admin`, `/observatory` serve `app/web/dist/index.html`. |
 | `app/api/routes_libraries.py` / `routes_v3_auth.py` ACL endpoints | edit | switch reads/writes from `library_acl` to `role_assignments`. Keep `library_acl` as a fall-back read for one release. |
 | `app/main.py` | edit | mount `StaticFiles(directory="app/web/dist", html=True)` at `/ui`. Register `routes_auth`. Pass through CORS for `/auth/*`. |
 | `app/storage/db.py` | edit | add `roles` and `role_assignments` tables (sqlite + postgres branches). Insert built-in roles on first boot. |
@@ -110,7 +112,7 @@ server/app/web/
 }
 ```
 
-`vite.config.ts`: base `/ui/`, build outDir `dist`, dev server proxies
+`vite.config.ts`: base `/`, build outDir `dist`, dev server proxies
 `/v3`, `/v2`, `/libraries`, `/auth`, `/healthz` to
 `http://127.0.0.1:18196` for local dev.
 
@@ -132,13 +134,13 @@ router = APIRouter()
 
 def _safe_next(req_host: str, raw: str | None) -> str:
     if not raw or not raw.startswith("/"):
-        return "/ui/"
+        return "/"
     if raw.startswith("//"):
-        return "/ui/"
+        return "/"
     return raw
 
 @router.get("/auth/login")
-async def auth_login(request: Request, next: str = "/ui/"):
+async def auth_login(request: Request, next: str = "/"):
     if not settings.auth_verify_url:
         return JSONResponse({"error": "sso_disabled"}, status_code=503)
     callback = f"{request.url.scheme}://{request.url.netloc}/auth/callback"
@@ -148,7 +150,7 @@ async def auth_login(request: Request, next: str = "/ui/"):
 
 @router.get("/auth/callback")
 async def auth_callback(request: Request, gateway_token: str | None = None,
-                        return_to: str = "/ui/"):
+                        return_to: str = "/"):
     if not gateway_token:
         return RedirectResponse(_safe_next(request.url.netloc, return_to), 302)
     verified = verify_sso_cookie(gateway_token)
@@ -171,7 +173,7 @@ async def auth_callback(request: Request, gateway_token: str | None = None,
 
 @router.get("/auth/logout")
 async def auth_logout(request: Request):
-    resp = RedirectResponse("/ui/", 302)
+    resp = RedirectResponse("/", 302)
     resp.delete_cookie("gateway_token", domain=_cookie_domain_for_host(request.url.netloc), path="/")
     return resp
 ```
@@ -279,14 +281,14 @@ Bootstrap calls it with `--apply` after the v2→v3 token migration.
 
 ## 5. UI behaviors
 
-### Dashboard (`/ui/`)
+### Dashboard (`/`)
 - if anonymous: show big "Login with auth.zhilicon.com" button + a
   short "what is ma3" copy; nothing else.
 - if logged in: list effective libraries (badges showing role per lib),
   recent op_logs (call `GET /v2/stats/overview` filtered by their libs),
   link to admin console if `is_admin_bypass`.
 
-### MePage (`/ui/me`)
+### MePage (`/me`)
 - Identity card: principal_id, kind, via, admin_bypass.
 - Effective libraries table: name, role (badge), source (acl/public/scope).
 - Roles list (from new `whoami.roles[]`).
@@ -294,24 +296,24 @@ Bootstrap calls it with `--apply` after the v2→v3 token migration.
   key" modal (label, optional scope_libraries multi-select);
   "Revoke" buttons.
 
-### LibrariesPage (`/ui/libs`)
+### LibrariesPage (`/libs`)
 - Card grid of effective libraries.
 - "Create library" button (modal: name, description, public flag).
 - Click into LibraryDetail.
 
-### LibraryDetail (`/ui/libs/:id`)
+### LibraryDetail (`/libs/:id`)
 - Library header.
 - ACL table: rows are role_assignments for this library. Admin can
   add/remove/change role (via `GET /v3/roles` to populate role picker).
   Non-admin sees read-only.
-- Records preview: first 10 records (from existing v2 endpoint), each
-  linking to a future record-detail page (placeholder for v3.1).
+- Records preview: first 5 active records via
+  `/records?library_id=<id>&limit=5&status=active`.
 
-### KeysPage (`/ui/keys`)
+### KeysPage (`/keys`)
 - Same content as MePage's keys section but full-width and includes
   "All my keys" — duplicated for navigation convenience.
 
-### AdminConsole (`/ui/admin`)
+### AdminConsole (`/admin`)
 - 403 if not admin.
 - Three tabs:
   - **Principals**: search by prefix, view details, see their
@@ -322,7 +324,7 @@ Bootstrap calls it with `--apply` after the v2→v3 token migration.
     `issue_xyz_keys_for_users.py` analogue route (NEW: `POST /v3/admin/issue_xyz_keys`
     body `{users: [...]}`).
 
-### ObservatoryPage (`/ui/observatory`)
+### ObservatoryPage (`/observatory`)
 - Content of old `/ui/overview`, `/ui/topics`, `/ui/cases` rolled into
   one tabbed page. Reuse v2 stats endpoints; pages are read-only.
 
@@ -333,8 +335,8 @@ Bootstrap calls it with `--apply` after the v2→v3 token migration.
 - `test_login_callback.py`:
   - `_cookie_domain_for_host`: 'ma3.zhilicon.com' → '.zhilicon.com';
     'localhost' → None; '127.0.0.1' → None; 'auth.zhilicon.com' → '.zhilicon.com'.
-  - `_safe_next`: '/ui/me' → '/ui/me'; 'http://evil/' → '/ui/';
-    '//evil' → '/ui/'.
+  - `_safe_next`: '/me' → '/me'; 'http://evil/' → '/';
+    '//evil' → '/'.
   - `auth_callback` w/ valid gateway_token (mock verify) → cookie set
     with right domain, redirect to safe return_to.
   - `auth_callback` w/ invalid gateway_token → 302 to /auth/login.
@@ -355,7 +357,7 @@ Bootstrap calls it with `--apply` after the v2→v3 token migration.
 
 - `test_login_flow.py`: end-to-end with TestClient. Mock `/verify`
   to return a known user. Hit `/auth/login`, follow the 302, hit
-  `/auth/callback?gateway_token=fake&return_to=/ui/me`, follow
+  `/auth/callback?gateway_token=fake&return_to=/me`, follow
   the 302, see Set-Cookie header, then call `/v3/auth/whoami` with
   the cookie → kind=user.
 - `test_rbac_acl_routes.py`: mint a library, grant `library_writer` to

@@ -13,12 +13,12 @@ router = APIRouter(tags=["auth"])
 
 def _safe_next(req_host: str, raw: str | None) -> str:
     if not raw or not raw.startswith("/") or raw.startswith("//"):
-        return "/ui/"
+        return "/"
     return raw
 
 
 @router.get("/auth/login")
-async def auth_login(request: Request, next: str = "/ui/"):
+async def auth_login(request: Request, next: str = "/"):
     if not settings.auth_verify_url:
         return JSONResponse({"error": "sso_disabled"}, status_code=503)
     callback = f"{request.url.scheme}://{request.url.netloc}/auth/callback"
@@ -31,7 +31,7 @@ async def auth_login(request: Request, next: str = "/ui/"):
 async def auth_callback(
     request: Request,
     gateway_token: str | None = None,
-    return_to: str = "/ui/",
+    return_to: str = "/",
 ):
     safe_return = _safe_next(request.url.netloc, return_to)
     if not gateway_token:
@@ -55,7 +55,7 @@ async def auth_callback(
 
 @router.get("/auth/logout")
 async def auth_logout(request: Request):
-    resp = RedirectResponse("/ui/", status_code=302)
+    resp = RedirectResponse("/", status_code=302)
     resp.delete_cookie(
         settings.auth_jwt_cookie,
         domain=_cookie_domain_for_host(request.url.netloc),

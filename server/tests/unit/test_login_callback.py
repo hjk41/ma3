@@ -11,9 +11,9 @@ def test_cookie_domain_for_host():
 
 
 def test_safe_next_rejects_absolute_urls():
-    assert _safe_next("ma3.zhilicon.com", "/ui/me") == "/ui/me"
-    assert _safe_next("ma3.zhilicon.com", "http://evil/") == "/ui/"
-    assert _safe_next("ma3.zhilicon.com", "//evil") == "/ui/"
+    assert _safe_next("ma3.zhilicon.com", "/me") == "/me"
+    assert _safe_next("ma3.zhilicon.com", "http://evil/") == "/"
+    assert _safe_next("ma3.zhilicon.com", "//evil") == "/"
 
 
 def _req(url="https://ma3.zhilicon.com/auth/callback"):
@@ -26,9 +26,9 @@ def test_auth_callback_sets_cookie_and_redirects(monkeypatch):
     from app.api.routes_auth import auth_callback
     monkeypatch.setattr("app.api.routes_auth.verify_sso_cookie", lambda token: VerifyResult("alice", "Alice"))
     import asyncio
-    resp = asyncio.run(auth_callback(_req(), gateway_token="fake", return_to="/ui/me"))
+    resp = asyncio.run(auth_callback(_req(), gateway_token="fake", return_to="/me"))
     assert resp.status_code == 302
-    assert resp.headers["location"] == "/ui/me"
+    assert resp.headers["location"] == "/me"
     assert "gateway_token=fake" in resp.headers["set-cookie"]
     assert "Domain=.zhilicon.com" in resp.headers["set-cookie"]
 

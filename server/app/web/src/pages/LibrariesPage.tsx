@@ -1,7 +1,7 @@
 import { FormEvent, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { api } from '../api/client';
-import { Button, Card, Modal, Badge } from '../components/ui';
+import { Button, Card, Modal, Badge, Empty } from '../components/ui';
 import { useUser } from '../contexts/UserContext';
 
 export function LibrariesPage() {
@@ -46,21 +46,28 @@ export function LibrariesPage() {
           </form>
         </Modal>
 
-        <div className="grid grid-cols-2 gap-3">
-          {whoami?.libraries.map((library: any) => (
-            <Link
-              key={library.library_id}
-              to={`/libs/${library.library_id}`}
-              className="border rounded-xl p-4 hover:border-blue-300"
-            >
-              <div className="font-medium text-slate-800">
-                {library.name || library.library_id}
-              </div>
-              <div className="text-xs text-slate-400">{library.library_id}</div>
-              <Badge label={library.role} />
-            </Link>
-          ))}
-        </div>
+        {whoami?.libraries?.length ? (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            {whoami.libraries.map((library: any) => (
+              <Link
+                key={library.library_id}
+                to={`/libs/${library.library_id}`}
+                className="border rounded-xl p-4 hover:border-blue-300 hover:shadow-sm transition-all"
+              >
+                <div className="font-medium text-slate-800">
+                  {library.name || library.library_id}
+                </div>
+                <div className="text-xs text-slate-400">{library.library_id}</div>
+                <div className="mt-3 flex gap-2">
+                  <Badge label={library.role} color={library.role === 'admin' ? 'blue' : library.role === 'writer' ? 'green' : 'slate'} />
+                  {library.source && <Badge label={library.source} />}
+                </div>
+              </Link>
+            ))}
+          </div>
+        ) : (
+          <Empty title="No accessible libraries" message="Create a library or ask an administrator to grant you access." />
+        )}
       </Card>
     </div>
   );

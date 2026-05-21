@@ -40,26 +40,36 @@ export function Badge({ label, color = 'slate' }: { label: string; color?: 'gree
   return <span className={`inline-block px-2 py-0.5 rounded text-xs font-medium ${colors[color]}`}>{label}</span>;
 }
 
+export function HelpText({ children }: { children: ReactNode }) {
+  return <p className="text-sm text-slate-500">{children}</p>;
+}
+
 export function Spinner() {
   return <div className="flex justify-center py-8"><div className="w-6 h-6 border-2 border-slate-300 border-t-blue-500 rounded-full animate-spin" /></div>;
 }
 
-export function Empty({ message }: { message: string }) {
-  return <div className="text-center py-12 text-slate-400">{message}</div>;
+export function Empty({ title, message, action }: { title?: string; message: string; action?: ReactNode }) {
+  return (
+    <div className="text-center py-10 px-4 border border-dashed border-slate-200 rounded-lg bg-slate-50">
+      {title && <div className="font-medium text-slate-700">{title}</div>}
+      <div className="text-sm text-slate-500 mt-1">{message}</div>
+      {action && <div className="mt-4">{action}</div>}
+    </div>
+  );
 }
 
 export function ErrorMessage({ message }: { message: string }) {
   return <div className="bg-red-50 border border-red-200 text-red-700 rounded-md p-3 text-sm">{message}</div>;
 }
 
-export function Button({ children, variant = 'primary', ...props }: React.ButtonHTMLAttributes<HTMLButtonElement> & { variant?: 'primary' | 'secondary' | 'danger' }) {
+export function Button({ children, variant = 'primary', className = '', ...props }: React.ButtonHTMLAttributes<HTMLButtonElement> & { variant?: 'primary' | 'secondary' | 'danger' }) {
   const variants: Record<string, string> = {
     primary: 'bg-blue-600 text-white hover:bg-blue-700',
     secondary: 'bg-slate-100 text-slate-700 hover:bg-slate-200',
     danger: 'bg-red-600 text-white hover:bg-red-700',
   };
   return (
-    <button className={`px-4 py-2 rounded-md text-sm font-medium transition-colors disabled:opacity-50 ${variants[variant]}`} {...props}>
+    <button className={`px-4 py-2 rounded-md text-sm font-medium transition-colors disabled:opacity-50 ${variants[variant]} ${className}`} {...props}>
       {children}
     </button>
   );

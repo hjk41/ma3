@@ -326,16 +326,37 @@ def test_remote_mcp_overview_ui_shows_deploy_identity(client, monkeypatch):
     object.__setattr__(_config.settings, "instance_id", "ma3-test-instance")
     object.__setattr__(_config.settings, "job_name", "ma3-cpudev-1234")
 
-    resp = client.get("/ui/overview")
+    resp = client.get("/")
     assert resp.status_code == 200
     body = resp.text
     assert 'class="deploy-banner"' in body
+    assert 'id="ma3-shell-css"' in body
     assert "ma3-test-instance" in body
     # short commit form (12 chars)
     assert "abcdef012345" in body
     assert "ma3-cpudev-1234" in body
     # deployed_at is an ISO timestamp captured at boot; the label is enough
     assert "DEPLOYED" in body.upper()
+    assert client.get("/ui/overview").status_code == 404
+
+
+def test_root_ui_routes_do_not_shadow_api_routes(client):
+    for path in ["/", "/me", "/libs", "/libs/lib_example", "/keys", "/admin", "/observatory"]:
+        resp = client.get(path)
+        assert resp.status_code == 200, path
+        assert "text/html" in resp.headers["content-type"]
+        assert 'class="deploy-banner"' in resp.text
+
+    assert client.get("/ui").status_code == 404
+    assert client.get("/ui/").status_code == 404
+
+    mcp_info = client.get("/mcp/info")
+    assert mcp_info.status_code == 200
+    assert mcp_info.json()["endpoint"] == "/mcp"
+
+    whoami = client.get("/v3/auth/whoami")
+    assert whoami.status_code == 200
+    assert whoami.headers["content-type"].startswith("application/json")
 
 
 def test_healthz_and_doctor_expose_deploy_identity(authed_client):

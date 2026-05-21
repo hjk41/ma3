@@ -1,3 +1,5 @@
+> 2026-05-21 update: the routing portions of this document are superseded by `root-ui-polish-design.md`: the browser UI is served at `/` and known root deep links only; `/ui` and `/ui/*` are intentionally not retained. MCP stays at `/mcp`.
+
 # ma3 v3.1 — Login fix + Web UI redesign + RBAC overall design
 
 Status: design 2026-05-20
@@ -15,8 +17,8 @@ Three problems surfaced from real usage of the v3 candidate:
    does get set (manually) the current resolver was designed for
    `domain=.zhilicon.com` cookies, which a browser refuses to accept on
    `http://localhost:18196` (the standard tunnel-to-LTP test setup).
-2. **The UI is ugly.** `/ui/overview`, `/ui/me`, `/ui/libs`,
-   `/ui/admin/keys` are bare server-rendered HTML strings concatenated in
+2. **The UI is ugly.** The old candidate's `/ui/overview`, `/ui/me`, `/ui/libs`,
+   `/ui/admin/keys` pages were bare server-rendered HTML strings concatenated in
    `routes_ui.py`. No layout system, no design tokens, no nav, no
    responsive behavior. Every screen looks like a 1998 admin tool. The
    sibling project `~/code/agent_exchange` ships a clean React + Tailwind
@@ -147,9 +149,8 @@ as today. SSO is purely additive — humans use it, agents don't.
 
 Source lives in `server/app/web/` (new). Built assets land in
 `server/app/web/dist/` and are mounted by FastAPI as static files at
-`/ui/assets/*`. The HTML entry is served from `GET /ui/` (and
-`/ui/<anything>` for client-side routes — same SPA fall-through pattern
-as agent_exchange).
+`/assets/*`. The HTML entry is served from the known root UI routes
+(`/`, `/me`, `/libs`, `/libs/:id`, `/keys`, `/admin`, `/observatory`).
 
 The legacy `routes_ui.py` HTML strings are **deleted**. Nobody is
 running the v2 prod off them anymore — we have only the candidate
@@ -161,13 +162,13 @@ Modeled directly on `agent_exchange/src/web/src/pages/` shapes:
 
 | route | page | purpose |
 |---|---|---|
-| `/ui/` | `Dashboard` | Welcome, your effective libraries, your recent op_logs (placeholder), quick links to admin section if applicable. |
-| `/ui/me` | `MePage` | Identity card (principal, kind, via, admin_bypass). Your effective libraries with role badges. Your API keys list with Create/Revoke. |
-| `/ui/libs` | `LibrariesPage` | List of effective libraries. "Create library" button (modal). Per-row link to Detail. |
-| `/ui/libs/:id` | `LibraryDetail` | Library header (name, description, public flag). ACL table (principal × role) — admin can add/remove rows; non-admin sees read-only view. Records preview (page-1 only, link out to v2 endpoints). |
-| `/ui/keys` | `KeysPage` | All your keys (label, scope, last-used, expires). Create+Revoke flows. |
-| `/ui/admin` | `AdminConsole` | Admin-only landing: principals (search), audit log feed, doctor.backup live block, "Issue per-user xyz key" bulk form. |
-| `/ui/observatory` | `ObservatoryPage` | Knowledge stats (records, cases, status distribution) — equivalent to old `/ui/overview` content but filtered by `effective_libraries`. |
+| `/` | `Dashboard` | Welcome, your effective libraries, and quick links to keys, observatory, and admin. |
+| `/me` | `MePage` | Identity card (principal, kind, via, admin_bypass). Your effective libraries with role badges. Your API keys list with Create/Revoke. |
+| `/libs` | `LibrariesPage` | List of effective libraries. "Create library" button (modal). Per-row link to Detail. |
+| `/libs/:id` | `LibraryDetail` | Library header (name, description, public flag). Knowledge preview first, then ACL table for admins. |
+| `/keys` | `KeysPage` | All your keys (label, scope, last-used, expires). Create+Revoke flows. |
+| `/admin` | `AdminConsole` | Admin-only landing: principals (search), audit log feed, doctor.backup live block, "Issue per-user xyz key" bulk form. |
+| `/observatory` | `ObservatoryPage` | Knowledge stats (records, cases, status distribution) filtered by effective visibility. |
 | `*` (404) | `NotFound` | small 404 page. |
 
 ### 5.3 Layout
@@ -365,4 +366,3 @@ Legacy v2 routes: untouched.
 | React build adds ~30s to bootstrap | cache `dist/` on CephFS; rebuild only when source changed. |
 | RBAC migration drift between `library_acl` and `role_assignments` | resolver reads both during the transition; integrity test asserts no row in `library_acl` lacks a corresponding `role_assignments`. |
 | codex misreads the spec | the implementation doc is exhaustive; verification is gated by the user; iteration is expected. |
-

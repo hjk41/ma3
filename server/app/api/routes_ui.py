@@ -10,6 +10,46 @@ from app.core.config import settings
 
 router = APIRouter(tags=["ui"])
 
+_SHELL_CSS = """
+<style id="ma3-shell-css">
+.deploy-banner {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.35rem 0.75rem;
+  padding: 0.45rem 0.75rem;
+  background: #0f172a;
+  color: #cbd5e1;
+  border-bottom: 1px solid #1e293b;
+  font: 12px/1.4 ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+.dep-cell { display: inline-flex; align-items: baseline; gap: 0.25rem; min-width: 0; }
+.dep-label { color: #94a3b8; text-transform: uppercase; letter-spacing: 0.04em; font-size: 10px; }
+.dep-value {
+  color: #e2e8f0;
+  background: rgba(148, 163, 184, 0.12);
+  border: 1px solid rgba(148, 163, 184, 0.18);
+  border-radius: 0.25rem;
+  padding: 0.05rem 0.25rem;
+  max-width: 32rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.sr-only {
+  position: absolute !important;
+  width: 1px !important;
+  height: 1px !important;
+  padding: 0 !important;
+  margin: -1px !important;
+  overflow: hidden !important;
+  clip: rect(0, 0, 0, 0) !important;
+  white-space: nowrap !important;
+  border: 0 !important;
+}
+</style>
+"""
+
 
 def _deploy_banner_html() -> str:
     def cell(label: str, value: str | None) -> str:
@@ -33,12 +73,23 @@ def _spa_html() -> str:
         html = index.read_text(encoding="utf-8")
     else:
         html = '<!doctype html><html><head><title>ma3</title></head><body><div id="root"></div></body></html>'
-    return html.replace('<div id="root">', _deploy_banner_html() + '<h1 class="sr-only">ma3 Knowledge Observatory</h1><a class="sr-only" href="/ui/cases?topic_kind=product&topic=example">topic drilldown</a><span class="sr-only">topic_kind Next Run Search Explain Search Feedback Quality Actions API Key (optional localStorage /v2/search/explain /v2/search/feedback score_breakdown debug_candidates candidate_pool_limit</span><div id="root">', 1)
+    if 'id="ma3-shell-css"' not in html:
+        html = html.replace("</head>", _SHELL_CSS + "</head>", 1)
+    return html.replace(
+        '<div id="root">',
+        _deploy_banner_html()
+        + '<h1 class="sr-only">ma3 Knowledge Network</h1>'
+        + '<div id="root">',
+        1,
+    )
 
 
-@router.get("/ui", response_class=HTMLResponse)
-@router.get("/ui/", response_class=HTMLResponse)
-@router.get("/ui/overview", response_class=HTMLResponse)
-@router.get("/ui/{page}", response_class=HTMLResponse)
-def ui_spa_entry(page: str | None = None) -> str:
+@router.get("/", response_class=HTMLResponse)
+@router.get("/me", response_class=HTMLResponse)
+@router.get("/libs", response_class=HTMLResponse)
+@router.get("/libs/{library_id}", response_class=HTMLResponse)
+@router.get("/keys", response_class=HTMLResponse)
+@router.get("/admin", response_class=HTMLResponse)
+@router.get("/observatory", response_class=HTMLResponse)
+def ui_spa_entry(library_id: str | None = None) -> str:
     return _spa_html()
