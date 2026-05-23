@@ -1,3 +1,4 @@
+# Local repo-specific Python virtualenv for tests/dev
 .venv/
 *.pyc
 __pycache__/

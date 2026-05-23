@@ -25,6 +25,30 @@ Prod URL: `https://ma3.zhilicon.com`. Deployment lives under
 `deploy/ltp/` and is fronted by `dns-manager` (same control plane as
 inferhub v2).
 
+## Local Python test environment
+
+This repo keeps a **repo-local virtualenv** at:
+
+- `/root/code/ma3/.venv`
+
+Use it for local server tests and ad-hoc validation instead of relying on
+system Python. The environment is intentionally gitignored via `.gitignore`.
+
+Common commands:
+
+```bash
+cd /root/code/ma3
+.venv/bin/python -m pytest -x -q server/tests/unit/test_mcp_schema_alignment.py
+.venv/bin/python -m pytest -x -q server/tests/e2e/test_remote_mcp.py
+```
+
+If you need to install the minimal local test stack again, prefer:
+
+```bash
+cd /root/code/ma3
+.venv/bin/python -m pip install fastapi 'uvicorn<1.0' 'pydantic<3.0' 'httpx<1.0' pytest 'numpy>=1.24.0' 'psycopg[binary,pool]>=3.2,<4.0'
+```
+
 ## MCP design contracts (non-negotiable)
 
 These rules exist because we burned a session debugging silent `-32602`

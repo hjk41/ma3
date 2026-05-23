@@ -186,6 +186,52 @@ class Ma3WhoamiPayload(BaseModel):
     )
 
 
+class Ma3ListDraftsPayload(BaseModel):
+    """Wire payload for ``ma3_list_drafts``."""
+
+    library_id: str = Field(..., min_length=1)
+    limit: int = Field(default=20, ge=1, le=100)
+    offset: int = Field(default=0, ge=0)
+    include_full_json: bool = False
+
+    model_config = ConfigDict(
+        extra="forbid",
+        json_schema_extra={
+            "examples": [
+                {
+                    "library_id": "lib_ca4043b1c70d",
+                    "limit": 20,
+                    "offset": 0,
+                    "include_full_json": False,
+                }
+            ]
+        },
+    )
+
+
+class Ma3ReviewRecordPayload(BaseModel):
+    """Wire payload for ``ma3_review_record``."""
+
+    record_id: str = Field(..., min_length=1)
+    decision: Literal["approve", "reject"]
+    review_note: str = Field(..., min_length=1)
+    include_full_json: bool = False
+
+    model_config = ConfigDict(
+        extra="forbid",
+        json_schema_extra={
+            "examples": [
+                {
+                    "record_id": "vk_01HX9F...",
+                    "decision": "approve",
+                    "review_note": "Validated against source docs and safe to promote.",
+                    "include_full_json": False,
+                }
+            ]
+        },
+    )
+
+
 class Ma3ValidatePayload(BaseModel):
     """Wire payload for the diagnostic ``ma3_validate`` tool.
 
@@ -202,6 +248,8 @@ class Ma3ValidatePayload(BaseModel):
         "ma3_case",
         "ma3_doctor",
         "ma3_whoami",
+        "ma3_list_drafts",
+        "ma3_review_record",
     ]
     arguments: dict[str, Any] = Field(default_factory=dict)
 
@@ -220,6 +268,8 @@ PAYLOAD_BY_TOOL: dict[str, type[BaseModel]] = {
     "ma3_search_explain": Ma3SearchExplainPayload,
     "ma3_doctor": Ma3DoctorPayload,
     "ma3_whoami": Ma3WhoamiPayload,
+    "ma3_list_drafts": Ma3ListDraftsPayload,
+    "ma3_review_record": Ma3ReviewRecordPayload,
     "ma3_validate": Ma3ValidatePayload,
 }
 

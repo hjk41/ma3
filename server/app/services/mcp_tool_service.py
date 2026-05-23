@@ -11,6 +11,7 @@ from pydantic import ValidationError
 from app.core.config import settings
 from app.core.security import ResolvedPrincipal, _resolve_from_raw_only, effective_libraries, primary_write_library_id
 from app.models.common import TargetRef
+from app.models.enums import RecordStatus
 from app.models.mcp import McpToolDescriptor, McpToolResult, McpToolValidationError
 from app.models.mcp_payloads import PAYLOAD_BY_TOOL, tool_input_schema
 from app.models.v2 import V2AgentContextRequest, V2AgentReportRequest, V2CaseRecordGroup
@@ -18,9 +19,10 @@ from app.services.doctor_service import server_doctor
 from app.services.library_service import effective_library_ids
 from app.services.metrics_service import metrics
 from app.services.op_log_service import write_op_log
+from app.services.record_service import promote_record, reject_record
 from app.services.v2_agent_service import ingest_v2_agent_report
 from app.services.v2_search_service import build_agent_context
-from app.storage.repositories import LibraryRepository
+from app.storage.repositories import LibraryRepository, RecordRepository
 from app.storage.v2_repositories import CaseRepository, V2GraphRepository, V2RecordRepository
 
 
@@ -99,6 +101,14 @@ _TOOL_DESCRIPTIONS: dict[str, str] = {
     ),
     "ma3_doctor": "Diagnose remote MCP authentication, server health, version, database, and index state.",
     "ma3_whoami": "Return the caller identity and visible library summary without exposing token material.",
+    "ma3_list_drafts": (
+        "List pending-review draft records for one library visible to the caller. "
+        "Requires writer-or-higher access to the library."
+    ),
+    "ma3_review_record": (
+        "Approve or reject one draft record. Requires library-admin or global-admin "
+        "rights for the record's library."
+    ),
     "ma3_validate": (
         "Dry-run validator. Returns {ok: true} when `arguments` would pass Pydantic "
         "validation for `tool_name`, or the same structured validation_errors list "
@@ -113,6 +123,8 @@ _TOOL_ORDER: tuple[str, ...] = (
     "ma3_report",
     "ma3_case",
     "ma3_search_explain",
+    "ma3_list_drafts",
+    "ma3_review_record",
     "ma3_validate",
     "ma3_doctor",
     "ma3_whoami",
@@ -294,6 +306,25 @@ def _require_write_library_id(auth: McpAuthContext) -> str | None:
         raise
 
 
+def _require_library_writer(auth: McpAuthContext, library_id: str) -> None:
+    if auth.principal.is_admin_bypass:
+        return
+    lib = LibraryRepository().get(library_id)
+    if auth.principal.kind == "anonymous" and (lib is None or not lib.is_public):
+        raise HTTPException(status_code=401, detail="auth_missing")
+    if library_id not in auth.writable_library_ids:
+        raise HTTPException(status_code=403, detail="permission_denied")
+
+
+def _require_record_admin(auth: McpAuthContext, library_id: str | None) -> None:
+    if auth.principal.is_admin_bypass:
+        return
+    if auth.principal.kind == "anonymous":
+        raise HTTPException(status_code=401, detail="auth_missing")
+    if not library_id or effective_libraries(auth.principal, role_at_least="admin").get(library_id) != "admin":
+        raise HTTPException(status_code=403, detail="permission_denied")
+
+
 def call_mcp_tool(tool_name: str, arguments: dict[str, Any], auth: McpAuthContext) -> McpToolResult:
     started = time.perf_counter()
     status = "ok"
@@ -411,6 +442,77 @@ def call_mcp_tool(tool_name: str, arguments: dict[str, Any], auth: McpAuthContex
             }
             summary = f"ma3_whoami: {auth.caller_summary.get('type')} visible_libraries={len(visible)}"
             return _tool_result(summary, full, include_full_json=False)
+
+        if tool_name == "ma3_list_drafts":
+            library_id = validated["library_id"]
+            _require_library_writer(auth, library_id)
+            lib = LibraryRepository().get(library_id)
+            if lib is None:
+                raise HTTPException(status_code=404, detail="library not found")
+            records = [
+                r for r in RecordRepository().list_by_library(library_id)
+                if r.status == RecordStatus.draft
+            ]
+            offset = validated["offset"]
+            limit = validated["limit"]
+            page = records[offset:offset + limit]
+            compact = {
+                "library_id": library_id,
+                "count": len(page),
+                "total_drafts": len(records),
+                "offset": offset,
+                "limit": limit,
+                "records": [
+                    {
+                        "record_id": r.record_id,
+                        "title": r.title,
+                        "summary": r.summary,
+                        "risk_level": r.risk_level,
+                        "status": r.status,
+                        "updated_at": r.updated_at,
+                    }
+                    for r in page
+                ],
+            }
+            full = {
+                **compact,
+                "records": [r.model_dump(mode="json") for r in page],
+            }
+            summary = f"ma3_list_drafts: library_id={library_id} count={len(page)} total={len(records)}"
+            return _tool_result(summary, full if include_full_json else compact, include_full_json=False)
+
+        if tool_name == "ma3_review_record":
+            record_id = validated["record_id"]
+            record = RecordRepository().get(record_id)
+            if record is None:
+                raise HTTPException(status_code=404, detail="record not found")
+            _require_record_admin(auth, record.library_id)
+            if record.status != RecordStatus.draft:
+                raise ValueError("only draft records can be reviewed via MCP")
+            decision = validated["decision"]
+            review_note = validated["review_note"]
+            if decision == "approve":
+                updated = promote_record(record, review_note=review_note)
+                new_status = RecordStatus.active
+            else:
+                updated = reject_record(record, review_note=review_note)
+                new_status = RecordStatus.invalid
+            compact = {
+                "record_id": updated.record_id,
+                "library_id": updated.library_id,
+                "decision": decision,
+                "old_status": RecordStatus.draft,
+                "new_status": new_status,
+                "review_note": updated.review_note,
+                "reviewed_at": updated.reviewed_at,
+                "reviewer": auth.caller_summary,
+            }
+            full = {**compact, "record": updated.model_dump(mode="json")}
+            summary = (
+                f"ma3_review_record: record_id={updated.record_id} "
+                f"decision={decision} new_status={new_status}"
+            )
+            return _tool_result(summary, full if include_full_json else compact, include_full_json=False)
 
         if tool_name == "ma3_validate":
             inner_tool = validated["tool_name"]

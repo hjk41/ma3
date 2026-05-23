@@ -32,6 +32,8 @@ EXPECTED_TOOLS = {
     "ma3_report",
     "ma3_case",
     "ma3_search_explain",
+    "ma3_list_drafts",
+    "ma3_review_record",
     "ma3_validate",
     "ma3_doctor",
     "ma3_whoami",

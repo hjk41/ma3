@@ -16,6 +16,27 @@ def _call(client, name: str, arguments: dict | None = None, *, key: str | None =
     return _rpc(client, "tools/call", {"name": name, "arguments": arguments or {}}, key=key, request_id=request_id)
 
 
+def _draft_record_payload(title: str) -> dict:
+    return {
+        "title": title,
+        "problem_family": "review_queue",
+        "summary": f"{title} summary",
+        "claim": f"{title} claim",
+        "target": {"product": "ma3", "component": "mcp-review"},
+        "steps": [{"order": 1, "action": "capture draft", "note": None}],
+        "result": {"outcome": "success", "summary": f"{title} result", "details": []},
+        "evidence": [{"kind": "manual_observation", "summary": f"{title} evidence", "ref": None}],
+        "applicable_if": [],
+        "not_applicable_if": [],
+        "status": "draft",
+        "visibility_scope": "tenant",
+        "risk_level": "high",
+        "execution_mode": "manual_only",
+        "source_type": "manual",
+        "tags": ["review", "mcp"],
+    }
+
+
 def test_remote_mcp_initialize_and_tools_list(client):
     no_sse = client.get("/mcp")
     assert no_sse.status_code == 405
@@ -43,6 +64,8 @@ def test_remote_mcp_initialize_and_tools_list(client):
         "ma3_report",
         "ma3_case",
         "ma3_search_explain",
+        "ma3_list_drafts",
+        "ma3_review_record",
         "ma3_validate",
         "ma3_doctor",
         "ma3_whoami",
@@ -281,6 +304,107 @@ def test_remote_mcp_ma3_validate_dry_run_does_not_persist(authed_client):
     locs = {tuple(item["loc"]) for item in bad_body["validation_errors"]}
     assert ("outcome",) in locs
     assert ("result_summary",) in locs
+
+
+def test_remote_mcp_list_drafts_and_review_flow(authed_client):
+    lib = authed_client.post("/libraries", json={"name": "mcp-review-lib", "is_public": False}).json()
+    writer = authed_client.post(
+        f"/libraries/{lib['library_id']}/tokens",
+        json={"label": "writer", "role": "writer"},
+    ).json()["token"]
+    admin = authed_client.post(
+        f"/libraries/{lib['library_id']}/tokens",
+        json={"label": "admin", "role": "admin"},
+    ).json()["token"]
+
+    created = authed_client.post(
+        "/records",
+        json=_draft_record_payload("draft approval candidate"),
+        headers={"X-API-Key": writer},
+    )
+    assert created.status_code == 200, created.text
+    record_id = created.json()["record_id"]
+
+    listed = _call(
+        authed_client,
+        "ma3_list_drafts",
+        {"library_id": lib["library_id"], "include_full_json": True},
+        key=writer,
+    )
+    assert listed.status_code == 200, listed.text
+    listed_body = listed.json()["result"]["structuredContent"]
+    assert listed_body["library_id"] == lib["library_id"]
+    assert listed_body["total_drafts"] >= 1
+    assert any(item["record_id"] == record_id for item in listed_body["records"])
+
+    approved = _call(
+        authed_client,
+        "ma3_review_record",
+        {
+            "record_id": record_id,
+            "decision": "approve",
+            "review_note": "validated and approved",
+            "include_full_json": True,
+        },
+        key=admin,
+    )
+    assert approved.status_code == 200, approved.text
+    approved_body = approved.json()["result"]["structuredContent"]
+    assert approved_body["record_id"] == record_id
+    assert approved_body["old_status"] == "draft"
+    assert approved_body["new_status"] == "active"
+    assert approved_body["record"]["status"] == "active"
+
+
+def test_remote_mcp_review_reject_and_permission_guardrails(authed_client):
+    lib = authed_client.post("/libraries", json={"name": "mcp-review-guards", "is_public": False}).json()
+    writer = authed_client.post(
+        f"/libraries/{lib['library_id']}/tokens",
+        json={"label": "writer", "role": "writer"},
+    ).json()["token"]
+    admin = authed_client.post(
+        f"/libraries/{lib['library_id']}/tokens",
+        json={"label": "admin", "role": "admin"},
+    ).json()["token"]
+
+    created = authed_client.post(
+        "/records",
+        json=_draft_record_payload("draft reject candidate"),
+        headers={"X-API-Key": writer},
+    )
+    assert created.status_code == 200, created.text
+    record_id = created.json()["record_id"]
+
+    denied = _call(
+        authed_client,
+        "ma3_review_record",
+        {"record_id": record_id, "decision": "reject", "review_note": "writer must not review"},
+        key=writer,
+    )
+    assert denied.status_code == 200
+    assert denied.json()["error"]["code"] == -32001
+    assert denied.json()["error"]["message"] == "permission_denied"
+
+    rejected = _call(
+        authed_client,
+        "ma3_review_record",
+        {"record_id": record_id, "decision": "reject", "review_note": "not suitable for promotion"},
+        key=admin,
+    )
+    assert rejected.status_code == 200, rejected.text
+    rejected_body = rejected.json()["result"]["structuredContent"]
+    assert rejected_body["new_status"] == "invalid"
+
+    non_draft = _call(
+        authed_client,
+        "ma3_review_record",
+        {"record_id": record_id, "decision": "approve", "review_note": "cannot re-review invalid"},
+        key=admin,
+    )
+    assert non_draft.status_code == 200
+    assert non_draft.json()["error"]["code"] == -32602
+    assert non_draft.json()["error"]["message"] == "Invalid params"
+    assert non_draft.json()["error"]["data"]["detail"] == "only draft records can be reviewed via MCP"
 
 
 def test_remote_mcp_batch_jsonrpc_and_error_mapping(authed_client):
