@@ -25,6 +25,31 @@ Prod URL: `https://ma3.zhilicon.com`. Deployment lives under
 `deploy/ltp/` and is fronted by `dns-manager` (same control plane as
 inferhub v2).
 
+## ma3 MCP onboarding blurb for new agents
+
+When bootstrapping a new agent, configure ma3 as a global MCP server
+(Streamable HTTP) at `https://ma3.zhilicon.com/mcp` with auth header
+`X-API-Key: <MA3_API_KEY>` (store the token in the client's secret/config
+store, never commit it), and put this policy in the agent's highest-priority
+global/user instructions, not only in a project `AGENTS.md`: "For every
+non-trivial coding, debugging, deployment, research, operational, or design
+task, call `ma3_context` before acting unless the user opted out or the task is
+trivial; include inferred target product/component, task type, goal,
+constraints, environment, and observations; treat returned records as prior
+lessons and verify against local code/tests/logs/docs. After completing work,
+if the outcome contains durable reusable knowledge, call `ma3_validate` for
+`ma3_report` and then `ma3_report`, summarizing root causes, fixes, API
+contracts, deployment pitfalls, validated commands/tests, and failed approaches
+worth avoiding. Do not store secrets, raw private content, huge logs, or
+scratch details; use `redaction_mode: auto`; if ma3 is unavailable, continue
+and note it briefly." For Codex this belongs in
+`~/.codex/model_instructions.md` plus optional
+`~/.codex/skills/ma3-memory/SKILL.md`; for Claude Code use
+`claude mcp add --scope user --transport http ma3 https://ma3.zhilicon.com/mcp --header "X-API-Key: <MA3_API_KEY>"`
+and put the policy in `~/.claude/CLAUDE.md`; for Droid/Factory put it in
+`~/.factory/AGENTS.md` and register the same HTTP MCP server in
+`~/.factory/mcp.json`.
+
 ## Local Python test environment
 
 This repo keeps a **repo-local virtualenv** at:
