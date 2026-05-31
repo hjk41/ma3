@@ -176,7 +176,7 @@ if ! command -v pg_isready >/dev/null 2>&1 || ! command -v python3 >/dev/null 2>
     log "installing missing runtime packages with apt-get"
     export DEBIAN_FRONTEND=noninteractive
     apt-get update
-    apt-get install -y --no-install-recommends git curl ca-certificates python3 python3-venv python3-pip postgresql postgresql-client cron nodejs npm
+    apt-get install -y --no-install-recommends git curl ca-certificates sudo python3 python3-venv python3-pip postgresql postgresql-client cron nodejs npm
   else
     die "missing runtime packages and apt-get is unavailable; use an image with git/curl/python3-venv/PostgreSQL"
   fi
