@@ -93,6 +93,24 @@ export MA3_OP_LOG_DIR MA3_LOG_ARCHIVE_DIR MA3_LOG_LOCAL_RETENTION_DAYS
 export MA3_DB_POOL_ENABLED MA3_DB_POOL_MIN_SIZE MA3_DB_POOL_MAX_SIZE MA3_DB_POOL_TIMEOUT_SECONDS
 export MA3_SEARCH_BATCH_GRAPH_ENABLED MA3_SEARCH_INDEX_MODE
 
+make_postgres_url() {
+  python3 - <<'PY'
+import os
+from urllib.parse import quote
+
+user = os.environ["PGUSER"]
+password = os.environ["PGPASSWORD"]
+host = os.environ["PGHOST"]
+port = os.environ["PGPORT"]
+database = os.environ["PGDATABASE"]
+print(
+    "postgresql://"
+    f"{quote(user, safe='')}:{quote(password, safe='')}"
+    f"@{host}:{port}/{quote(database, safe='')}"
+)
+PY
+}
+
 mount_cephfs_if_enabled() {
   if [[ "$MA3_CEPHFS_ENABLE" != "1" ]]; then
     return 0
@@ -360,10 +378,13 @@ if [[ "$MA3_ENABLE_DELTA" == "1" ]]; then
   curl -fsS "$MA3_DELTA_URL" -o "${MA3_WORKDIR}/delta.jsonl"
 fi
 
+MA3_DATABASE_URL_VALUE="$(make_postgres_url)"
+export MA3_DATABASE_URL_VALUE
+
 if [[ "$MA3_RUN_V1_TO_V2_MIGRATION" == "1" ]]; then
   log "running v1-to-v2 case migration"
   cd "$MA3_REPO_DIR/server"
-  MA3_DATABASE_URL="postgresql://${PGUSER}:${PGPASSWORD}@${PGHOST}:${PGPORT}/${PGDATABASE}" \
+  MA3_DATABASE_URL="$MA3_DATABASE_URL_VALUE" \
     "$MA3_VENV/bin/python3" scripts/migrate_v1_to_v2_cases.py \
       --apply \
       --report "$MA3_V1_TO_V2_REPORT"
@@ -375,7 +396,7 @@ if [[ "$MA3_RUN_V2_TO_V3_MIGRATION" == "1" ]]; then
   if [[ -f "$MA3_REPO_DIR/server/scripts/migrate_v2_tokens_to_v3.py" ]]; then
     log "running v2-to-v3 token migration (idempotent)"
     cd "$MA3_REPO_DIR/server"
-    MA3_DATABASE_URL="postgresql://${PGUSER}:${PGPASSWORD}@${PGHOST}:${PGPORT}/${PGDATABASE}" \
+    MA3_DATABASE_URL="$MA3_DATABASE_URL_VALUE" \
       "$MA3_VENV/bin/python3" scripts/migrate_v2_tokens_to_v3.py --apply
   else
     log "skipping v2-to-v3 token migration (script not present in this commit)"
@@ -387,7 +408,7 @@ fi
 if [[ -f "$MA3_REPO_DIR/server/scripts/migrate_v3_to_v3_1_rbac.py" ]]; then
   log "running v3-to-v3.1 RBAC migration (idempotent)"
   cd "$MA3_REPO_DIR/server"
-  MA3_DATABASE_URL="postgresql://${PGUSER}:${PGPASSWORD}@${PGHOST}:${PGPORT}/${PGDATABASE}" \
+  MA3_DATABASE_URL="$MA3_DATABASE_URL_VALUE" \
     "$MA3_VENV/bin/python3" scripts/migrate_v3_to_v3_1_rbac.py --apply
 fi
 
@@ -415,7 +436,7 @@ fi
 
 log "writing root-only env file"
 cat > "${MA3_WORKDIR}/ma3.env" <<EOF
-MA3_DATABASE_URL=postgresql://${PGUSER}:${PGPASSWORD}@${PGHOST}:${PGPORT}/${PGDATABASE}
+MA3_DATABASE_URL=${MA3_DATABASE_URL_VALUE}
 MA3_API_KEY=${MA3_ADMIN_KEY}
 MA3_PUBLIC_BASE_URL=${MA3_PUBLIC_BASE_URL}
 MA3_INSTANCE_ID=${MA3_INSTANCE_ID}
