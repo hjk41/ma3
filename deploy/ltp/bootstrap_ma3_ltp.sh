@@ -324,6 +324,7 @@ if [[ "$MA3_PG_ARCHIVE_ENABLE" == "1" ]]; then
   #   (b) pg_basebackup runs as root locally, connecting over TCP with
   #       ma3user (granted REPLICATION) for the protocol auth.
   log "installing sudoers entry for postgres -> /opt/ma3/pg_archive_wrapper.sh"
+  mkdir -p /etc/sudoers.d
   cat > /etc/sudoers.d/ma3-pg-archive <<SUDO
 Defaults env_keep += "MA3_PG_ARCHIVE_DIR"
 postgres ALL=(root) NOPASSWD: /opt/ma3/pg_archive_wrapper.sh
