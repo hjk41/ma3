@@ -77,6 +77,11 @@ def test_remote_mcp_initialize_and_tools_list(client):
     assert "$defs" in report_schema
     assert "AgentAction" in report_schema["$defs"]
     assert "EvidenceItem" in report_schema["$defs"]
+    validate_tool = tools["ma3_validate"]
+    validate_schema = validate_tool["inputSchema"]
+    assert "arguments" in validate_schema["properties"]
+    assert "complete JSON payload" in validate_tool["description"]
+    assert "only selects" in validate_tool["description"]
 
 
 def test_remote_mcp_context_report_case_and_metrics(authed_client):
@@ -304,6 +309,34 @@ def test_remote_mcp_ma3_validate_dry_run_does_not_persist(authed_client):
     locs = {tuple(item["loc"]) for item in bad_body["validation_errors"]}
     assert ("outcome",) in locs
     assert ("result_summary",) in locs
+
+    missing_args = _call(
+        authed_client,
+        "ma3_validate",
+        {"tool_name": "ma3_report"},
+    )
+    assert missing_args.status_code == 200, missing_args.text
+    missing_body = missing_args.json()["result"]
+    assert missing_body["content"][0]["text"] == (
+        "ma3_validate requires `arguments` payload for tool_name=ma3_report"
+    )
+    missing_structured = missing_body["structuredContent"]
+    assert missing_structured["ok"] is False
+    assert missing_structured["error"] == "missing_arguments"
+    assert "validation_errors" not in missing_structured
+
+
+def test_remote_mcp_tools_call_rejects_non_object_arguments(client):
+    bad = _rpc(
+        client,
+        "tools/call",
+        {"name": "ma3_context", "arguments": []},
+        key=None,
+    )
+    assert bad.status_code == 200, bad.text
+    body = bad.json()
+    assert body["error"]["code"] == -32602
+    assert body["error"]["data"]["detail"] == "params.arguments must be an object"
 
 
 def test_remote_mcp_list_drafts_and_review_flow(authed_client):

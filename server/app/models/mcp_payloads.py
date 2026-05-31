@@ -235,10 +235,12 @@ class Ma3ReviewRecordPayload(BaseModel):
 class Ma3ValidatePayload(BaseModel):
     """Wire payload for the diagnostic ``ma3_validate`` tool.
 
-    Runs only the Pydantic validation pipeline for the named tool against the
-    supplied arguments. Returns either ``{ok: true}`` or the same structured
-    ``validation_errors`` shape clients get on a real call so an agent can
-    iterate quickly without consuming write quota or polluting the case graph.
+    Runs only the Pydantic validation pipeline for ``tool_name`` against the
+    complete JSON payload supplied in ``arguments``. ``tool_name`` only selects
+    which target tool schema to validate. Returns either ``{ok: true}`` or the
+    same structured ``validation_errors`` shape clients get on a real call so
+    an agent can iterate quickly without consuming write quota or polluting the
+    case graph.
     """
 
     tool_name: Literal[
@@ -251,7 +253,14 @@ class Ma3ValidatePayload(BaseModel):
         "ma3_list_drafts",
         "ma3_review_record",
     ]
-    arguments: dict[str, Any] = Field(default_factory=dict)
+    arguments: dict[str, Any] | None = Field(
+        default=None,
+        description=(
+            "Complete JSON object to validate as the target tool's arguments. "
+            "For example, when tool_name='ma3_report', this must contain the "
+            "full ma3_report payload; tool_name only selects the target schema."
+        ),
+    )
 
     model_config = ConfigDict(
         extra="forbid",

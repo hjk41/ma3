@@ -56,7 +56,7 @@ def _handle_rpc(req: McpJsonRpcRequest, raw_auth: str | None) -> dict[str, Any] 
             name = req.params.get("name")
             if not isinstance(name, str) or not name:
                 return _jsonrpc_error(req.id, -32602, "Invalid params", {"detail": "tools/call requires params.name"})
-            arguments = req.params.get("arguments") or {}
+            arguments = req.params["arguments"] if "arguments" in req.params else {}
             if not isinstance(arguments, dict):
                 return _jsonrpc_error(req.id, -32602, "Invalid params", {"detail": "params.arguments must be an object"})
             auth = resolve_mcp_auth(raw_auth)

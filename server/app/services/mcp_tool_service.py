@@ -82,38 +82,78 @@ def resolve_mcp_auth(raw: str | None) -> McpAuthContext:
 
 _TOOL_DESCRIPTIONS: dict[str, str] = {
     "ma3_context": (
-        "Return agent-ready ma3 context for a task: matched cases, records, warnings, "
-        "and optional explain data. Inputs are validated against the Ma3ContextPayload "
-        "Pydantic model — invalid arguments fail with -32602 and a structured "
-        "error.data.validation_errors list."
+        "Purpose: retrieve compact, agent-ready prior ma3 knowledge for the current task. "
+        "When to use: call before non-trivial coding, debugging, deployment, research, or design work unless the user opted out. "
+        "Required fields: problem. Recommended fields: target_product/target_component or target, task_type, goal, observations, constraints, environment, tags. "
+        "Output: matched cases, top records, ungrouped records, warnings, and optional ranking explain data; compact by default, full response with include_full_json=true. "
+        "Side effects: read-only, never persists. Auth: anonymous/public or token-scoped reader access; results are filtered to visible libraries. "
+        "Validation: invalid arguments fail with -32602 and error.data.validation_errors; use tools/list inputSchema for exact fields."
     ),
     "ma3_report": (
-        "Write back an agent outcome to ma3 and assign it to a case. Inputs are "
-        "validated against the Ma3ReportPayload Pydantic model; see "
-        "inputSchema.$defs.AgentAction for the exact item shape of `actions` and "
-        "inputSchema.$defs.EvidenceItem for `evidence`. Use ma3_validate first for "
-        "dry-run validation without consuming write quota."
+        "Purpose: write a durable reusable agent outcome to ma3 and assign it to a case. "
+        "When to use: after completing non-trivial work that produced reusable knowledge such as root cause, fix, API/schema contract, deployment pitfall, validated command, or failed approach worth avoiding. "
+        "Required fields: problem, outcome, result_summary. Recommended fields: target_product/target_component or target, task_type, goal, observations, actions, evidence, tags, redaction_mode=auto. "
+        "Output: persisted flag, record_id, case_assignment, review status, and relation count; full response with include_full_json=true. "
+        "Side effects: persists a record unless dry_run=true. Auth: requires a writable library. "
+        "Before calling: use ma3_validate with tool_name=ma3_report and arguments=<full ma3_report payload>. "
+        "Validation: inputSchema.$defs.AgentAction documents actions items; inputSchema.$defs.EvidenceItem documents evidence items; invalid arguments fail with -32602 and error.data.validation_errors."
     ),
-    "ma3_case": "Read one ma3 case timeline with records and relations visible to the caller.",
+    "ma3_case": (
+        "Purpose: read one ma3 case timeline that was returned by ma3_context or ma3_report case_assignment. "
+        "When to use: fetch more detail for a specific case_id after compact context is insufficient. "
+        "Required fields: case_id. Optional fields: include_full_json. "
+        "Output: compact case metadata, up to 10 record summaries, and relation_count by default; full case/records/relations with include_full_json=true. "
+        "Side effects: read-only. Auth: reader access to the case's library is required; invisible cases return not found. "
+        "Validation: invalid arguments fail with -32602 and error.data.validation_errors."
+    ),
     "ma3_search_explain": (
-        "Diagnostic ma3 search that always includes ranking/candidate explain data. "
-        "Same input shape as ma3_context."
+        "Purpose: diagnose ma3 search/ranking behavior with candidate explain data. "
+        "When to use: when ma3_context results look missing, poorly ranked, or surprising and you need ranking/debug evidence. "
+        "Required fields: problem. Recommended fields: same as ma3_context: target_product/target_component or target, task_type, goal, observations, constraints, environment, tags. "
+        "Output: ma3_context-style results plus forced include_explain data; full response with include_full_json=true. "
+        "Side effects: read-only. Auth: anonymous/public or token-scoped reader access; results are filtered to visible libraries. "
+        "Validation: same input shape as ma3_context; invalid arguments fail with -32602 and error.data.validation_errors."
     ),
-    "ma3_doctor": "Diagnose remote MCP authentication, server health, version, database, and index state.",
-    "ma3_whoami": "Return the caller identity and visible library summary without exposing token material.",
+    "ma3_doctor": (
+        "Purpose: diagnose the remote MCP server, auth identity, version/deploy identity, database, and search index health. "
+        "When to use: before debugging ma3 itself, when auth/tool calls fail, when verifying deployment/cutover, or when checking which backend served the request. "
+        "Required fields: none. Optional fields: include_full_json. "
+        "Output: server status, auth summary, visible tool names, protocol/tool schema versions, deploy identity, and backend/index diagnostics. "
+        "Side effects: read-only. Auth: works anonymously but reports richer caller identity when a token is supplied. "
+        "Validation: invalid arguments fail with -32602 and error.data.validation_errors."
+    ),
+    "ma3_whoami": (
+        "Purpose: show the caller identity and effective library visibility without exposing token material. "
+        "When to use: verify which principal an MCP token resolves to, which libraries are visible, and which roles are effective before read/write/admin operations. "
+        "Required fields: none. Optional fields: include_full_json. "
+        "Output: principal summary, effective library roles, and visible library metadata. "
+        "Side effects: read-only. Auth: works anonymously; token/admin callers get their resolved identity and scopes. "
+        "Validation: invalid arguments fail with -32602 and error.data.validation_errors."
+    ),
     "ma3_list_drafts": (
-        "List pending-review draft records for one library visible to the caller. "
-        "Requires writer-or-higher access to the library."
+        "Purpose: list pending-review draft records in one library. "
+        "When to use: before reviewing or auditing records that require approval. "
+        "Required fields: library_id. Optional fields: limit, offset, include_full_json. "
+        "Output: paginated draft record summaries by default; full draft records with include_full_json=true. "
+        "Side effects: read-only. Auth: requires writer-or-higher access to the requested library. "
+        "Validation: invalid arguments fail with -32602 and error.data.validation_errors."
     ),
     "ma3_review_record": (
-        "Approve or reject one draft record. Requires library-admin or global-admin "
-        "rights for the record's library."
+        "Purpose: approve or reject one draft record. "
+        "When to use: after inspecting a draft from ma3_list_drafts and deciding it should become active knowledge or be rejected. "
+        "Required fields: record_id, decision=approve|reject, review_note. Optional fields: include_full_json. "
+        "Output: record_id, library_id, decision, old/new status, review note, reviewed_at, reviewer; full record with include_full_json=true. "
+        "Side effects: mutates record status from draft to active or invalid. Auth: requires library-admin or global-admin access for the record's library. "
+        "Validation: invalid arguments fail with -32602 and error.data.validation_errors; non-draft records return an Invalid params error."
     ),
     "ma3_validate": (
-        "Dry-run validator. Returns {ok: true} when `arguments` would pass Pydantic "
-        "validation for `tool_name`, or the same structured validation_errors list "
-        "that a real call would emit. Cheap, never persists, and ideal for an agent "
-        "retry loop that wants to confirm payload shape before consuming write quota."
+        "Purpose: dry-run validate arguments for another ma3 MCP tool. "
+        "When to use: before write/admin tools such as ma3_report or ma3_review_record, or when iterating on any tool payload. "
+        "Required fields: tool_name and arguments. `tool_name` only selects the target tool schema; `arguments` must be the complete JSON payload object you would pass to that target tool. "
+        "Output: {ok: true, tool_name} on success; {ok: false, validation_errors:[...]} with the same error shape as the target tool on validation failure; missing arguments returns ok=false with error=missing_arguments. "
+        "Side effects: read-only, never persists, and does not consume write quota. Auth: no writer/admin role is required for the dry-run validation itself. "
+        "Validation: validates only the target tool payload in arguments; missing arguments returns ok=false with error=missing_arguments. "
+        "Example: {\"tool_name\":\"ma3_report\",\"arguments\":{...full ma3_report payload...}}."
     ),
 }
 
@@ -516,7 +556,23 @@ def call_mcp_tool(tool_name: str, arguments: dict[str, Any], auth: McpAuthContex
 
         if tool_name == "ma3_validate":
             inner_tool = validated["tool_name"]
-            inner_args = validated.get("arguments") or {}
+            inner_args = validated.get("arguments")
+            if inner_args is None:
+                message = f"ma3_validate requires `arguments` payload for tool_name={inner_tool}"
+                return _tool_result(
+                    message,
+                    {
+                        "ok": False,
+                        "tool_name": inner_tool,
+                        "error": "missing_arguments",
+                        "detail": message,
+                        "schema_hint": (
+                            "Pass the complete JSON arguments object that would be sent to "
+                            f"{inner_tool}; tool_name only selects which schema to validate."
+                        ),
+                    },
+                    include_full_json=False,
+                )
             try:
                 _validate_args(inner_tool, inner_args)
                 ok_payload = {"ok": True, "tool_name": inner_tool}
@@ -582,5 +638,10 @@ def mcp_initialize_result() -> dict[str, Any]:
             "name": "ma3-remote-mcp",
             "version": settings.service_version,
         },
-        "instructions": "Use ma3_context before technical work, ma3_report to write reusable outcomes, and ma3_doctor for diagnostics.",
+        "instructions": (
+            "Use ma3_context before non-trivial technical work. Use ma3_validate with "
+            "arguments=<complete target payload> before write/admin calls. Use ma3_report "
+            "afterward to persist reusable outcomes. Use ma3_doctor and ma3_whoami for "
+            "MCP/auth diagnostics."
+        ),
     }

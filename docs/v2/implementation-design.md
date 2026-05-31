@@ -363,14 +363,45 @@ session storage must use encrypted secrets or opaque server-side session IDs.
 
 ### 6.3 Tools
 
-Initial tools:
+Tool descriptions returned by `tools/list` are part of the agent contract, not
+marketing copy. Each description should be directly actionable and include:
 
-- `ma3_context`: calls `/v2/agent/context`
-- `ma3_report`: calls `/v2/agent/report`
-- `ma3_case`: reads a case timeline
-- `ma3_search_explain`: diagnostic search
-- `ma3_doctor`: endpoint/auth/version diagnostics
-- `ma3_whoami`: returns visible libraries and effective role without exposing token material
+- `Purpose:` what the tool does
+- `When to use:` the decision rule for an agent
+- `Required fields:` and important `Optional fields:` / recommended fields
+- `Output:` the shape and compact/full behavior
+- `Side effects:` whether it persists or mutates data
+- `Auth:` required reader/writer/admin scope
+- `Validation:` where structured `-32602` errors surface and how to retry
+- `Before calling:` / `Example:` where a usage pattern is easy to misuse
+
+Current tools:
+
+- `ma3_context`: read-only prior-knowledge lookup before non-trivial work.
+  Requires `problem`; recommended fields include `target_product`,
+  `target_component`, `task_type`, `goal`, `observations`, `constraints`,
+  `environment`, and `tags`.
+- `ma3_report`: durable write-back after useful work. Requires `problem`,
+  `outcome`, and `result_summary`; should normally be dry-run through
+  `ma3_validate` first. Persists unless `dry_run=true`; requires a writable
+  library.
+- `ma3_case`: read one visible case timeline by `case_id`; use it to expand a
+  compact `ma3_context` result.
+- `ma3_search_explain`: read-only diagnostic variant of `ma3_context` that
+  forces ranking/candidate explain data when results look wrong.
+- `ma3_doctor`: read-only server/auth/version/deploy/database/index diagnostic.
+- `ma3_whoami`: read-only resolved principal and effective library visibility
+  diagnostic without exposing token material.
+- `ma3_list_drafts`: list pending review records in one `library_id`; requires
+  writer-or-higher access.
+- `ma3_review_record`: approve or reject a draft by `record_id`, `decision`,
+  and `review_note`; mutates record status and requires library-admin or
+  global-admin access.
+- `ma3_validate`: read-only dry-run validator. `tool_name` only selects the
+  target schema; `arguments` must contain the complete JSON payload that would
+  be sent to that target tool. If `arguments` is omitted, the tool must return a
+  ma3_validate-specific `missing_arguments` error instead of validating an empty
+  target payload.
 
 Tool inputs should be compact and agent-friendly. For example, `ma3_context`
 accepts `problem`, optional `goal`, optional `target_product`,

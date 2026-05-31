@@ -24,7 +24,7 @@ from __future__ import annotations
 from app.models.mcp_payloads import PAYLOAD_BY_TOOL, tool_input_schema
 from app.models.library import LibraryCreate
 from app.services.library_service import create_library
-from app.services.mcp_tool_service import call_mcp_tool, list_mcp_tools, resolve_mcp_auth
+from app.services.mcp_tool_service import _TOOL_DESCRIPTIONS, call_mcp_tool, list_mcp_tools, resolve_mcp_auth
 
 
 EXPECTED_TOOLS = {
@@ -57,6 +57,16 @@ def test_published_input_schema_matches_payload_model_schema():
             "The Pydantic payload model is the source of truth — do not "
             "hand-edit the schema dict."
         )
+
+
+def test_tool_descriptions_are_agent_actionable():
+    required_sections = ("Purpose:", "When to use:", "Required fields:", "Output:", "Side effects:", "Auth:")
+    for descriptor in list_mcp_tools():
+        description = descriptor.description
+        assert description == _TOOL_DESCRIPTIONS[descriptor.name]
+        for section in required_sections:
+            assert section in description, f"{descriptor.name} description missing {section}"
+        assert "Validation:" in description
 
 
 def test_every_payload_model_forbids_extra_fields_so_typos_fail_loud():
@@ -115,6 +125,13 @@ def test_ma3_validate_inner_tool_enum_covers_every_callable_tool():
     assert set(enum) == callable_tools, (
         "ma3_validate.tool_name enum must list every callable MCP tool except itself."
     )
+    arguments = schema["properties"].get("arguments")
+    assert arguments, "ma3_validate schema must expose the target tool payload field"
+    assert "Complete JSON object" in arguments.get("description", "")
+    example = (schema.get("examples") or [{}])[0]
+    assert example.get("tool_name") == "ma3_report"
+    assert "arguments" in example
+    assert {"problem", "outcome", "result_summary"} <= set(example["arguments"])
 
 
 def test_ma3_whoami_response_includes_additive_libraries_array():

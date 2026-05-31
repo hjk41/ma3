@@ -107,7 +107,11 @@ errors with no field info. Re-derived as of 2026-05-16, commit `25669ac`.
 
 5. **`ma3_validate` is the dry-run channel.** Agents iterate against it
    before paying write quota. Never make it conditional on auth role; it
-   has no side effects.
+   has no side effects. Its tool description and schema must make clear that
+   `tool_name` only selects the target schema and `arguments` must contain the
+   complete target-tool JSON payload; if `arguments` is omitted, return a
+   ma3_validate-specific `missing_arguments` error instead of validating `{}` as
+   the target tool.
 
 6. **Nested type definitions come from real models, not anonymous dicts.**
    `AgentAction`, `EvidenceItem`, `TargetRef` must appear in the published
