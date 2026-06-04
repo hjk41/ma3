@@ -538,6 +538,34 @@ if [[ "$MA3_PG_ARCHIVE_ENABLE" == "1" ]]; then
     } | crontab -
     cron || true
   fi
+
+  # LTP/minimal cron has failed silently in production even with valid crontab
+  # entries and a running cron daemon. Keep cron for auditability, but also run
+  # a simple root-owned background loop as a watchdog. pg_basebackup_cron.sh
+  # uses a CephFS flock, so cron and this loop cannot overlap destructively.
+  basebackup_loop="$MA3_WORKDIR/pg_basebackup_loop.sh"
+  cat > "$basebackup_loop" <<LOOP
+#!/usr/bin/env bash
+set -euo pipefail
+interval="\${MA3_PG_BASEBACKUP_INTERVAL_MIN:-$MA3_PG_BASEBACKUP_INTERVAL_MIN}"
+if ! [[ "\$interval" =~ ^[0-9]+$ ]] || (( interval < 1 || interval > 60 )); then
+  interval=30
+fi
+sleep_seconds=\$(( interval * 60 ))
+while true; do
+  set -a
+  . '$MA3_WORKDIR/ma3.env'
+  set +a
+  bash '$MA3_REPO_DIR/deploy/ltp/pg_basebackup_cron.sh' >> /var/log/ma3/basebackup-loop.log 2>&1 || true
+  sleep "\$sleep_seconds"
+done
+LOOP
+  chmod +x "$basebackup_loop"
+  if ! pgrep -f "$basebackup_loop" >/dev/null 2>&1; then
+    nohup "$basebackup_loop" >/var/log/ma3/basebackup-loop.nohup.log 2>&1 &
+  fi
+  log "started pg_basebackup watchdog loop: $basebackup_loop"
+
   log "seeding initial basebackup for $MA3_INSTANCE_ID"
   set -a; . "$MA3_WORKDIR/ma3.env"; set +a
   if ! bash "$MA3_REPO_DIR/deploy/ltp/pg_basebackup_cron.sh"; then
