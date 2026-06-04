@@ -518,8 +518,24 @@ fi
 if [[ "$MA3_PG_ARCHIVE_ENABLE" == "1" ]]; then
   log "installing pg_basebackup cron (every ${MA3_PG_BASEBACKUP_INTERVAL_MIN}m)"
   if command -v cron >/dev/null 2>&1; then
-    (crontab -l 2>/dev/null | grep -v 'pg_basebackup_cron.sh' || true; \
-     echo "*/${MA3_PG_BASEBACKUP_INTERVAL_MIN} * * * * set -a && . '$MA3_WORKDIR/ma3.env' && set +a && bash '$MA3_REPO_DIR/deploy/ltp/pg_basebackup_cron.sh' >> /var/log/ma3/basebackup.log 2>&1") | crontab -
+    # Some minimal LTP cron environments have proven unreliable with step
+    # syntax such as */30 even though the line installs successfully. Emit
+    # explicit minute entries instead (for the default 30m interval: 0 and 30).
+    # This keeps the installed crontab easy to audit and avoids silent staleness.
+    basebackup_cron_cmd="set -a && . '$MA3_WORKDIR/ma3.env' && set +a && bash '$MA3_REPO_DIR/deploy/ltp/pg_basebackup_cron.sh' >> /var/log/ma3/basebackup.log 2>&1"
+    basebackup_interval="$MA3_PG_BASEBACKUP_INTERVAL_MIN"
+    if ! [[ "$basebackup_interval" =~ ^[0-9]+$ ]] || (( basebackup_interval < 1 || basebackup_interval > 60 )); then
+      log "WARNING: invalid MA3_PG_BASEBACKUP_INTERVAL_MIN=$basebackup_interval; using 30"
+      basebackup_interval=30
+    fi
+    {
+      crontab -l 2>/dev/null | grep -v 'pg_basebackup_cron.sh' || true
+      minute=0
+      while (( minute < 60 )); do
+        echo "$minute * * * * $basebackup_cron_cmd"
+        minute=$((minute + basebackup_interval))
+      done
+    } | crontab -
     cron || true
   fi
   log "seeding initial basebackup for $MA3_INSTANCE_ID"
