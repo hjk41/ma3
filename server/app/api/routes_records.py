@@ -7,7 +7,16 @@ from app.core.security import (
     effective_libraries,
     v3_write_library,
 )
-from app.models.record import Record, RecordCreate, RecordUpdate, PromoteRequest, RejectRequest
+from app.models.record import (
+    Record,
+    RecordCreate,
+    RecordUpdate,
+    PromoteRequest,
+    RejectRequest,
+    StaleRequest,
+    SupersedeRequest,
+    RestoreRequest,
+)
 from app.services.library_service import effective_library_ids
 from app.services.record_service import (
     create_record,
@@ -16,6 +25,9 @@ from app.services.record_service import (
     update_record,
     promote_record,
     reject_record,
+    mark_record_stale,
+    supersede_record,
+    restore_record,
 )
 from app.storage.repositories import RecordRepository
 
@@ -136,6 +148,60 @@ def reject_record_endpoint(
     _check_admin_access_to_record(record, principal)
     try:
         return reject_record(record, review_note=body.review_note)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+
+@router.patch("/{record_id}/stale", response_model=Record)
+def mark_stale_endpoint(
+    record_id: str,
+    body: StaleRequest = StaleRequest(),
+    principal: ResolvedPrincipal = Depends(current_principal),
+) -> Record:
+    """Curation: flag a record as outdated. It stays searchable but is soft-decayed in ranking."""
+    record = RecordRepository().get(record_id)
+    if record is None:
+        raise HTTPException(status_code=404, detail="record not found")
+    _check_admin_access_to_record(record, principal)
+    try:
+        return mark_record_stale(record, review_note=body.review_note)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+
+@router.patch("/{record_id}/supersede", response_model=dict)
+def supersede_endpoint(
+    record_id: str,
+    body: SupersedeRequest,
+    principal: ResolvedPrincipal = Depends(current_principal),
+) -> dict:
+    """Curation: mark a record as superseded by a newer one and link them via a supersedes relation."""
+    record = RecordRepository().get(record_id)
+    if record is None:
+        raise HTTPException(status_code=404, detail="record not found")
+    _check_admin_access_to_record(record, principal)
+    try:
+        updated, relation = supersede_record(
+            record, superseded_by=body.superseded_by, review_note=body.review_note
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    return {"record": updated.model_dump(), "relation": relation.model_dump()}
+
+
+@router.patch("/{record_id}/restore", response_model=Record)
+def restore_endpoint(
+    record_id: str,
+    body: RestoreRequest = RestoreRequest(),
+    principal: ResolvedPrincipal = Depends(current_principal),
+) -> Record:
+    """Curation: reverse a stale/superseded marking, returning the record to active."""
+    record = RecordRepository().get(record_id)
+    if record is None:
+        raise HTTPException(status_code=404, detail="record not found")
+    _check_admin_access_to_record(record, principal)
+    try:
+        return restore_record(record, review_note=body.review_note)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
 

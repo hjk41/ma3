@@ -930,7 +930,7 @@ class RecordRepository:
         self,
         tags: list[str],
         library_ids: set[str],
-        status: str = "active",
+        status: "str | tuple[str, ...] | list[str] | None" = None,
         limit: int = 200,
     ) -> list[tuple[str, int]]:
         """Return record IDs with exact case-insensitive tag matches.
@@ -938,10 +938,24 @@ class RecordRepository:
         This is a metadata candidate-expansion path, not final authorization or
         ranking. It intentionally does not rely on FTS tokenization so rare tags
         containing punctuation such as ``hpc-x`` and ``jobssh`` are not lost.
+
+        ``status`` accepts a single status string, an iterable of statuses, or
+        ``None`` (the default searchable set: active + stale + superseded).
+        Soft-decayed records are kept so they can be re-ranked, not dropped.
         """
+        from app.models.enums import SEARCHABLE_RECORD_STATUSES
+
         normalized_tags = sorted({tag.strip().lower() for tag in tags if tag and tag.strip()})
         if not normalized_tags:
             return []
+
+        if status is None:
+            statuses = tuple(s.value for s in SEARCHABLE_RECORD_STATUSES)
+        elif isinstance(status, str):
+            statuses = (status,)
+        else:
+            statuses = tuple(s.value if hasattr(s, "value") else str(s) for s in status)
+        status_ph = ",".join("?" * len(statuses))
 
         tag_placeholders = ",".join("?" * len(normalized_tags))
         params: list = list(normalized_tags)
@@ -960,7 +974,7 @@ class RecordRepository:
                 JOIN LATERAL jsonb_array_elements_text(COALESCE(r.payload_json->'tags', '[]'::jsonb)) AS tag(value) ON TRUE
                 WHERE lower(tag.value) IN ({tag_placeholders})
                   {lib_clause}
-                  AND r.status = ?
+                  AND r.status IN ({status_ph})
                 GROUP BY r.record_id
                 ORDER BY match_count DESC, r.record_id ASC
                 LIMIT ?
@@ -972,14 +986,14 @@ class RecordRepository:
                 JOIN json_each(r.payload_json, '$.tags') AS tag
                 WHERE lower(tag.value) IN ({tag_placeholders})
                   {lib_clause}
-                  AND r.status = ?
+                  AND r.status IN ({status_ph})
                 GROUP BY r.record_id
                 ORDER BY match_count DESC, r.record_id ASC
                 LIMIT ?
             """
 
         with get_connection() as conn:
-            rows = conn.execute(sql, params + lib_params + [status, limit]).fetchall()
+            rows = conn.execute(sql, params + lib_params + [*statuses, limit]).fetchall()
         return [(row["record_id"], int(row["match_count"])) for row in rows]
 
     def get_embeddings_batch(

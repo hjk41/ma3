@@ -11,6 +11,19 @@ from app.services.scoring import score_record
 from app.services.perf_service import current_trace, perf_stage
 
 
+# Statuses that must never surface in agent-facing search. ``stale`` and
+# ``superseded`` are intentionally NOT excluded: they remain discoverable but
+# are soft-decayed in scoring (see scoring.STATUS_DECAY) so newer/active
+# knowledge ranks above them while outdated knowledge can still serve as a
+# last-resort fallback and stays auditable.
+_SEARCH_EXCLUDED_STATUSES = {
+    RecordStatus.draft,
+    RecordStatus.invalid,
+    RecordStatus.archived,
+    RecordStatus.quarantine,
+}
+
+
 def search_records(payload: SearchQuery, accessible_library_ids: set[str]) -> SearchResponse:
     record_repo = RecordRepository()
     feedback_repo = FeedbackRepository()
@@ -83,7 +96,7 @@ def search_records(payload: SearchQuery, accessible_library_ids: set[str]) -> Se
     # ── Stage 3: Filter, batch-load graph context, score and classify ─────────
     eligible_records = []
     for record in records:
-        if record.status != RecordStatus.active:
+        if record.status in _SEARCH_EXCLUDED_STATUSES:
             continue
         exact_tag_count = exact_tag_match_counts.get(record.record_id, 0)
         if record.verification_level == VerificationLevel.l0 and exact_tag_count < 3:

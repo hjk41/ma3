@@ -11,6 +11,18 @@ class RecordStatus(str, Enum):
     quarantine = "quarantine"
 
 
+# Statuses eligible to appear in agent-facing search. ``active`` ranks normally;
+# ``stale`` / ``superseded`` remain discoverable (so outdated knowledge can serve
+# as a fallback and stays auditable) but are soft-decayed in scoring
+# (see services.scoring.STATUS_DECAY). Every other status is filtered out at the
+# candidate-retrieval layer (FTS + exact-tag) and never reaches scoring.
+SEARCHABLE_RECORD_STATUSES: tuple[RecordStatus, ...] = (
+    RecordStatus.active,
+    RecordStatus.stale,
+    RecordStatus.superseded,
+)
+
+
 class VerificationLevel(str, Enum):
     l0 = "L0"
     l1 = "L1"

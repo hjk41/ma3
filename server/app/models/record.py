@@ -68,6 +68,22 @@ class RejectRequest(BaseModel):
     review_note: str | None = None
 
 
+class StaleRequest(BaseModel):
+    """Flag a record as outdated (soft-decayed in search, not deleted)."""
+    review_note: str | None = None
+
+
+class SupersedeRequest(BaseModel):
+    """Mark a record as superseded by a newer one; links them via a relation."""
+    superseded_by: str
+    review_note: str | None = None
+
+
+class RestoreRequest(BaseModel):
+    """Reverse a stale/superseded marking, returning the record to active."""
+    review_note: str | None = None
+
+
 class Record(RecordCreate):
     record_id: str
     library_id: str | None = None

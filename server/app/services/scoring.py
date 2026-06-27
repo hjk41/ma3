@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING
 
-from app.models.enums import RiskLevel, VerificationLevel
+from app.models.enums import RecordStatus, RiskLevel, VerificationLevel
 from app.models.feedback import Feedback
 from app.models.query import SearchQuery
 from app.models.record import Record
@@ -27,6 +27,18 @@ RISK_PENALTY = {
     RiskLevel.medium: 1.0,
     RiskLevel.high: 3.0,
     RiskLevel.critical: 10.0,
+}
+
+
+# Soft search decay for lifecycle states. ``active`` ranks normally; ``stale``
+# and ``superseded`` records remain discoverable (so they can serve as a
+# fallback and stay auditable) but are pushed down the ranking. Statuses that
+# must never surface (draft/invalid/archived/quarantine) are filtered earlier
+# in ``search_service`` and are intentionally absent from this map.
+STATUS_DECAY = {
+    RecordStatus.active: 0.0,
+    RecordStatus.stale: 4.0,
+    RecordStatus.superseded: 8.0,
 }
 
 
@@ -143,6 +155,20 @@ def conflict_penalty(relations: list[RecordRelation]) -> float:
     return float(
         sum(1 for r in relations if r.relation_type == RelationType.conflicts_with)
     )
+
+
+def status_decay_penalty(record: Record) -> tuple[float, list[str]]:
+    """Soft-decay penalty for lifecycle status (stale/superseded).
+
+    Returns a positive penalty to subtract from the record's score plus an
+    explanation string. ``active`` records (and any status not in
+    ``STATUS_DECAY``) incur no penalty.
+    """
+    penalty = STATUS_DECAY.get(record.status, 0.0)
+    if penalty <= 0:
+        return 0.0, []
+    status_label = record.status.value if hasattr(record.status, "value") else str(record.status)
+    return penalty, [f"status decay: {status_label} (-{penalty:.1f})"]
 
 
 def not_applicable_penalty(query: SearchQuery, record: Record) -> tuple[float, list[str]]:
@@ -264,6 +290,10 @@ def score_record(
     total += feedback_score(feedback_items)
     total -= RISK_PENALTY[record.risk_level] * 2
     total -= conflict_penalty(relations or []) * 2
+
+    status_penalty, status_reasons = status_decay_penalty(record)
+    total -= status_penalty
+    reasons.extend(status_reasons)
 
     na_penalty, na_reasons = not_applicable_penalty(query, record)
     total -= na_penalty
