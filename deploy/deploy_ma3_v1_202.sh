@@ -60,9 +60,9 @@ MA3_DEV_AUTH=1
 MA3_DEV_API_KEY=ma3dev
 MA3_PORT=\${PORT}
 MA3_DATABASE_URL=\${MA3_DATABASE_URL}
-MA3_DISABLE_EMBEDDINGS=1
 MA3_INSTANCE_ID=ma3-v1-202
 MA3_HF_HOME=\${LEGACY_DIR}/data/hf-cache
+HF_HOME=\${LEGACY_DIR}/data/hf-cache
 HF_HUB_OFFLINE=1
 ENV
 
@@ -79,10 +79,22 @@ nohup .venv/bin/python -m uvicorn app.main:app \
   --host 0.0.0.0 --port "\${PORT}" --app-dir . \
   > /tmp/ma3-v1-uvicorn.log 2>&1 &
 echo \$! > "\${REMOTE_DIR}/ma3.pid"
-sleep 4
 
 echo "==> healthz"
-curl -sf "http://127.0.0.1:\${PORT}/healthz" | python3 -m json.tool
+ready=0
+for _ in \$(seq 1 60); do
+  if curl -sf "http://127.0.0.1:\${PORT}/healthz" >/tmp/ma3-healthz.json 2>/dev/null; then
+    ready=1
+    break
+  fi
+  sleep 2
+done
+if [[ "\$ready" -ne 1 ]]; then
+  echo "healthz not ready after 120s" >&2
+  tail -40 /tmp/ma3-v1-uvicorn.log >&2 || true
+  exit 1
+fi
+python3 -m json.tool /tmp/ma3-healthz.json
 
 echo "==> Integration verification"
 export MA3_BASE_URL="http://127.0.0.1:\${PORT}"

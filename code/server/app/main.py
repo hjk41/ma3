@@ -14,6 +14,10 @@ from app.storage.db import initialize_database
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
     initialize_database()
+    if not settings.disable_embeddings:
+        from app.services.embedding_service import warm_up_model
+
+        warm_up_model()
     yield
 
 

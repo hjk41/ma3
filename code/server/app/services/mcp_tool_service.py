@@ -110,7 +110,12 @@ def _context_payload(auth: McpAuthContext, payload: Ma3ContextPayload, *, explai
         "library_ids": sorted(lib_ids),
     }
     if explain:
-        body["explain"] = {"mode": "skeleton", "hits": len(hits), "note": "FTS-like LIKE search in v1 skeleton"}
+        mode = "like" if settings.disable_embeddings else ("hybrid_fts_vector" if is_postgres() else "vector_like")
+        body["explain"] = {
+            "mode": mode,
+            "hits": len(hits),
+            "embeddings_enabled": not settings.disable_embeddings,
+        }
     return body
 
 
@@ -138,6 +143,8 @@ def call_mcp_tool(name: str, arguments: dict[str, Any], auth: McpAuthContext) ->
             "service_version": settings.service_version,
             "records": db.count_records(),
             "embeddings_enabled": not settings.disable_embeddings,
+            "embeddings_indexed": db.count_embeddings(),
+            "search_mode": "hybrid_fts_vector" if not settings.disable_embeddings and is_postgres() else "like",
             "database": "postgresql" if is_postgres() else "sqlite",
             "tools": [t.name for t in list_mcp_tools()],
         }

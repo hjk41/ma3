@@ -12,6 +12,29 @@ def test_healthz():
     assert r.json()["status"] == "ok"
 
 
+def test_observatory_stats_json():
+    r = client.get("/ui/observatory/stats.json")
+    assert r.status_code == 200
+    stats = r.json()
+    assert "organizations" in stats
+    assert "libraries" in stats
+    assert "users" in stats
+    assert "knowledge" in stats
+    assert stats["organizations"]["count"] >= 1
+    assert stats["libraries"]["count"] >= 1
+    assert stats["knowledge"]["records"]["total"] >= 0
+
+
+def test_observatory_home_shows_stats():
+    r = client.get("/ui/observatory/")
+    assert r.status_code == 200
+    text = r.text
+    assert "Organizations" in text
+    assert "Libraries" in text
+    assert "Users" in text
+    assert "知识分布" in text
+
+
 def test_mcp_tools_list():
     r = client.post("/mcp", json={"jsonrpc": "2.0", "id": 1, "method": "tools/list", "params": {}})
     assert r.status_code == 200

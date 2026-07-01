@@ -126,6 +126,58 @@ def initialize_database() -> None:
         )
         _execute(conn, "CREATE INDEX IF NOT EXISTS idx_records_library_status ON records(library_id, status)")
         _execute(conn, "CREATE INDEX IF NOT EXISTS idx_records_case ON records(case_id)")
+        _execute(
+            conn,
+            """
+            CREATE TABLE IF NOT EXISTS principals (
+              id TEXT PRIMARY KEY,
+              kind TEXT NOT NULL,
+              display_name TEXT NOT NULL,
+              created_at TEXT NOT NULL
+            )
+            """,
+        )
+        _execute(
+            conn,
+            """
+            CREATE TABLE IF NOT EXISTS record_embeddings (
+              record_id TEXT PRIMARY KEY,
+              embedding BLOB NOT NULL,
+              model TEXT NOT NULL,
+              created_at TEXT NOT NULL
+            )
+            """,
+        )
+        if is_postgres():
+            _execute(
+                conn,
+                """
+                CREATE TABLE IF NOT EXISTS record_search_index (
+                  record_id TEXT PRIMARY KEY,
+                  library_id TEXT,
+                  status TEXT NOT NULL,
+                  search_text TEXT NOT NULL DEFAULT '',
+                  tags_text TEXT NOT NULL DEFAULT '',
+                  search_tsv TSVECTOR NOT NULL,
+                  tags_tsv TSVECTOR NOT NULL,
+                  updated_at TEXT NOT NULL
+                )
+                """,
+            )
+        else:
+            _execute(
+                conn,
+                """
+                CREATE TABLE IF NOT EXISTS record_search_index (
+                  record_id TEXT PRIMARY KEY,
+                  library_id TEXT,
+                  status TEXT NOT NULL,
+                  search_text TEXT NOT NULL DEFAULT '',
+                  tags_text TEXT NOT NULL DEFAULT '',
+                  updated_at TEXT NOT NULL
+                )
+                """,
+            )
 
         if not _fetchone(conn, "SELECT 1 FROM organizations WHERE id = ?", (settings.default_org_id,)):
             _execute(
@@ -152,7 +204,7 @@ def _search_tokens(problem: str) -> list[str]:
     return tokens[:10] or [problem[:200]]
 
 
-def search_records(library_ids: set[str], problem: str, limit: int = 20) -> list[dict[str, Any]]:
+def _like_search_records(library_ids: set[str], problem: str, limit: int = 20) -> list[dict[str, Any]]:
     if not library_ids:
         return []
     placeholders = ",".join("?" for _ in library_ids)
@@ -175,6 +227,210 @@ def search_records(library_ids: set[str], problem: str, limit: int = 20) -> list
     with connect() as conn:
         rows = _fetchall(conn, query, params)
     return [_row_dict(r) for r in rows]
+
+
+def _fetch_records_by_ids(record_ids: list[str], library_ids: set[str]) -> list[dict[str, Any]]:
+    if not record_ids or not library_ids:
+        return []
+    id_placeholders = ",".join("?" for _ in record_ids)
+    lib_placeholders = ",".join("?" for _ in library_ids)
+    query = f"""
+        SELECT id, library_id, case_id, status, problem, outcome, result_summary, created_at
+        FROM records
+        WHERE id IN ({id_placeholders})
+          AND library_id IN ({lib_placeholders})
+          AND status = 'active'
+    """
+    with connect() as conn:
+        rows = _fetchall(conn, query, [*record_ids, *library_ids])
+    return [_row_dict(r) for r in rows]
+
+
+def _list_active_record_ids(library_ids: set[str], limit: int = 500) -> set[str]:
+    if not library_ids:
+        return set()
+    placeholders = ",".join("?" for _ in library_ids)
+    query = f"""
+        SELECT id
+        FROM records
+        WHERE library_id IN ({placeholders}) AND status = 'active'
+        ORDER BY created_at DESC
+        LIMIT ?
+    """
+    with connect() as conn:
+        rows = _fetchall(conn, query, [*library_ids, limit])
+    return {str(row["id"]) for row in rows}
+
+
+def get_embeddings_batch(record_ids: set[str]) -> dict[str, Any]:
+    if not record_ids:
+        return {}
+    from app.services.embedding_service import deserialize_embedding
+
+    placeholders = ",".join("?" for _ in record_ids)
+    with connect() as conn:
+        rows = _fetchall(
+            conn,
+            f"SELECT record_id, embedding FROM record_embeddings WHERE record_id IN ({placeholders})",
+            list(record_ids),
+        )
+    return {str(row["record_id"]): deserialize_embedding(row["embedding"]) for row in rows}
+
+
+def count_embeddings() -> int:
+    with connect() as conn:
+        if not _table_exists(conn, "record_embeddings"):
+            return 0
+        row = _fetchone(conn, "SELECT COUNT(*) AS c FROM record_embeddings")
+    return int(row["c"])
+
+
+def _record_index_text(
+    *,
+    problem: str,
+    outcome: str,
+    result_summary: str,
+    payload: dict[str, Any],
+) -> tuple[str, str]:
+    search_text = " ".join(part for part in [problem, outcome, result_summary] if part)
+    tags = payload.get("tags") or []
+    tags_text = " ".join(str(tag) for tag in tags)
+    return search_text, tags_text
+
+
+def upsert_record_search_index(
+    *,
+    record_id: str,
+    library_id: str,
+    status: str,
+    search_text: str,
+    tags_text: str,
+    updated_at: str,
+) -> None:
+    with connect() as conn:
+        if is_postgres():
+            _execute(
+                conn,
+                """
+                INSERT INTO record_search_index (
+                    record_id, library_id, status, search_text, tags_text,
+                    search_tsv, tags_tsv, updated_at
+                )
+                VALUES (?, ?, ?, ?, ?, to_tsvector('simple', ?), to_tsvector('simple', ?), ?)
+                ON CONFLICT (record_id) DO UPDATE SET
+                    library_id = EXCLUDED.library_id,
+                    status = EXCLUDED.status,
+                    search_text = EXCLUDED.search_text,
+                    tags_text = EXCLUDED.tags_text,
+                    search_tsv = EXCLUDED.search_tsv,
+                    tags_tsv = EXCLUDED.tags_tsv,
+                    updated_at = EXCLUDED.updated_at
+                """,
+                (
+                    record_id,
+                    library_id,
+                    status,
+                    search_text,
+                    tags_text,
+                    search_text,
+                    tags_text,
+                    updated_at,
+                ),
+            )
+            return
+        _execute(
+            conn,
+            """
+            INSERT INTO record_search_index (
+                record_id, library_id, status, search_text, tags_text, updated_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?)
+            ON CONFLICT (record_id) DO UPDATE SET
+                library_id = excluded.library_id,
+                status = excluded.status,
+                search_text = excluded.search_text,
+                tags_text = excluded.tags_text,
+                updated_at = excluded.updated_at
+            """,
+            (record_id, library_id, status, search_text, tags_text, updated_at),
+        )
+
+
+def upsert_record_embedding(*, record_id: str, embedding: bytes, model: str, created_at: str) -> None:
+    with connect() as conn:
+        if is_postgres():
+            _execute(
+                conn,
+                """
+                INSERT INTO record_embeddings (record_id, embedding, model, created_at)
+                VALUES (?, ?, ?, ?)
+                ON CONFLICT (record_id) DO UPDATE SET
+                    embedding = EXCLUDED.embedding,
+                    model = EXCLUDED.model,
+                    created_at = EXCLUDED.created_at
+                """,
+                (record_id, embedding, model, created_at),
+            )
+            return
+        _execute(
+            conn,
+            """
+            INSERT INTO record_embeddings (record_id, embedding, model, created_at)
+            VALUES (?, ?, ?, ?)
+            ON CONFLICT (record_id) DO UPDATE SET
+                embedding = excluded.embedding,
+                model = excluded.model,
+                created_at = excluded.created_at
+            """,
+            (record_id, embedding, model, created_at),
+        )
+
+
+def index_record(
+    *,
+    record_id: str,
+    library_id: str,
+    status: str,
+    problem: str,
+    outcome: str,
+    result_summary: str,
+    payload: dict[str, Any],
+    created_at: str,
+) -> None:
+    from app.core.config import settings as app_settings
+    from app.services.embedding_service import embed_record_text, serialize_embedding
+
+    search_text, tags_text = _record_index_text(
+        problem=problem,
+        outcome=outcome,
+        result_summary=result_summary,
+        payload=payload,
+    )
+    upsert_record_search_index(
+        record_id=record_id,
+        library_id=library_id,
+        status=status,
+        search_text=search_text,
+        tags_text=tags_text,
+        updated_at=created_at,
+    )
+    if app_settings.disable_embeddings:
+        return
+    vector = embed_record_text(
+        problem=problem,
+        outcome=outcome,
+        result_summary=result_summary,
+        payload=payload,
+    )
+    if vector is None:
+        return
+    model_name = app_settings.embedding_model.rsplit("/", 1)[-1]
+    upsert_record_embedding(
+        record_id=record_id,
+        embedding=serialize_embedding(vector),
+        model=model_name,
+        created_at=created_at,
+    )
 
 
 def insert_record(
@@ -211,6 +467,16 @@ def insert_record(
                 """,
                 (rid, library_id, case_id, status, problem, outcome, result_summary, raw, now),
             )
+    index_record(
+        record_id=rid,
+        library_id=library_id,
+        status=status,
+        problem=problem,
+        outcome=outcome,
+        result_summary=result_summary,
+        payload=payload,
+        created_at=now,
+    )
     return {"record_id": rid, "library_id": library_id, "case_id": case_id, "status": status, "created_at": now}
 
 
@@ -290,7 +556,157 @@ def count_records() -> int:
     return int(row["c"])
 
 
+def _table_exists(conn: Any, table_name: str) -> bool:
+    if is_postgres():
+        row = _fetchone(
+            conn,
+            """
+            SELECT 1
+            FROM information_schema.tables
+            WHERE table_schema = 'public' AND table_name = ?
+            """,
+            (table_name,),
+        )
+    else:
+        row = _fetchone(
+            conn,
+            "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?",
+            (table_name,),
+        )
+    return row is not None
+
+
+def _principal_id_column(conn: Any) -> str:
+    if is_postgres():
+        row = _fetchone(
+            conn,
+            """
+            SELECT column_name
+            FROM information_schema.columns
+            WHERE table_schema = 'public' AND table_name = 'principals'
+              AND column_name IN ('principal_id', 'id')
+            ORDER BY CASE column_name WHEN 'principal_id' THEN 0 ELSE 1 END
+            LIMIT 1
+            """,
+        )
+        return str(row["column_name"]) if row else "id"
+    return "id"
+
+
+def _list_principals(conn: Any) -> tuple[int, list[dict[str, Any]]]:
+    if not _table_exists(conn, "principals"):
+        return 0, []
+    count_row = _fetchone(conn, "SELECT COUNT(*) AS c FROM principals")
+    id_col = _principal_id_column(conn)
+    rows = _fetchall(
+        conn,
+        f"""
+        SELECT {id_col} AS id, kind, display_name, created_at
+        FROM principals
+        ORDER BY created_at DESC
+        LIMIT 50
+        """,
+    )
+    return int(count_row["c"]), [_row_dict(r) for r in rows]
+
+
+def get_system_stats() -> dict[str, Any]:
+    with connect() as conn:
+        organizations = [_row_dict(r) for r in _fetchall(conn, "SELECT id, name FROM organizations ORDER BY name")]
+        libraries = [_row_dict(r) for r in _fetchall(conn, "SELECT id, org_id, name, visibility FROM libraries ORDER BY name")]
+
+        cases_row = _fetchone(conn, "SELECT COUNT(*) AS c FROM cases")
+        principals_count, principals = _list_principals(conn)
+
+        status_rows = _fetchall(conn, "SELECT status, COUNT(*) AS c FROM records GROUP BY status")
+        by_status = {str(r["status"]): int(r["c"]) for r in status_rows}
+        total_records = sum(by_status.values())
+
+        outcome_rows = _fetchall(
+            conn,
+            "SELECT outcome, COUNT(*) AS c FROM records GROUP BY outcome ORDER BY c DESC, outcome",
+        )
+        by_outcome = [{"outcome": str(r["outcome"]), "count": int(r["c"])} for r in outcome_rows]
+
+        if is_postgres():
+            task_rows = _fetchall(
+                conn,
+                """
+                SELECT COALESCE(payload_json->>'task_type', 'unknown') AS task_type, COUNT(*) AS c
+                FROM records
+                GROUP BY 1
+                ORDER BY c DESC, task_type
+                """,
+            )
+        else:
+            task_rows = _fetchall(
+                conn,
+                """
+                SELECT COALESCE(json_extract(payload_json, '$.task_type'), 'unknown') AS task_type,
+                       COUNT(*) AS c
+                FROM records
+                GROUP BY 1
+                ORDER BY c DESC, task_type
+                """,
+            )
+        by_task_type = [{"task_type": str(r["task_type"]), "count": int(r["c"])} for r in task_rows]
+
+        lib_record_rows = _fetchall(
+            conn,
+            "SELECT library_id, status, COUNT(*) AS c FROM records GROUP BY library_id, status",
+        )
+        lib_case_rows = _fetchall(conn, "SELECT library_id, COUNT(*) AS c FROM cases GROUP BY library_id")
+        org_names = {o["id"]: o["name"] for o in organizations}
+
+    lib_records: dict[str, dict[str, int]] = {}
+    for row in lib_record_rows:
+        lid = str(row["library_id"])
+        lib_records.setdefault(lid, {})
+        lib_records[lid][str(row["status"])] = int(row["c"])
+
+    lib_cases = {str(r["library_id"]): int(r["c"]) for r in lib_case_rows}
+
+    library_stats = []
+    for lib in libraries:
+        lid = lib["id"]
+        rec = lib_records.get(lid, {})
+        rec_total = sum(rec.values())
+        library_stats.append(
+            {
+                **lib,
+                "org_name": org_names.get(lib["org_id"], lib["org_id"]),
+                "cases": lib_cases.get(lid, 0),
+                "records": {
+                    "total": rec_total,
+                    "by_status": rec,
+                },
+            }
+        )
+
+    return {
+        "organizations": {"count": len(organizations), "items": organizations},
+        "libraries": {"count": len(libraries), "items": library_stats},
+        "users": {
+            "count": principals_count,
+            "items": principals,
+            "note": "OIDC 用户与 API key 持有者登记在 principals 表；dev_auth 管理员不计入。",
+        },
+        "knowledge": {
+            "cases": int(cases_row["c"]),
+            "records": {
+                "total": total_records,
+                "by_status": by_status,
+            },
+            "by_outcome": by_outcome,
+            "by_task_type": by_task_type,
+        },
+    }
+
+
 def all_library_ids() -> set[str]:
     with connect() as conn:
         rows = _fetchall(conn, "SELECT id FROM libraries")
     return {r["id"] for r in rows}
+
+
+from app.storage.search import search_records  # noqa: E402

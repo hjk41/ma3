@@ -47,6 +47,9 @@ class Settings:
     dev_auth: bool = field(default_factory=lambda: _env_bool("MA3_DEV_AUTH", True))
     dev_api_key: str = field(default_factory=lambda: os.environ.get("MA3_DEV_API_KEY", "ma3dev"))
     disable_embeddings: bool = field(default_factory=lambda: _env_bool("MA3_DISABLE_EMBEDDINGS", False))
+    embedding_model: str = field(
+        default_factory=lambda: _env_str("MA3_EMBEDDING_MODEL", "sentence-transformers/all-MiniLM-L6-v2")
+    )
 
     default_org_id: str = "org_default"
     default_library_id: str = "lib_default"
