@@ -1,0 +1,20 @@
+services:
+  runner:
+    build:
+      context: .
+      dockerfile: Dockerfile.runner
+      args:
+        HTTP_PROXY: ${HTTP_PROXY:-}
+        HTTPS_PROXY: ${HTTPS_PROXY:-}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    environment:
+      MA3_BASE_URL: ${MA3_HOST_MA3_URL:-http://host.docker.internal:8000}
+      MA3_API_KEY: ma3dev
+      MA3_EXPECT_SKILL_VERSION: ${MA3_SKILL_VERSION:-1.0.0}
+      VERIFY_PHASE: ${VERIFY_PHASE:-all}
+    volumes:
+      - agent-homes:/agents
+
+volumes:
+  agent-homes:

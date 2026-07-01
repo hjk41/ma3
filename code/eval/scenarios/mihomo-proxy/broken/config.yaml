@@ -1,0 +1,19 @@
+# Broken: wrong mixed-port (7899) and allow-lan false blocks cross-container access
+mixed-port: 7899
+allow-lan: false
+bind-address: "127.0.0.1"
+mode: rule
+log-level: info
+
+proxies:
+  - name: stub
+    type: direct
+
+proxy-groups:
+  - name: PROXY
+    type: select
+    proxies:
+      - stub
+
+rules:
+  - MATCH,PROXY

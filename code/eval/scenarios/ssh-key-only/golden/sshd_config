@@ -1,0 +1,5 @@
+Port 22
+PermitRootLogin no
+PasswordAuthentication no
+PubkeyAuthentication yes
+AuthorizedKeysFile /home/eval/.ssh/authorized_keys

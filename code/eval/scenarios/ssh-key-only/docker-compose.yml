@@ -1,0 +1,22 @@
+services:
+  sshd:
+    image: alpine:3.19
+    ports:
+      - "18022:22"
+    volumes:
+      - ./workspace/sshd_config:/etc/ssh/sshd_config:ro
+      - ./workspace/authorized_keys:/mnt/authorized_keys:ro
+    entrypoint:
+      - sh
+      - -c
+      - |
+        apk add --no-cache openssh-server >/dev/null
+        adduser -D eval
+        passwd -u eval 2>/dev/null || true
+        mkdir -p /home/eval/.ssh
+        cp /mnt/authorized_keys /home/eval/.ssh/authorized_keys
+        chown -R eval:eval /home/eval/.ssh
+        chmod 700 /home/eval/.ssh
+        chmod 600 /home/eval/.ssh/authorized_keys
+        ssh-keygen -A
+        exec /usr/sbin/sshd -D -e

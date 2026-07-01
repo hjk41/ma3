@@ -1,0 +1,45 @@
+FROM node:20-bookworm-slim
+
+ARG HTTP_PROXY
+ARG HTTPS_PROXY
+
+RUN http_proxy= https_proxy= HTTP_PROXY= HTTPS_PROXY= ALL_PROXY= \
+    apt-get update \
+    && apt-get install -y --no-install-recommends curl ca-certificates python3 jq \
+    && rm -rf /var/lib/apt/lists/*
+
+ENV NPM_CONFIG_PREFIX=/opt/npm-global
+ENV PATH=/opt/npm-global/bin:/root/.local/bin:/usr/local/bin:${PATH}
+
+ARG HTTP_PROXY
+ARG HTTPS_PROXY
+RUN HTTP_PROXY="${HTTP_PROXY}" HTTPS_PROXY="${HTTPS_PROXY}" \
+    npm install -g @anthropic-ai/claude-code @openai/codex
+
+ARG HTTP_PROXY
+ARG HTTPS_PROXY
+RUN HTTP_PROXY="${HTTP_PROXY}" HTTPS_PROXY="${HTTPS_PROXY}" \
+    curl -fsSL https://cursor.com/install | bash \
+    && (test -x /root/.local/bin/cursor-agent || test -x /root/.local/bin/cursor || test -x /root/.local/bin/agent)
+
+COPY scripts/install_droid.sh /tmp/install_droid.sh
+COPY binaries /scenario/binaries
+RUN chmod +x /tmp/install_droid.sh && /tmp/install_droid.sh /opt/npm-global/bin/droid \
+    && command -v droid >/dev/null
+
+WORKDIR /scenario
+
+COPY scripts /scenario/scripts
+COPY profiles /scenario/profiles
+
+RUN chmod +x /scenario/scripts/*.sh \
+    && claude --version \
+    && codex --version \
+    && (cursor-agent --version || agent --version || cursor --version || true) \
+    && droid --version
+
+ENV MA3_BASE_URL=http://ma3:8000
+ENV MA3_API_KEY=ma3dev
+ENV AGENTS_ROOT=/agents
+
+ENTRYPOINT ["/scenario/scripts/verify.sh"]

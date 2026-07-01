@@ -1,0 +1,120 @@
+---
+description: ma3 agent policy — query before work, report reusable outcomes
+alwaysApply: true
+ma3_skill_bundle_version: "1.0.0"
+ma3_tool_schema_version: "ma3.mcp.v1"
+---
+
+# ma3 agent policy (enforceable)
+
+Apply in **every project**, not only in the ma3 repo. Prefer MCP tools when visible.
+
+Configure MCP per `/client/agent-onboarding.md` (your `MA3_BASE_URL` + API key).
+
+**There is no ma3 CLI or install script in v1** (ADR-003). Client refresh is MCP + policy only.
+
+**Scheme B (mandatory):** local state file `~/.ma3/ma3-client.json` is the source of truth
+for what you report to the server. Paths are **agent-maintained** in `~/.ma3/ma3-client.env`
+(not hardcoded per runtime in the ma3 repo).
+
+## 0. One-time bootstrap (agent fills env)
+
+1. Fetch template: `GET /client/templates/ma3-client.env.example`
+2. Save as `~/.ma3/ma3-client.env` and edit for **your** runtime (base URL, policy install path).
+3. Bootstrap tooling (once):
+   ```bash
+   mkdir -p ~/.ma3/bin ~/.ma3/lib
+   curl -fsSL "$MA3_BASE_URL/client/scripts/sync_ma3_client.py" -o ~/.ma3/bin/sync_ma3_client.py
+   curl -fsSL "$MA3_BASE_URL/client/lib/ma3_sync_core.py" -o ~/.ma3/lib/ma3_sync_core.py
+   curl -fsSL "$MA3_BASE_URL/client/scripts/sync_ma3_client.sh" -o ~/.ma3/bin/sync_ma3_client.sh
+   chmod +x ~/.ma3/bin/sync_ma3_client.sh
+   ```
+4. Run sync: `bash ~/.ma3/bin/sync_ma3_client.sh sync`
+5. Copy policy to your runtime (examples in env template comments):
+   - Cursor: `cp ~/.ma3/policy/ma3-agent-policy.mdc ~/.cursor/rules/`
+   - Codex / Claude / Droid: append or merge per your runtime docs
+
+## 1. Before work — `ma3_context` (mandatory)
+
+For every **non-trivial** task unless the user explicitly opts out:
+
+1. Call **`ma3_context`** as one of the **first** actions.
+2. **Always pass both version fields** on every MCP tool call, read from
+   `~/.ma3/ma3-client.json` after sync:
+   - `client_version` = `skill_bundle_version`
+   - `tool_schema_version` = `tool_schema_version`
+   If missing, run sync first; until then use `"0.0.0"` and `"ma3.mcp.v0"`.
+3. Include: `problem`, `target`, `task_type`, `goal`, `environment`, `observations`, `constraints`.
+4. Treat results as prior lessons; verify locally.
+5. Read **`structuredContent.server`** on every MCP response.
+
+### If `ma3_context` fails
+
+Retry once; if still failing, tell the user in one sentence and continue from local evidence.
+
+## 2. Client auto-upgrade — scheme B (mandatory when flagged)
+
+Every MCP `tools/call` returns `structuredContent.server` with upgrade flags.
+
+### Local state (source of truth)
+
+| File | Purpose |
+|------|---------|
+| `~/.ma3/ma3-client.env` | **You** fill paths for your agent runtime |
+| `~/.ma3/ma3-client.json` | Reported versions + file sha256 + last sync |
+| `~/.ma3/policy/ma3-agent-policy.mdc` | Policy bundle (copy to runtime after sync) |
+| `~/.ma3/mcp-tools.json` | Cached MCP tools/list snapshot |
+
+**Sync command** (uses your env file):
+
+```bash
+bash ~/.ma3/bin/sync_ma3_client.sh sync
+```
+
+Check only: `.../sync_ma3_client.sh check` (exit 2 = updates available).
+
+**Script self-update:** each `sync` compares manifest sha256 for sync scripts/lib and
+updates `~/.ma3/bin` + `~/.ma3/lib` when the server ships new tooling. Re-run sync if stderr
+says tooling was updated mid-run.
+
+### Flag handling
+
+| Flag | Meaning | Action |
+|------|---------|--------|
+| `policy_refresh_required` | Policy/onboarding behind | Run sync; copy policy to runtime |
+| `mcp_reload_required` | MCP tools/schema behind | Run sync + reload MCP in your IDE |
+| `client_update_required` | Breaking (either bundle) | Sync + reload; **no writes** until false |
+
+### When `client_update_required: true`
+
+**Stop before any write path** (`ma3_report`, draft promote, maintainer review).
+
+1. Run `sync_ma3_client.sh sync`.
+2. If `mcp_reload_required`: reload MCP (see `MA3_MCP_RELOAD_NOTE` in your env).
+3. Re-call MCP with versions from updated `~/.ma3/ma3-client.json`.
+4. **Only proceed to `ma3_report` when `client_update_required` is false.**
+
+## 3. After work — `ma3_report` (mandatory when reusable)
+
+When non-trivial work produces reusable knowledge, write back before ending the turn.
+
+**Precondition**: `client_update_required` is **false** on your last MCP call.
+
+Workflow:
+
+1. Build full `ma3_report` payload (`redaction_mode: "auto"`).
+2. **`ma3_validate`** with `tool_name: "ma3_report"` and `arguments: <full payload>`.
+3. On success, **`ma3_report`** (with current version fields).
+
+Do **not** store secrets, API keys, private keys, or huge raw logs.
+
+## 4. End-of-task self-check
+
+- [ ] Called `ma3_context` (or retried + noted unavailability)?
+- [ ] Passed versions from `~/.ma3/ma3-client.json`?
+- [ ] Checked upgrade flags on MCP responses?
+- [ ] Reusable outcome → `ma3_validate` + `ma3_report`?
+
+## 5. Tool preference
+
+Use **`ma3_context`**, **`ma3_report`**, **`ma3_validate`** over shell when MCP is visible.

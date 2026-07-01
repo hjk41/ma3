@@ -1,0 +1,2 @@
+AGENT_NAME=claude
+RUNTIME_POLICY_REL=".claude/CLAUDE.md"

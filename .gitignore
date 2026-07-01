@@ -1,22 +1,36 @@
-# Local repo-specific Python virtualenv for tests/dev
+# Python
 .venv/
 *.pyc
 __pycache__/
+.pytest_cache/
+*.egg-info/
+
+# Local env / secrets
 .env
-server/data/*.db
-server/.tmp*/
+**/.env
 client/.env
-tmp-*.json
-*_ingest_*.json
+
+# SQLite dev data
+code/server/data/*.db
+server/data/*.db
 
 # Eval harness — secrets and run output stay local
 eval/secrets/*.env
 eval/secrets/mihomo/
 eval/results/*
 !eval/results/.gitignore
-/home/hct/ma3-eval/secrets/
+code/eval/secrets/*.env
+code/eval/secrets/mihomo/
+code/eval/results/*
+!code/eval/results/.gitignore
 
+# IDE / agent local
+.claude/
+.cursor/
+tmp-*.json
+*_ingest_*.json
 
-server/app/web/node_modules/
-server/app/web/dist/
-server/app/web/*.tsbuildinfo
+# Node (if added later)
+node_modules/
+dist/
+*.tsbuildinfo

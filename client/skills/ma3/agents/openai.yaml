@@ -1,4 +1,0 @@
-interface:
-  display_name: "马妈妈 (ma3)"
-  short_description: "Probe ma3, search records, and draft conservative write-backs"
-  default_prompt: "Use $ma3 or 马妈妈 to probe service health, search verified records before repeated exploration, and draft safe ma3 write-backs."
