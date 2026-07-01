@@ -39,15 +39,25 @@ def is_ancestor_or_self(candidate_lib_id: str, target_lib_id: str) -> bool:
 
 
 def _row_to_library(row) -> Library:
+    keys = row.keys() if hasattr(row, "keys") else ()
     return Library(
         library_id=row["library_id"],
         name=row["name"],
         description=row["description"],
         is_public=bool(row["is_public"]),
-        parent_library_id=row["parent_library_id"],
-        is_personal=bool(row["is_personal"]),
+        organization_id=row["organization_id"] if "organization_id" in keys else None,
+        parent_library_id=row["parent_library_id"] if "parent_library_id" in keys else None,
+        is_personal=bool(row["is_personal"]) if "is_personal" in keys else False,
         created_at=row["created_at"],
     )
+
+
+def _lib_cols() -> str:
+    from app.core.config import settings
+
+    if settings.api_version == "v4":
+        return "library_id, organization_id, name, description, is_public, created_at"
+    return "library_id, name, description, is_public, parent_library_id, is_personal, created_at"
 
 
 _LIB_COLS = "library_id, name, description, is_public, parent_library_id, is_personal, created_at"
@@ -66,13 +76,14 @@ def _load_json_list(raw) -> list[str] | None:
 
 
 def _row_to_principal(row) -> Principal:
+    keys = row.keys() if hasattr(row, "keys") else ()
     return Principal(
         principal_id=row["principal_id"],
         kind=row["kind"],
         display_name=row["display_name"],
         sso_user=row["sso_user"],
         created_at=row["created_at"],
-        is_admin=bool(row["is_admin"]),
+        is_admin=bool(row["is_admin"]) if "is_admin" in keys else False,
         metadata_json=_load_json_payload(row["metadata_json"] or "{}"),
     )
 
@@ -149,31 +160,57 @@ def _row_to_audit(row) -> AuthAuditEntry:
 
 class PrincipalRepository:
     def upsert(self, principal: Principal) -> Principal:
+        from app.core.config import settings
+
         with get_connection() as conn:
-            conn.execute(
-                _upsert(
-                    "principals",
-                    ["principal_id"],
-                    [
-                        "principal_id",
-                        "kind",
-                        "display_name",
-                        "sso_user",
-                        "created_at",
-                        "is_admin",
-                        "metadata_json",
-                    ],
-                ),
-                (
-                    principal.principal_id,
-                    principal.kind,
-                    principal.display_name,
-                    principal.sso_user,
-                    principal.created_at,
-                    principal.is_admin,
-                    _json_param(principal.metadata_json),
-                ),
-            )
+            if settings.api_version == "v4":
+                conn.execute(
+                    _upsert(
+                        "principals",
+                        ["principal_id"],
+                        [
+                            "principal_id",
+                            "kind",
+                            "display_name",
+                            "sso_user",
+                            "created_at",
+                            "metadata_json",
+                        ],
+                    ),
+                    (
+                        principal.principal_id,
+                        principal.kind if principal.kind in {"user", "service"} else "user",
+                        principal.display_name,
+                        principal.sso_user,
+                        principal.created_at,
+                        _json_param(principal.metadata_json),
+                    ),
+                )
+            else:
+                conn.execute(
+                    _upsert(
+                        "principals",
+                        ["principal_id"],
+                        [
+                            "principal_id",
+                            "kind",
+                            "display_name",
+                            "sso_user",
+                            "created_at",
+                            "is_admin",
+                            "metadata_json",
+                        ],
+                    ),
+                    (
+                        principal.principal_id,
+                        principal.kind,
+                        principal.display_name,
+                        principal.sso_user,
+                        principal.created_at,
+                        principal.is_admin,
+                        _json_param(principal.metadata_json),
+                    ),
+                )
         return principal
 
     def upsert_user(self, sso_user: str, display_name: str | None = None, *, is_admin: bool = False) -> Principal:
@@ -219,12 +256,16 @@ class PrincipalRepository:
         return found or principal
 
     def get(self, principal_id: str) -> Principal | None:
+        from app.core.config import settings
+
+        cols = (
+            "principal_id, kind, display_name, sso_user, created_at, metadata_json"
+            if settings.api_version == "v4"
+            else "principal_id, kind, display_name, sso_user, created_at, is_admin, metadata_json"
+        )
         with get_connection() as conn:
             row = conn.execute(
-                """
-                SELECT principal_id, kind, display_name, sso_user, created_at, is_admin, metadata_json
-                FROM principals WHERE principal_id = ?
-                """,
+                f"SELECT {cols} FROM principals WHERE principal_id = ?",
                 (principal_id,),
             ).fetchone()
         return _row_to_principal(row) if row else None
@@ -1094,36 +1135,63 @@ class RelationRepository:
 
 class LibraryRepository:
     def insert(self, library: Library) -> None:
+        from app.core.config import settings
+
         with get_connection() as conn:
-            conn.execute(
-                _upsert(
-                    "libraries",
-                    ["library_id"],
-                    [
-                        "library_id",
-                        "name",
-                        "description",
-                        "is_public",
-                        "parent_library_id",
-                        "is_personal",
-                        "created_at",
-                    ],
-                ),
-                (
-                    library.library_id,
-                    library.name,
-                    library.description,
-                    library.is_public,
-                    library.parent_library_id,
-                    library.is_personal,
-                    library.created_at,
-                ),
-            )
+            if settings.api_version == "v4":
+                conn.execute(
+                    _upsert(
+                        "libraries",
+                        ["library_id"],
+                        [
+                            "library_id",
+                            "organization_id",
+                            "name",
+                            "description",
+                            "is_public",
+                            "created_at",
+                        ],
+                    ),
+                    (
+                        library.library_id,
+                        library.organization_id,
+                        library.name,
+                        library.description,
+                        library.is_public,
+                        library.created_at,
+                    ),
+                )
+            else:
+                conn.execute(
+                    _upsert(
+                        "libraries",
+                        ["library_id"],
+                        [
+                            "library_id",
+                            "name",
+                            "description",
+                            "is_public",
+                            "parent_library_id",
+                            "is_personal",
+                            "created_at",
+                        ],
+                    ),
+                    (
+                        library.library_id,
+                        library.name,
+                        library.description,
+                        library.is_public,
+                        library.parent_library_id,
+                        library.is_personal,
+                        library.created_at,
+                    ),
+                )
 
     def get(self, library_id: str) -> Library | None:
+        cols = _lib_cols()
         with get_connection() as conn:
             row = conn.execute(
-                f"SELECT {_LIB_COLS} FROM libraries WHERE library_id = ?",
+                f"SELECT {cols} FROM libraries WHERE library_id = ?",
                 (library_id,),
             ).fetchone()
         if row is None:
@@ -1131,22 +1199,25 @@ class LibraryRepository:
         return _row_to_library(row)
 
     def list_all(self) -> list[Library]:
+        cols = _lib_cols()
         with get_connection() as conn:
-            rows = conn.execute(f"SELECT {_LIB_COLS} FROM libraries").fetchall()
+            rows = conn.execute(f"SELECT {cols} FROM libraries").fetchall()
         return [_row_to_library(r) for r in rows]
 
     def list_public(self) -> list[Library]:
+        cols = _lib_cols()
         with get_connection() as conn:
             public_clause = "is_public = 1" if not is_postgres() else "is_public IS TRUE"
             rows = conn.execute(
-                f"SELECT {_LIB_COLS} FROM libraries WHERE {public_clause}"
+                f"SELECT {cols} FROM libraries WHERE {public_clause}"
             ).fetchall()
         return [_row_to_library(r) for r in rows]
 
     def list_children(self, parent_library_id: str) -> list[Library]:
+        cols = _lib_cols()
         with get_connection() as conn:
             rows = conn.execute(
-                f"SELECT {_LIB_COLS} FROM libraries WHERE parent_library_id = ?",
+                f"SELECT {cols} FROM libraries WHERE parent_library_id = ?",
                 (parent_library_id,),
             ).fetchall()
         return [_row_to_library(r) for r in rows]

@@ -9,6 +9,13 @@ client/.env
 tmp-*.json
 *_ingest_*.json
 
+# Eval harness — secrets and run output stay local
+eval/secrets/*.env
+eval/secrets/mihomo/
+eval/results/*
+!eval/results/.gitignore
+/home/hct/ma3-eval/secrets/
+
 
 server/app/web/node_modules/
 server/app/web/dist/

@@ -1,0 +1,10 @@
+{
+  "model": "gpt-4",
+  "customModels": [{
+    "model": "gpt-4",
+    "displayName": "Wrong Model",
+    "baseUrl": "https://api.openai.com/v1",
+    "apiKey": "wrong-key",
+    "provider": "generic-chat-completion-api"
+  }]
+}

@@ -50,10 +50,21 @@ def is_postgres() -> bool:
     return settings.db_backend == "postgresql"
 
 
+def _configure_sqlite_connection(raw: sqlite3.Connection) -> None:
+    raw.execute("PRAGMA journal_mode=WAL")
+    raw.execute("PRAGMA busy_timeout=30000")
+    raw.execute("PRAGMA synchronous=NORMAL")
+
+
 def _connect_sqlite() -> DatabaseConnection:
     settings.data_dir.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(settings.db_path)
+    conn = sqlite3.connect(
+        settings.db_path,
+        timeout=30.0,
+        check_same_thread=False,
+    )
     conn.row_factory = sqlite3.Row
+    _configure_sqlite_connection(conn)
     return DatabaseConnection(conn, "sqlite")
 
 
@@ -117,6 +128,16 @@ def get_connection() -> DatabaseConnection:
 
 
 def initialize_database(run_backfill: bool = True) -> None:
+    if settings.api_version == "v4":
+        if is_postgres():
+            _initialize_v4_postgres()
+        else:
+            _initialize_v4_sqlite()
+        seed_if_empty()
+        if run_backfill:
+            backfill_search_indexes()
+        return
+
     if is_postgres():
         _initialize_postgres()
     else:
@@ -126,6 +147,23 @@ def initialize_database(run_backfill: bool = True) -> None:
     _seed_builtin_roles()
     if run_backfill:
         backfill_search_indexes()
+
+
+def _initialize_v4_sqlite() -> None:
+    from app.storage.v4_schema import initialize_v4_schema
+
+    with get_connection() as conn:
+        initialize_v4_schema(conn)
+        if conn.backend == "sqlite":
+            conn.execute("PRAGMA journal_mode=WAL")
+            conn.execute("PRAGMA busy_timeout=30000")
+
+
+def _initialize_v4_postgres() -> None:
+    from app.storage.v4_schema import initialize_v4_schema
+
+    with get_connection() as conn:
+        initialize_v4_schema(conn)
 
 
 def _initialize_sqlite() -> None:
@@ -706,42 +744,61 @@ def backfill_search_indexes() -> None:
     from app.storage.repositories import RecordRepository
     from app.core.time import utc_now_iso
 
-    repo = RecordRepository()
     with get_connection() as conn:
+        record_count = int(conn.execute("SELECT COUNT(*) AS c FROM records").fetchone()["c"])
+        if record_count == 0:
+            return
         indexed_emb_ids = {
             row["record_id"]
             for row in conn.execute("SELECT record_id FROM record_embeddings").fetchall()
         }
         indexed_tag_ids = set()
-        if not is_postgres():
+        if is_postgres():
+            indexed_search_ids = {
+                row["record_id"]
+                for row in conn.execute("SELECT record_id FROM record_search_index").fetchall()
+            }
+            if len(indexed_emb_ids) >= record_count and len(indexed_search_ids) >= record_count:
+                return
+        else:
             indexed_tag_ids = {
                 row["record_id"]
                 for row in conn.execute("SELECT record_id FROM records_fts_tags").fetchall()
             }
+            if len(indexed_emb_ids) >= record_count and len(indexed_tag_ids) >= record_count:
+                return
 
+    repo = RecordRepository()
     all_records = repo.list_all()
     now = utc_now_iso()
 
-    with get_connection() as conn:
-        for record in all_records:
-            if is_postgres() or record.record_id not in indexed_tag_ids:
+    # Never hold one SQLite connection across slow embedding work — that blocks all HTTP/MCP readers.
+    for record in all_records:
+        if is_postgres() or record.record_id not in indexed_tag_ids:
+            with get_connection() as conn:
                 fts_upsert(conn, record)
-            if record.record_id not in indexed_emb_ids:
-                embedding = embed_record(record)
-                if embedding is not None:
-                    conn.execute(
-                        _upsert(
-                            "record_embeddings",
-                            ["record_id"],
-                            ["record_id", "embedding", "model", "created_at"],
-                        ),
-                        (
-                            record.record_id,
-                            serialize_embedding(embedding),
-                            "all-MiniLM-L6-v2",
-                            now,
-                        ),
-                    )
+
+        if record.record_id in indexed_emb_ids:
+            continue
+
+        embedding = embed_record(record)
+        if embedding is None:
+            continue
+
+        with get_connection() as conn:
+            conn.execute(
+                _upsert(
+                    "record_embeddings",
+                    ["record_id"],
+                    ["record_id", "embedding", "model", "created_at"],
+                ),
+                (
+                    record.record_id,
+                    serialize_embedding(embedding),
+                    "all-MiniLM-L6-v2",
+                    now,
+                ),
+            )
 
 
 def seed_if_empty() -> None:

@@ -370,6 +370,11 @@ def resolve_principal(
     x_api_key: str | None = Header(default=None, alias="X-API-Key"),
     authorization: str | None = Header(default=None),
 ) -> ResolvedPrincipal:
+    if settings.api_version == "v4":
+        from app.core.auth_v4 import resolve_principal_v4
+
+        return resolve_principal_v4(request, x_api_key, authorization)
+
     raw = _extract_raw(x_api_key, authorization)
     cookie_token = _cookie_from_request(request)
     if raw:
@@ -471,6 +476,11 @@ def require_permission(principal: ResolvedPrincipal, perm: Permission | str, *, 
 
 
 def effective_libraries(principal: ResolvedPrincipal, role_at_least: str = "reader") -> dict[str, str]:
+    if settings.api_version == "v4":
+        from app.services.org_service import effective_libraries_v4
+
+        return effective_libraries_v4(principal, role_at_least=role_at_least)
+
     if principal.is_admin_bypass:
         return {
             lib.library_id: "admin"

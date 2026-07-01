@@ -1,0 +1,8 @@
+services:
+  workspace:
+    image: curlimages/curl:latest
+    volumes:
+      - ./workspace:/workspace
+    environment:
+      - DEEPSEEK_API_KEY=${DEEPSEEK_API_KEY}
+    entrypoint: ["sleep", "infinity"]

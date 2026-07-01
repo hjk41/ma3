@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "agents": ["claude-code", "droid", "cursor-cli"],
+  "rotation": [
+    {"id": "claude-deepseek-byok", "first": "claude-code"},
+    {"id": "mihomo-proxy", "first": "droid"},
+    {"id": "transparent-gateway", "first": "cursor-cli"},
+    {"id": "droid-deepseek-byok", "first": "claude-code"},
+    {"id": "nginx-reverse-proxy", "first": "droid"},
+    {"id": "supervisord-service", "first": "cursor-cli"},
+    {"id": "postgres-backup", "first": "claude-code"},
+    {"id": "ssh-key-only", "first": "droid"},
+    {"id": "http-proxy-apt", "first": "cursor-cli"},
+    {"id": "compose-network-fix", "first": "claude-code"}
+  ],
+  "agent_order": ["claude-code", "droid", "cursor-cli"]
+}

@@ -1,0 +1,31 @@
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: evaluser
+      POSTGRES_PASSWORD: evalpass
+      POSTGRES_DB: evaldb
+    expose:
+      - "5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U evaluser -d evaldb"]
+      interval: 3s
+      timeout: 3s
+      retries: 10
+    volumes:
+      - ./init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+
+  backup:
+    image: postgres:16-alpine
+    depends_on:
+      db:
+        condition: service_healthy
+    volumes:
+      - ./workspace:/workspace
+      - backup_data:/backup
+    environment:
+      PGPASSWORD: evalpass
+    entrypoint: ["sleep", "infinity"]
+
+volumes:
+  backup_data:

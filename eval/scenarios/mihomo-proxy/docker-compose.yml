@@ -1,0 +1,22 @@
+services:
+  mihomo:
+    image: metacubex/mihomo:latest
+    volumes:
+      - ./workspace:/root/.config/mihomo
+    environment:
+      - SUB_URL=${MIHOMO_SUBSCRIPTION_URL}
+    ports:
+      - "17890:7890"
+    command: ["-d", "/root/.config/mihomo"]
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "-", "http://127.0.0.1:7890"]
+      interval: 5s
+      timeout: 3s
+      retries: 3
+
+  client:
+    image: curlimages/curl:latest
+    depends_on:
+      mihomo:
+        condition: service_started
+    entrypoint: ["sleep", "infinity"]

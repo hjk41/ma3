@@ -1,0 +1,18 @@
+services:
+  proxy:
+    image: vimagick/tinyproxy:latest
+    environment:
+      - BASIC_AUTH=off
+    expose:
+      - "8888"
+
+  client:
+    image: curlimages/curl:latest
+    cap_add:
+      - NET_ADMIN
+    depends_on:
+      - proxy
+    network_mode: "service:proxy"
+    volumes:
+      - ./workspace:/workspace:ro
+    entrypoint: ["sleep", "infinity"]

@@ -6,7 +6,8 @@ from pydantic import BaseModel, field_validator
 class LibraryCreate(BaseModel):
     name: str
     description: str = ""
-    is_public: bool = True
+    is_public: bool = False
+    organization_id: Optional[str] = None
     parent_library_id: Optional[str] = None
     is_personal: bool = False
 

@@ -81,6 +81,7 @@ class ResolvedPrincipal:
     is_admin_bypass: bool
     api_key_id: str | None = None
     api_key_scope: frozenset[str] | None = None
+    api_key_grants: dict[str, str] | None = None
     token_id: str | None = None
     library_id: str | None = None
     label: str | None = None

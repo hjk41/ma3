@@ -9,13 +9,15 @@ from urllib.parse import urlparse
 @dataclass(frozen=True)
 class Settings:
     service_name: str = "马妈妈 (ma3)"
-    service_version: str = "0.4.0"
-    min_client_version: str = "0.4.0"  # oldest client version still fully compatible
-    recommended_client_version: str = "0.4.0"  # preferred bundled client/skill version
+    service_version: str = "4.0.0"
+    skill_version: str = "4.0.0"
+    min_client_version: str = "4.0.0"
+    recommended_client_version: str = "4.0.0"
     feature_flags: tuple[str, ...] = (
         "immediate_visibility",
         "delete_record",
-        "legacy_promote_supported",
+        "org_libraries",
+        "api_key_grants",
     )
     app_dir: Path = field(default_factory=lambda: Path(__file__).resolve().parents[1])
     project_dir: Path = field(init=False)
@@ -49,6 +51,11 @@ class Settings:
     auth_jwt_cookie: str = field(init=False)
     auth_admin_users: tuple[str, ...] = field(init=False)
     xyz_library_id: str | None = field(init=False)
+    api_version: str = field(init=False)
+    dev_auth_enabled: bool = field(init=False)
+    free_member_seat_limit: int = field(init=False)
+    session_cookie: str = field(init=False)
+    hf_home: Path = field(init=False)
 
     def __post_init__(self) -> None:
         project_dir = self.app_dir.parent
@@ -80,10 +87,11 @@ class Settings:
         db_pool_enabled = os.environ.get("MA3_DB_POOL_ENABLED", "1") != "0"
         search_batch_graph_enabled = os.environ.get("MA3_SEARCH_BATCH_GRAPH_ENABLED", "1") != "0"
         search_index_mode = os.environ.get("MA3_SEARCH_INDEX_MODE", "jsonb_runtime").strip() or "jsonb_runtime"
-        auth_verify_url_raw = os.environ.get(
-            "MA3_AUTH_VERIFY_URL",
-            "https://auth.zhilicon.com/verify",
-        ).strip()
+        api_version = os.environ.get("MA3_API_VERSION", "v4").strip().lower() or "v4"
+        dev_auth_enabled = os.environ.get("MA3_DEV_AUTH", "0") == "1"
+        free_member_seat_limit = int(os.environ.get("MA3_FREE_MEMBER_SEAT_LIMIT", "1"))
+        session_cookie = os.environ.get("MA3_SESSION_COOKIE", "ma3_session").strip() or "ma3_session"
+        auth_verify_url_raw = os.environ.get("MA3_AUTH_VERIFY_URL", "").strip()
         auth_verify_url = auth_verify_url_raw or None
         if auth_verify_url:
             parsed = urlparse(auth_verify_url)
@@ -95,7 +103,7 @@ class Settings:
                 raise ValueError(
                     "MA3_AUTH_VERIFY_URL must be https://, except http:// loopback URLs in tests"
                 )
-        auth_login_url = os.environ.get("MA3_AUTH_LOGIN_URL", "https://auth.zhilicon.com/login").strip() or "https://auth.zhilicon.com/login"
+        auth_login_url = os.environ.get("MA3_AUTH_LOGIN_URL", "").strip()
         auth_verify_timeout_seconds = float(os.environ.get("MA3_AUTH_VERIFY_TIMEOUT_SECONDS", "2.0"))
         auth_verify_cache_ttl_seconds = int(os.environ.get("MA3_AUTH_VERIFY_CACHE_TTL_SECONDS", "60"))
         auth_verify_cache_max_entries = int(os.environ.get("MA3_AUTH_VERIFY_CACHE_MAX_ENTRIES", "2048"))
@@ -138,6 +146,18 @@ class Settings:
         object.__setattr__(self, "auth_jwt_cookie", auth_jwt_cookie)
         object.__setattr__(self, "auth_admin_users", auth_admin_users)
         object.__setattr__(self, "xyz_library_id", xyz_library_id)
+        object.__setattr__(self, "api_version", api_version)
+        object.__setattr__(self, "dev_auth_enabled", dev_auth_enabled)
+        object.__setattr__(self, "free_member_seat_limit", free_member_seat_limit)
+        object.__setattr__(self, "session_cookie", session_cookie)
+        hf_home = Path(os.environ.get("MA3_HF_HOME", data_dir / "hf-cache"))
+        hf_home.mkdir(parents=True, exist_ok=True)
+        hub_cache = hf_home / "hub"
+        hub_cache.mkdir(parents=True, exist_ok=True)
+        os.environ.setdefault("HF_HOME", str(hf_home))
+        os.environ.setdefault("HUGGINGFACE_HUB_CACHE", str(hub_cache))
+        os.environ.setdefault("TRANSFORMERS_CACHE", str(hf_home / "transformers"))
+        object.__setattr__(self, "hf_home", hf_home)
 
 
 settings = Settings()

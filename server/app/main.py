@@ -1,3 +1,4 @@
+import asyncio
 import threading
 import time
 from uuid import uuid4
@@ -23,6 +24,8 @@ from app.api.routes_v3_auth import router as v3_auth_router
 from app.api.routes_v2_agent import router as v2_agent_router, search_router as v2_search_router
 from app.api.routes_v2_cases import router as v2_cases_router
 from app.api.routes_v2_stats import router as v2_stats_router, metrics_router
+from app.api.routes_v4 import router as v4_router
+from app.core.config import settings
 from app.services.metrics_service import metrics
 from app.services.op_log_service import write_op_log
 from app.storage.db import initialize_database, backfill_search_indexes, close_postgres_pool
@@ -31,8 +34,11 @@ from app.storage.db import initialize_database, backfill_search_indexes, close_p
 app = FastAPI(
     title="马妈妈 (ma3)",
     description="The verified knowledge network for agents.",
-    version="0.4.0",
+    version="4.0.0",
 )
+
+
+_PROBE_PATHS = frozenset({"/healthz"})
 
 
 @app.middleware("http")
@@ -42,27 +48,33 @@ async def metrics_middleware(request: Request, call_next):
     response = await call_next(request)
     duration = time.perf_counter() - started
     response.headers["X-Request-ID"] = request_id
-    metrics.record_http(request.method, request.url.path, response.status_code, duration)
-    write_op_log(
-        "http_request",
-        request_id=request_id,
-        method=request.method,
-        route=request.url.path,
-        status=response.status_code,
-        latency_ms=round(duration * 1000, 3),
-        query=str(request.url.query)[:500] if request.url.query else None,
-    )
+    path = request.url.path
+    if path not in _PROBE_PATHS:
+        metrics.record_http(request.method, path, response.status_code, duration)
+        await asyncio.to_thread(
+            write_op_log,
+            "http_request",
+            request_id=request_id,
+            method=request.method,
+            route=path,
+            status=response.status_code,
+            latency_ms=round(duration * 1000, 3),
+            query=str(request.url.query)[:500] if request.url.query else None,
+        )
     return response
+
+
+def _background_search_backfill() -> None:
+    backfill_search_indexes()
 
 
 @app.on_event("startup")
 def on_startup() -> None:
     # Schema creation and seeding are fast — run synchronously.
     initialize_database(run_backfill=False)
-    # Embedding backfill may download/load the sentence-transformer model on
-    # first run (hundreds of MB, slow behind a firewall).  Run it in a daemon
-    # thread so the HTTP server becomes available immediately.
-    t = threading.Thread(target=backfill_search_indexes, daemon=True, name="backfill")
+    # Embedding backfill loads/downloads the model then indexes records. Keep it
+    # off the request path so /healthz stays responsive during first boot.
+    t = threading.Thread(target=_background_search_backfill, daemon=True, name="backfill")
     t.start()
     write_op_log("startup", status="ok")
 
@@ -75,23 +87,27 @@ def on_shutdown() -> None:
 
 app.include_router(health_router)
 app.include_router(docs_router)
-app.include_router(libraries_router)
-app.include_router(invites_router)
-app.include_router(agent_router)
-app.include_router(knowledge_router)
-app.include_router(records_router)
-app.include_router(feedback_router)
-app.include_router(relations_router)
-app.include_router(search_router)
 app.include_router(mcp_router)
-app.include_router(ui_router)
-app.include_router(auth_router)
-app.include_router(v3_auth_router)
 app.include_router(v2_agent_router)
 app.include_router(v2_search_router)
 app.include_router(v2_cases_router)
 app.include_router(v2_stats_router)
 app.include_router(metrics_router)
+app.include_router(records_router)
+app.include_router(feedback_router)
+app.include_router(relations_router)
+app.include_router(search_router)
+app.include_router(knowledge_router)
+app.include_router(ui_router)
+
+if settings.api_version == "v4":
+    app.include_router(v4_router)
+else:
+    app.include_router(libraries_router)
+    app.include_router(invites_router)
+    app.include_router(agent_router)
+    app.include_router(auth_router)
+    app.include_router(v3_auth_router)
 
 
 _web_dist = Path(__file__).resolve().parent / "web" / "dist"

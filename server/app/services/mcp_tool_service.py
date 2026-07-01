@@ -76,7 +76,12 @@ class McpAuthContext:
 
 
 def resolve_mcp_auth(raw: str | None) -> McpAuthContext:
-    principal = _resolve_from_raw_only(raw)
+    if settings.api_version == "v4":
+        from app.core.auth_v4 import resolve_from_raw_only_v4
+
+        principal = resolve_from_raw_only_v4(raw)
+    else:
+        principal = _resolve_from_raw_only(raw)
     return McpAuthContext(raw_present=bool(raw), principal=principal)
 
 
