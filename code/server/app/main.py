@@ -3,6 +3,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 
+from app.api.routes_auth import router as auth_router
 from app.api.routes_client import router as client_router
 from app.api.routes_health import router as health_router
 from app.api.routes_mcp import router as mcp_router
@@ -30,6 +31,7 @@ app = FastAPI(
 
 
 app.include_router(health_router)
+app.include_router(auth_router)
 app.include_router(mcp_router)
 app.include_router(client_router)
 app.include_router(ui_router)

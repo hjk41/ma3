@@ -1,0 +1,169 @@
+"""Write confirmation, audit log, and owner delete/restore (ADR-013 / design-10)."""
+from __future__ import annotations
+
+from typing import Any
+
+from fastapi import HTTPException
+
+from app.core.config import settings
+from app.core.security import McpAuthContext
+from app.models.mcp_payloads import Ma3ReportPayload
+from app.storage import db
+
+_VALID_REPORT_KINDS = frozenset({"verify", "refute", "supplement", "new"})
+_VALID_CONFIRMATIONS = frozenset({"user_confirmed", "agent_judged", "verify_direct"})
+
+
+class ReportWritePlan:
+    __slots__ = ("library_id", "report_kind", "confirmation")
+
+    def __init__(self, *, library_id: str, report_kind: str, confirmation: str) -> None:
+        self.library_id = library_id
+        self.report_kind = report_kind
+        self.confirmation = confirmation
+
+
+def resolve_report_write_plan(payload: Ma3ReportPayload, auth: McpAuthContext) -> ReportWritePlan:
+    """Resolve target library and audit metadata for ma3_report."""
+    explicit_kind = payload.report_kind is not None
+    report_kind = payload.report_kind or "new"
+
+    if report_kind not in _VALID_REPORT_KINDS:
+        raise HTTPException(status_code=400, detail=f"unsupported report_kind: {report_kind}")
+
+    if report_kind in ("verify", "refute"):
+        if not payload.target_record_id:
+            raise HTTPException(status_code=400, detail="target_record_id required for verify/refute")
+        target = db.get_record(payload.target_record_id)
+        if not target or target["library_id"] not in auth.readable_library_ids:
+            raise HTTPException(status_code=404, detail="target record not found")
+        library_id = str(target["library_id"])
+        if library_id not in auth.writable_library_ids:
+            raise HTTPException(status_code=403, detail="writer access required for target library")
+        return ReportWritePlan(library_id=library_id, report_kind=report_kind, confirmation="verify_direct")
+
+    confirmation = payload.confirmation
+    if explicit_kind and not confirmation:
+        raise HTTPException(status_code=400, detail="confirmation required for supplement/new reports")
+    if confirmation is None:
+        confirmation = "agent_judged"
+    if confirmation not in _VALID_CONFIRMATIONS or confirmation == "verify_direct":
+        raise HTTPException(status_code=400, detail=f"invalid confirmation: {confirmation}")
+
+    library_id = payload.library_id or _default_writable_library(auth)
+    if library_id not in auth.writable_library_ids:
+        raise HTTPException(status_code=403, detail="writer access required for library")
+
+    return ReportWritePlan(library_id=library_id, report_kind=report_kind, confirmation=confirmation)
+
+
+def _default_writable_library(auth: McpAuthContext) -> str:
+    writable = auth.writable_library_ids
+    if not writable:
+        raise HTTPException(status_code=403, detail="writer access required")
+    if settings.default_library_id in writable:
+        return settings.default_library_id
+    return sorted(writable)[0]
+
+
+def append_write_audit(
+    *,
+    record_id: str,
+    library_id: str,
+    auth: McpAuthContext,
+    report_kind: str,
+    confirmation: str,
+) -> None:
+    if auth.principal.kind == "anonymous":
+        return
+    db.append_write_audit_log(
+        record_id=record_id,
+        library_id=library_id,
+        principal_id=auth.principal.principal_id,
+        api_key_id=auth.api_key_id or auth.principal.principal_id,
+        report_kind=report_kind,
+        confirmation=confirmation,
+    )
+
+
+def format_my_writes(rows: list[dict[str, Any]], *, key_prefix: str | None) -> list[dict[str, Any]]:
+    out: list[dict[str, Any]] = []
+    for row in rows:
+        entry = {
+            "created_at": row["created_at"],
+            "record_id": row["record_id"],
+            "library_id": row["library_id"],
+            "library_name": row.get("library_name") or row["library_id"],
+            "report_kind": row["report_kind"],
+            "confirmation": row["confirmation"],
+        }
+        if key_prefix:
+            entry["key_prefix"] = key_prefix
+        out.append(entry)
+    return out
+
+
+def delete_record_for_owner(*, record_id: str, auth: McpAuthContext) -> dict[str, Any]:
+    if auth.principal.kind == "anonymous":
+        raise HTTPException(status_code=403, detail="authentication required")
+
+    record = db.get_record(record_id)
+    if not record:
+        raise HTTPException(status_code=404, detail="record not found")
+
+    principal_id = auth.principal.principal_id
+    is_owner = db.is_record_owner(record_id, principal_id)
+    if not is_owner:
+        if str(record["library_id"]) not in auth.readable_library_ids:
+            raise HTTPException(status_code=404, detail="record not found")
+        raise HTTPException(status_code=403, detail="only the record owner may delete")
+
+    library_id = str(record["library_id"])
+    protected, _retention = db.library_deletion_protection(library_id)
+
+    if protected:
+        db.soft_delete_record(record_id)
+        return {"deleted": True, "mode": "soft", "record_id": record_id}
+
+    db.hard_delete_record(record_id, deleted_by=principal_id)
+    return {"deleted": True, "mode": "hard", "record_id": record_id}
+
+
+def restore_record_for_caller(*, record_id: str, auth: McpAuthContext) -> dict[str, Any]:
+    if auth.principal.kind == "anonymous":
+        raise HTTPException(status_code=403, detail="authentication required")
+
+    record = db.get_record(record_id)
+    if not record:
+        tomb = db.get_record_deletion(record_id)
+        if tomb and str(tomb["library_id"]) not in auth.readable_library_ids:
+            raise HTTPException(status_code=404, detail="record not found")
+        if tomb:
+            raise HTTPException(status_code=400, detail="already_purged")
+        raise HTTPException(status_code=404, detail="record not found")
+
+    library_id = str(record["library_id"])
+    principal_id = auth.principal.principal_id
+    is_owner = db.is_record_owner(record_id, principal_id)
+    is_maintainer = auth.principal.is_admin_bypass or library_id in auth.maintainer_library_ids
+
+    if not (is_owner or is_maintainer):
+        if library_id not in auth.readable_library_ids:
+            raise HTTPException(status_code=404, detail="record not found")
+        if record.get("status") != "trashed":
+            raise HTTPException(status_code=400, detail="record is not trashed")
+        raise HTTPException(status_code=403, detail="restore requires owner or maintainer")
+
+    if record.get("status") != "trashed":
+        raise HTTPException(status_code=400, detail="record is not trashed")
+
+    protected, _retention = db.library_deletion_protection(library_id)
+    if not protected:
+        raise HTTPException(status_code=400, detail="library does not support restore")
+
+    if db.is_trash_restore_expired(record_id):
+        db.purge_expired_trashed_record(record_id, deleted_by="system:retention")
+        raise HTTPException(status_code=400, detail="already_purged")
+
+    db.restore_trashed_record(record_id)
+    return {"restored": True, "record_id": record_id}

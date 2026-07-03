@@ -74,12 +74,7 @@ cat > "$PROFILE_ROOT/droid/.factory/mcp.json" <<EOF
 }
 EOF
 
-POLICY="$(cat "$EVAL_ROOT/templates/MA3_AGENT_POLICY.md" 2>/dev/null || true)"
-if [[ -n "$POLICY" ]]; then
-  cp "$EVAL_ROOT/templates/MA3_AGENT_POLICY.md" "$PROFILE_ROOT/claude/.claude/CLAUDE.md"
-  cp "$EVAL_ROOT/templates/MA3_AGENT_POLICY.md" "$PROFILE_ROOT/droid/.factory/AGENTS.md"
-fi
-
+# Remove legacy inline policy — full policy comes from server sync bootstrap below.
 mkdir -p "$PROFILE_ROOT/cursor/.cursor"
 cat > "$PROFILE_ROOT/cursor/.cursor/cli-config.json" <<EOF
 {
@@ -95,6 +90,19 @@ cat > "$PROFILE_ROOT/cursor/.cursor/cli-config.json" <<EOF
 EOF
 
 echo "Profiles written under $PROFILE_ROOT"
+
+# Install ma3 client sync + full server policy for each eval agent profile.
+if curl -sf "${MA3_BASE_URL:-http://127.0.0.1:8000}/healthz" >/dev/null 2>&1; then
+  chmod +x "$EVAL_ROOT/scripts/bootstrap_agent_client_sync.sh"
+  for agent in claude droid cursor; do
+    bash "$EVAL_ROOT/scripts/bootstrap_agent_client_sync.sh" "$agent" || {
+      echo "WARN: bootstrap_agent_client_sync failed for $agent (ma3 unreachable?)" >&2
+    }
+  done
+else
+  echo "WARN: ma3 not reachable; skipping client sync bootstrap" >&2
+fi
+
 if command -v claude >/dev/null 2>&1; then
   for agent_key_label in "claude:MA3_KEY_CLAUDE_CODE" "droid:MA3_KEY_DROID" "cursor:MA3_KEY_CURSOR_CLI"; do
     agent="${agent_key_label%%:*}"

@@ -44,11 +44,28 @@ class Settings:
     database_url: str = field(
         default_factory=lambda: os.environ.get("MA3_DATABASE_URL", "sqlite:///./data/ma3.db")
     )
-    dev_auth: bool = field(default_factory=lambda: _env_bool("MA3_DEV_AUTH", True))
+    dev_auth: bool = field(default_factory=lambda: _env_bool("MA3_DEV_AUTH", False))
     dev_api_key: str = field(default_factory=lambda: os.environ.get("MA3_DEV_API_KEY", "ma3dev"))
+    writer_api_keys: tuple[str, ...] = field(default_factory=lambda: tuple())
+    maintainer_api_keys: tuple[str, ...] = field(default_factory=lambda: tuple())
+    vector_scan_limit: int = field(default_factory=lambda: int(os.environ.get("MA3_VECTOR_SCAN_LIMIT", "500")))
     disable_embeddings: bool = field(default_factory=lambda: _env_bool("MA3_DISABLE_EMBEDDINGS", False))
     embedding_model: str = field(
         default_factory=lambda: _env_str("MA3_EMBEDDING_MODEL", "sentence-transformers/all-MiniLM-L6-v2")
+    )
+    embedding_dim: int = field(default_factory=lambda: int(os.environ.get("MA3_EMBEDDING_DIM", "384")))
+
+    authing_enabled: bool = field(default_factory=lambda: _env_bool("MA3_AUTHING_ENABLED", False))
+    authing_issuer: str = field(default_factory=lambda: _env_str("MA3_AUTHING_ISSUER", ""))
+    authing_app_id: str = field(default_factory=lambda: _env_str("MA3_AUTHING_APP_ID", ""))
+    authing_app_secret: str = field(default_factory=lambda: _env_str("MA3_AUTHING_APP_SECRET", ""))
+    authing_redirect_uri: str = field(default_factory=lambda: _env_str("MA3_AUTHING_REDIRECT_URI", ""))
+    authing_account_url: str = field(default_factory=lambda: _env_str("MA3_AUTHING_ACCOUNT_URL", ""))
+    auth_session_cookie: str = field(default_factory=lambda: _env_str("MA3_AUTH_SESSION_COOKIE", "ma3_session"))
+    auth_oauth_state_cookie: str = field(default_factory=lambda: _env_str("MA3_AUTH_OAUTH_STATE_COOKIE", "ma3_oauth_state"))
+    auth_admin_users: tuple[str, ...] = field(default_factory=lambda: tuple())
+    auth_userinfo_cache_ttl_seconds: int = field(
+        default_factory=lambda: int(os.environ.get("MA3_AUTH_USERINFO_CACHE_TTL_SECONDS", "60"))
     )
 
     default_org_id: str = "org_default"
@@ -57,6 +74,50 @@ class Settings:
     started_at: str = field(
         default_factory=lambda: datetime.now(timezone.utc).replace(microsecond=0).isoformat()
     )
+
+    def __post_init__(self) -> None:
+        raw_admins = os.environ.get("MA3_AUTH_ADMIN_USERS", "")
+        if raw_admins.strip():
+            object.__setattr__(
+                self,
+                "auth_admin_users",
+                tuple(item.strip() for item in raw_admins.split(",") if item.strip()),
+            )
+        raw_writers = os.environ.get("MA3_WRITER_API_KEYS", "")
+        if raw_writers.strip():
+            object.__setattr__(
+                self,
+                "writer_api_keys",
+                tuple(item.strip() for item in raw_writers.split(",") if item.strip()),
+            )
+        raw_maintainers = os.environ.get("MA3_MAINTAINER_API_KEYS", "")
+        if raw_maintainers.strip():
+            object.__setattr__(
+                self,
+                "maintainer_api_keys",
+                tuple(item.strip() for item in raw_maintainers.split(",") if item.strip()),
+            )
+
+    @property
+    def authing_configured(self) -> bool:
+        return bool(self.authing_enabled and self.authing_issuer and self.authing_app_id and self.authing_app_secret)
+
+    def authing_issuer_base(self) -> str:
+        issuer = self.authing_issuer.rstrip("/")
+        if issuer.endswith("/oidc"):
+            return issuer
+        return f"{issuer}/oidc"
+
+    def resolve_authing_redirect_uri(self) -> str:
+        if self.authing_redirect_uri:
+            return self.authing_redirect_uri
+        base = (self.public_base_url or "http://127.0.0.1:8000").rstrip("/")
+        return f"{base}/auth/callback"
+
+    def resolve_authing_account_url(self) -> str:
+        if self.authing_account_url:
+            return self.authing_account_url
+        return f"{self.authing_issuer_base().removesuffix('/oidc')}/u"
 
     @property
     def database_backend(self) -> str:
@@ -70,6 +131,8 @@ class Settings:
             flags.append("vector")
         if self.dev_auth:
             flags.append("dev_auth")
+        if self.authing_configured:
+            flags.append("authing")
         return tuple(flags)
 
 

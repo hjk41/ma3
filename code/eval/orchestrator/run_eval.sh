@@ -75,6 +75,8 @@ PROMPT="$PROMPT
 run_id: $RUN_ID
 Rules:
 - Call ma3_context first (target_product=ma3-eval, target_component=$SCENARIO).
+- On every MCP call pass client_version and tool_schema_version from ~/.ma3/ma3-client.json (run bash ~/.ma3/bin/sync_ma3_client.sh sync if missing).
+- If structuredContent.server.client_update_required is true: run sync, copy policy to your runtime file, re-call MCP until required is false — do not ma3_report until then.
 - Do not modify host global config outside /workspace and scenario containers.
 - After solving, ma3_validate then ma3_report if reusable knowledge was produced.
 "

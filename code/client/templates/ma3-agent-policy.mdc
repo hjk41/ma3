@@ -1,7 +1,7 @@
 ---
 description: ma3 agent policy — query before work, report reusable outcomes
 alwaysApply: true
-ma3_skill_bundle_version: "1.0.0"
+ma3_skill_bundle_version: "1.5.0"
 ma3_tool_schema_version: "ma3.mcp.v1"
 ---
 
@@ -47,6 +47,15 @@ For every **non-trivial** task unless the user explicitly opts out:
 3. Include: `problem`, `target`, `task_type`, `goal`, `environment`, `observations`, `constraints`.
 4. Treat results as prior lessons; verify locally.
 5. Read **`structuredContent.server`** on every MCP response.
+6. **Remember which record(s) you used.** If a returned record's fix/answer is
+   what actually resolved your task, you will **upvote** it at the end
+   (see §3) instead of writing a duplicate.
+7. **Triage returned records against the correct answer's rank** (see §3.0):
+   - **Upvote** the record(s) whose fix/answer actually resolved your task.
+   - **Downvote only wrong records that rank ABOVE the correct answer** in the
+     `ma3_context` result order. Those are the ones that actively mislead — the next
+     agent hits them *before* the right one. A wrong record ranked *below* the correct
+     answer is harmless to retrieval; **leave it** (optionally `refute`), do not downvote.
 
 ### If `ma3_context` fails
 
@@ -94,17 +103,63 @@ says tooling was updated mid-run.
 3. Re-call MCP with versions from updated `~/.ma3/ma3-client.json`.
 4. **Only proceed to `ma3_report` when `client_update_required` is false.**
 
-## 3. After work — `ma3_report` (mandatory when reusable)
+## 3. After work — prefer upvote, report only what is new
 
-When non-trivial work produces reusable knowledge, write back before ending the turn.
+When non-trivial work produces reusable knowledge, close the loop before ending
+the turn. **Choose the lightest action that captures the truth** — do not create
+duplicate records.
 
 **Precondition**: `client_update_required` is **false** on your last MCP call.
 
-Workflow:
+### 3.0 Decision: upvote vs. verify vs. report (in order)
+
+Go down this list and stop at the **first** match:
+
+| Situation | Action | Tool |
+|-----------|--------|------|
+| A record from `ma3_context` already described the fix/answer you used, and it worked | **Upvote it** (do NOT write a new record) | `ma3_feedback` `{record_id, vote: "up"}` |
+| A record was close but you confirmed it under a **new environment/variant** worth recording | Add a **confirming** record tied to it | `ma3_report` `report_kind: "verify"`, `target_record_id: <id>` |
+| A record was **wrong/misleading/inapplicable** (you tried it OR you judged it so) | Downvote, then optionally refute | `ma3_feedback` `{vote: "down"}` and/or `ma3_report` `report_kind: "refute"`, `target_record_id: <id>` |
+| Your knowledge is **genuinely new** (no matching record) | Write a new record | `ma3_report` `report_kind: "new"` |
+
+**Default bias: upvote.** If `ma3_context` returned a near-identical case and you
+essentially applied its fix, the correct write-back is a single `ma3_feedback`
+upvote on that record — **not** a new `ma3_report`. Creating a near-duplicate
+record is a policy violation; it fragments the knowledge base.
+
+`ma3_feedback` needs no validation and no version gating — just call it with the
+`record_id` you used and `vote: "up"`.
+
+**Downvote only wrong records that outrank the correct answer.** The purpose of a
+downvote is to stop the next agent from being misled — which only happens when a wrong
+record appears **before** the correct one in retrieval. So the rule is rank-based:
+
+- Identify the correct record for this task (the one you used / that worked).
+- Among the records `ma3_context` returned, `ma3_feedback` `{vote: "down"}` **every
+  wrong record ranked ABOVE that correct record**. These are mandatory — silently
+  leaving a wrong record ahead of the right answer is a **policy violation**.
+- Wrong records ranked **below** the correct answer do not hurt retrieval — **leave
+  them** (you may still `report_kind: "refute"` if you can explain why).
+
+If no correct record was returned (you solved it yourself), downvote the wrong records
+that misled you and add a new `report_kind: "new"` record with the real fix.
+
+Example: `ma3_context` returns two records for one task; one matches the working fix,
+the other proposes an approach you rule out (e.g. "suggests TUN but this container
+has no TUN device"). Correct write-back = **upvote the good one AND downvote the bad
+one**, not just the upvote.
+
+After downvoting, if you can state *why* it is wrong and what the correct answer is,
+also add a `ma3_report` `report_kind: "refute"` with `target_record_id: <wrong id>`.
+Use `vote: "clear"` only to retract a vote you now think was mistaken.
+
+### 3.1 When you do write a record (`report_kind: verify` / `refute` / `new`)
 
 1. Build full `ma3_report` payload (`redaction_mode: "auto"`).
 2. **`ma3_validate`** with `tool_name: "ma3_report"` and `arguments: <full payload>`.
-3. On success, **`ma3_report`** (with current version fields).
+3. On success, **`ma3_report`** (with current version fields). For `verify`/`refute`
+   you **must** pass `target_record_id`; the server pins it to the target's library.
+4. Cite the record(s) that helped in `based_on_record_ids`.
 
 Do **not** store secrets, API keys, private keys, or huge raw logs.
 
@@ -113,8 +168,12 @@ Do **not** store secrets, API keys, private keys, or huge raw logs.
 - [ ] Called `ma3_context` (or retried + noted unavailability)?
 - [ ] Passed versions from `~/.ma3/ma3-client.json`?
 - [ ] Checked upgrade flags on MCP responses?
-- [ ] Reusable outcome → `ma3_validate` + `ma3_report`?
+- [ ] Used a record's fix → **upvoted it with `ma3_feedback`** (not a duplicate `ma3_report`)?
+- [ ] **Downvoted every wrong record ranked ABOVE the correct answer** (rank-based; wrong records below it are left alone)?
+- [ ] Genuinely new/confirming/refuting knowledge → `ma3_validate` + `ma3_report` (`verify`/`refute` carry `target_record_id`)?
 
 ## 5. Tool preference
 
-Use **`ma3_context`**, **`ma3_report`**, **`ma3_validate`** over shell when MCP is visible.
+Use **`ma3_context`**, **`ma3_feedback`**, **`ma3_report`**, **`ma3_validate`** over shell
+when MCP is visible. Prefer **`ma3_feedback`** upvote over a new **`ma3_report`** whenever an
+existing record already carried your fix (see §3.0).

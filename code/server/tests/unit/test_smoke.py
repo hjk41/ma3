@@ -57,6 +57,7 @@ def test_ma3_report_active_default():
                     "problem": "test problem",
                     "outcome": "resolved",
                     "result_summary": "skeleton write test",
+                    "evidence": [{"kind": "test", "summary": "smoke test evidence"}],
                 },
             },
         },

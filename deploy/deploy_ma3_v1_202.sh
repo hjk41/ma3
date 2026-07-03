@@ -66,6 +66,27 @@ HF_HOME=\${LEGACY_DIR}/data/hf-cache
 HF_HUB_OFFLINE=1
 ENV
 
+# Optional Authing (Observatory login) — set in \${LEGACY_DIR}/ma3.env or shell env before deploy
+if [[ -n "\${MA3_AUTHING_APP_ID:-}" && -n "\${MA3_AUTHING_APP_SECRET:-}" ]]; then
+  cat >> "\${REMOTE_DIR}/ma3.env" <<AUTHING
+MA3_AUTHING_ENABLED=\${MA3_AUTHING_ENABLED:-1}
+MA3_AUTHING_ISSUER=\${MA3_AUTHING_ISSUER}
+MA3_AUTHING_APP_ID=\${MA3_AUTHING_APP_ID}
+MA3_AUTHING_APP_SECRET=\${MA3_AUTHING_APP_SECRET}
+MA3_PUBLIC_BASE_URL=\${MA3_PUBLIC_BASE_URL:-http://127.0.0.1:\${PORT}}
+MA3_AUTHING_REDIRECT_URI=\${MA3_AUTHING_REDIRECT_URI:-\${MA3_PUBLIC_BASE_URL:-http://127.0.0.1:\${PORT}}/auth/callback}
+AUTHING
+fi
+
+echo "==> Ensure pgvector extension (needs DB superuser; app role ma3user cannot CREATE EXTENSION)"
+MA3_DBNAME="\${MA3_DATABASE_URL##*/}"
+MA3_DBNAME="\${MA3_DBNAME%%\?*}"
+if sudo -n -u postgres psql -d "\${MA3_DBNAME}" -c "CREATE EXTENSION IF NOT EXISTS vector;" >/dev/null 2>&1; then
+  echo "   pgvector extension ensured on \${MA3_DBNAME}"
+else
+  echo "   WARN: could not ensure pgvector extension (need passwordless sudo to postgres superuser); vector ANN search will be disabled and search falls back to FTS"
+fi
+
 echo "==> Migrate legacy tables to v1 schema in same DB"
 export MA3_DATABASE_URL="\${MA3_DATABASE_URL}"
 export MA3_MIGRATE_RENAME=1
@@ -104,6 +125,13 @@ export MA3_EXPECT_MIN_RECORDS=30
 export MA3_EXPECT_MIN_CASES=20
 export MA3_EXPECT_MIN_MIHOMO_HITS=1
 export MA3_EXPECT_MIN_LIBRARIES=2
+if [[ -f /home/hct/ma3-eval/profiles/claude/.claude.json ]]; then
+  export MA3_EVAL_CLAUDE_KEY="\$(python3 -c "import json; print(json.load(open('/home/hct/ma3-eval/profiles/claude/.claude.json'))['mcpServers']['ma3']['headers']['X-API-Key'])" 2>/dev/null || true)"
+fi
+if [[ -x "\${REMOTE_DIR}/code/eval/scripts/bootstrap_agent_client_sync.sh" ]]; then
+  echo "==> Bootstrap eval claude client sync"
+  bash "\${REMOTE_DIR}/code/eval/scripts/bootstrap_agent_client_sync.sh" claude || true
+fi
 bash "\${REMOTE_DIR}/deploy/verify_ma3_v1.sh"
 REMOTE
 

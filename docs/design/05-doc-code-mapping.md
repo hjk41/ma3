@@ -15,6 +15,16 @@
 | `server/app/api/routes_records.py` 等 v1 | **丢弃 agent 面** | 维护者 API 可留 |
 | `server/app/api/routes_ui.py` | **Observatory** | ADR-005 只读范围 |
 | `server/app/storage/db.py` | **拆分 migration** | v4 schema 可选 |
+| `server/app/services/api_key_service.py` | **新增** | ADR-011 Phase 2：key hash、capabilities |
+| `server/app/services/entitlement_service.py` | **新增** | ADR-011 Phase 3：visibility、read/write 耦合 |
+| `server/app/services/org_service.py` | **新增** | ADR-011 Phase 4：org 成员、library 生命周期 |
+| `server/app/services/billing_service.py` | **新增** | ADR-012：quota 检查、usage 计量、plan 解析 |
+| `server/app/api/routes_keys.py` | **新增** | ADR-011 Phase 5：Observatory key REST |
+| `server/app/services/write_audit_service.py` | **新增** | ADR-013：写入审计、硬删除、tombstone |
+| `server/app/api/routes_billing.py` | **新增** | ADR-012 Phase B4：billing UI API、Stripe stub |
+| `server/app/core/security.py` | **refactor** | DB key grants 替代 env writer/maintainer 列表 |
+| `server/app/api/routes_mcp.py` | **保留 refactor** | ADR-014：错误 message 必须可自纠（`_summarize_validation_errors`） |
+| `server/app/storage/db.py` | **refactor** | ADR-011 tables + ADR-012 billing/usage tables |
 
 ## Client
 
@@ -55,7 +65,11 @@
 | 旧路径 | v1 处置 |
 |--------|---------|
 | `docs/v2/overall-design.md` | **吸收** → 00-vision |
-| `docs/v4/org-and-access-overall-design.md` | **搁置** 至 SaaS 模块 |
+| `docs/v4/org-and-access-overall-design.md` | **吸收** → [08-kb-access-and-org-isolation.md](08-kb-access-and-org-isolation.md) + ADR-011 |
+| `docs/adr/012-billing-and-quotas.md` | **新增** | 三档套餐、quota、billing_account |
+| `docs/design/09-billing-and-quotas.md` | **新增** | billing schema、metering、Phase B1–B4 |
+| `docs/adr/013-write-confirmation-audit-delete.md` | **新增** | 写入确认、审计、owner 硬删除 |
+| `docs/design/10-write-audit-and-delete.md` | **新增** | report_kind、ma3_list_my_writes、ma3_delete_record |
 | `docs/agentmemory-*` | **参考** ADR hook/draft |
 | `AGENTS.md` | **拆分**：MCP 契约进 server doc，LTP 进 profile-ltp |
 
@@ -72,3 +86,4 @@
 | `server/tests/unit/test_mcp_schema_alignment.py` | **必须保留** |
 | `server/tests/e2e/test_remote_mcp.py` | **保留 + server block** |
 | 其余 e2e | 按裁剪后路由重写 |
+| [`docs/testing/release-agent-behavior-tests.md`](../testing/release-agent-behavior-tests.md) | **新增** — 发版前真实 Agent 行为门禁（T1–T5，Codex/Hermes/Claude） |

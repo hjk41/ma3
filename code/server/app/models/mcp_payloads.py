@@ -142,16 +142,26 @@ class Ma3ReportPayload(BaseModel):
     observations: list[str] = Field(default_factory=list)
     actions: list[AgentAction] = Field(default_factory=list)
     evidence: list[EvidenceItem] = Field(default_factory=list)
-    based_on_record_ids: list[str] = Field(default_factory=list)
-    relation_type: str | None = None
+    based_on_record_ids: list[str] = Field(default_factory=list, max_length=20)
+    relation_type: Literal["derived_from", "supersedes", "related"] | None = None
     applicable_if: list[str] = Field(default_factory=list)
     not_applicable_if: list[str] = Field(default_factory=list)
     tags: list[str] = Field(default_factory=list)
     case_id: str | None = None
     case_assignment_mode: Literal["auto", "force", "manual"] = "auto"
+    idempotency_key: str | None = Field(
+        default=None,
+        min_length=8,
+        max_length=128,
+        pattern=r"^[A-Za-z0-9._:-]+$",
+    )
     dry_run: bool = False
     redaction_mode: Literal["auto", "none"] = "auto"
     visibility: Literal["active", "draft"] = "active"
+    report_kind: str | None = None
+    confirmation: str | None = None
+    target_record_id: str | None = None
+    library_id: str | None = None
     include_full_json: bool = False
     client_version: str | None = Field(
         default=None,
@@ -228,6 +238,28 @@ class Ma3ListDraftsPayload(BaseModel):
     )
 
 
+class Ma3FeedbackPayload(BaseModel):
+    """Wire payload for ``ma3_feedback`` — thumbs up/down on an active record."""
+
+    record_id: str = Field(..., min_length=1)
+    vote: Literal["up", "down", "clear"]
+    include_full_json: bool = False
+    client_version: str | None = None
+
+    model_config = ConfigDict(
+        extra="forbid",
+        json_schema_extra={
+            "examples": [
+                {
+                    "record_id": "vk_01HX9F...",
+                    "vote": "up",
+                    "include_full_json": False,
+                }
+            ]
+        },
+    )
+
+
 class Ma3ReviewRecordPayload(BaseModel):
     """Wire payload for ``ma3_review_record``."""
 
@@ -252,6 +284,64 @@ class Ma3ReviewRecordPayload(BaseModel):
     )
 
 
+class Ma3LocateByIdPayload(BaseModel):
+    """Wire payload for ``ma3_locate_by_id``.
+
+    Unified read-by-id entry: accepts either a record id (``vk_...``) or a case
+    id (``cs_...``) and returns whichever it resolves to. Applies read ACL; the
+    record/case author can always see their own items even when draft/invalid.
+    """
+
+    id: str = Field(..., min_length=1)
+    include_full_json: bool = False
+    client_version: str | None = None
+
+    model_config = ConfigDict(
+        extra="forbid",
+        json_schema_extra={"examples": [{"id": "vk_01HX9F...", "include_full_json": False}]},
+    )
+
+
+class Ma3ListMyWritesPayload(BaseModel):
+    """Wire payload for ``ma3_list_my_writes``."""
+
+    limit: int = Field(default=50, ge=1, le=100)
+    offset: int = Field(default=0, ge=0)
+    include_full_json: bool = False
+    client_version: str | None = None
+
+    model_config = ConfigDict(
+        extra="forbid",
+        json_schema_extra={"examples": [{"limit": 50, "offset": 0}]},
+    )
+
+
+class Ma3DeleteRecordPayload(BaseModel):
+    """Wire payload for ``ma3_delete_record``."""
+
+    record_id: str = Field(..., min_length=1)
+    include_full_json: bool = False
+    client_version: str | None = None
+
+    model_config = ConfigDict(
+        extra="forbid",
+        json_schema_extra={"examples": [{"record_id": "vk_01HX9F..."}]},
+    )
+
+
+class Ma3RestoreRecordPayload(BaseModel):
+    """Wire payload for ``ma3_restore_record``."""
+
+    record_id: str = Field(..., min_length=1)
+    include_full_json: bool = False
+    client_version: str | None = None
+
+    model_config = ConfigDict(
+        extra="forbid",
+        json_schema_extra={"examples": [{"record_id": "vk_01HX9F..."}]},
+    )
+
+
 class Ma3ValidatePayload(BaseModel):
     """Wire payload for the diagnostic ``ma3_validate`` tool.
 
@@ -268,10 +358,15 @@ class Ma3ValidatePayload(BaseModel):
         "ma3_context",
         "ma3_search_explain",
         "ma3_case",
+        "ma3_locate_by_id",
+        "ma3_list_my_writes",
+        "ma3_delete_record",
+        "ma3_restore_record",
         "ma3_doctor",
         "ma3_whoami",
         "ma3_list_drafts",
         "ma3_review_record",
+        "ma3_feedback",
     ]
     arguments: dict[str, Any] | None = Field(
         default=None,
@@ -295,10 +390,15 @@ PAYLOAD_BY_TOOL: dict[str, type[BaseModel]] = {
     "ma3_context": Ma3ContextPayload,
     "ma3_report": Ma3ReportPayload,
     "ma3_case": Ma3CasePayload,
+    "ma3_locate_by_id": Ma3LocateByIdPayload,
+    "ma3_list_my_writes": Ma3ListMyWritesPayload,
+    "ma3_delete_record": Ma3DeleteRecordPayload,
+    "ma3_restore_record": Ma3RestoreRecordPayload,
     "ma3_search_explain": Ma3SearchExplainPayload,
     "ma3_doctor": Ma3DoctorPayload,
     "ma3_whoami": Ma3WhoamiPayload,
     "ma3_list_drafts": Ma3ListDraftsPayload,
+    "ma3_feedback": Ma3FeedbackPayload,
     "ma3_review_record": Ma3ReviewRecordPayload,
     "ma3_validate": Ma3ValidatePayload,
 }

@@ -69,3 +69,12 @@ def deserialize_embedding(blob: bytes) -> Any:
     import numpy as np
 
     return np.frombuffer(blob, dtype=np.float32)
+
+
+def vector_as_list(vector: Any) -> list[float]:
+    import numpy as np
+
+    arr = np.asarray(vector, dtype=np.float32).reshape(-1)
+    if arr.shape[0] != settings.embedding_dim:
+        raise ValueError(f"embedding dimension {arr.shape[0]} != {settings.embedding_dim}")
+    return arr.tolist()

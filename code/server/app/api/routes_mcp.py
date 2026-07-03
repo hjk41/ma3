@@ -6,7 +6,7 @@ from fastapi import APIRouter, Header, HTTPException, Request, Response, status
 from fastapi.responses import JSONResponse
 from pydantic import ValidationError
 
-from app.core.security import _extract_raw, resolve_mcp_auth
+from app.core.security import extract_credential, resolve_mcp_auth
 from app.models.mcp import McpJsonRpcRequest, McpToolValidationError
 from app.services.mcp_tool_service import call_mcp_tool, list_mcp_tools, mcp_initialize_result
 
@@ -23,6 +23,56 @@ def _jsonrpc_error(request_id: str | int | None, code: int, message: str, data: 
     if data is not None:
         error["data"] = data
     return {"jsonrpc": "2.0", "id": request_id, "error": error}
+
+
+def _loc_str(loc: Any) -> str:
+    if isinstance(loc, (list, tuple)):
+        return ".".join(str(p) for p in loc) or "<root>"
+    return str(loc)
+
+
+def _summarize_validation_errors(tool_name: str | None, errors: list[dict[str, Any]]) -> str:
+    """Fold pydantic validation errors into a single actionable message.
+
+    MCP hosts only surface ``error.message`` to the model (``error.data`` is
+    often dropped), so the message itself must tell the agent exactly which
+    fields to fix and how — otherwise it retries the same bad payload blindly.
+    """
+    missing: list[str] = []
+    extra: list[str] = []
+    other: list[str] = []
+    for err in errors:
+        etype = str(err.get("type", ""))
+        loc = _loc_str(err.get("loc"))
+        if etype in {"missing", "value_error.missing"}:
+            missing.append(loc)
+        elif etype in {"extra_forbidden", "value_error.extra"}:
+            extra.append(loc)
+        else:
+            other.append(f"{loc}: {err.get('msg', etype)}")
+
+    parts: list[str] = []
+    prefix = f"Invalid params for {tool_name}" if tool_name else "Invalid params"
+    if missing:
+        parts.append(f"missing required field(s): {', '.join(missing)}")
+    if extra:
+        parts.append(f"unexpected field(s): {', '.join(extra)}")
+    if other:
+        parts.append("; ".join(other))
+
+    msg = f"{prefix}: " + ("; ".join(parts) if parts else "payload failed schema validation")
+
+    # Very common agent mistake: wrapping a tool payload under `arguments`
+    # (the ma3_validate envelope) when the target tool expects a FLAT payload.
+    if tool_name and tool_name != "ma3_validate" and "arguments" in extra:
+        msg += (
+            f". Hint: {tool_name} takes a FLAT payload (the fields directly), "
+            "NOT {tool_name, arguments} like ma3_validate. Move the inner fields "
+            "up to the top level and retry."
+        )
+    else:
+        msg += ". Fix these fields and retry; ma3_validate offers a dry-run check."
+    return msg
 
 
 def _http_to_jsonrpc_code(status_code: int) -> int:
@@ -50,19 +100,41 @@ def _handle_rpc(req: McpJsonRpcRequest, raw_auth: str | None) -> dict[str, Any] 
         if req.method == "tools/call":
             name = req.params.get("name")
             if not isinstance(name, str) or not name:
-                return _jsonrpc_error(req.id, -32602, "Invalid params", {"detail": "tools/call requires params.name"})
+                return _jsonrpc_error(
+                    req.id,
+                    -32602,
+                    "Invalid params: tools/call requires a string params.name (the tool to call)",
+                    {"detail": "tools/call requires params.name"},
+                )
             arguments = req.params["arguments"] if "arguments" in req.params else {}
             if not isinstance(arguments, dict):
-                return _jsonrpc_error(req.id, -32602, "Invalid params", {"detail": "params.arguments must be an object"})
+                return _jsonrpc_error(
+                    req.id,
+                    -32602,
+                    "Invalid params: params.arguments must be a JSON object mapping field names to values",
+                    {"detail": "params.arguments must be an object"},
+                )
             auth = resolve_mcp_auth(raw_auth)
+            if auth.invalid_credentials:
+                return _jsonrpc_error(
+                    req.id,
+                    -32001,
+                    "Invalid credentials: the X-API-Key is unknown, revoked, or expired. Check your MCP server API key with the ma3 administrator.",
+                    {"status_code": 401},
+                )
             result = call_mcp_tool(name, arguments, auth)
             return _jsonrpc_result(req.id, result.model_dump(mode="json", exclude_none=True))
-        return _jsonrpc_error(req.id, -32601, "Method not found", {"method": req.method})
+        return _jsonrpc_error(
+            req.id,
+            -32601,
+            f"Method not found: {req.method!r}. Supported: initialize, tools/list, tools/call, ping",
+            {"method": req.method},
+        )
     except McpToolValidationError as exc:
         return _jsonrpc_error(
             req.id,
             -32602,
-            "Invalid params",
+            _summarize_validation_errors(exc.tool_name, exc.errors),
             {
                 "tool_name": exc.tool_name,
                 "validation_errors": exc.errors,
@@ -76,7 +148,7 @@ def _handle_rpc(req: McpJsonRpcRequest, raw_auth: str | None) -> dict[str, Any] 
     except HTTPException as exc:
         return _jsonrpc_error(req.id, _http_to_jsonrpc_code(exc.status_code), str(exc.detail), {"status_code": exc.status_code})
     except ValueError as exc:
-        return _jsonrpc_error(req.id, -32602, "Invalid params", {"detail": str(exc)})
+        return _jsonrpc_error(req.id, -32602, f"Invalid params: {exc}", {"detail": str(exc)})
 
 
 @router.get("")
@@ -107,11 +179,14 @@ async def mcp_post(
     x_api_key: str | None = Header(default=None, alias="X-API-Key"),
     authorization: str | None = Header(default=None),
 ) -> Response:
-    raw_auth = _extract_raw(x_api_key, authorization)
+    raw_auth = extract_credential(x_api_key, authorization)
     try:
         body = await request.json()
     except Exception:
-        return JSONResponse(_jsonrpc_error(None, -32700, "Parse error"), status_code=400)
+        return JSONResponse(
+            _jsonrpc_error(None, -32700, "Parse error: request body is not valid JSON", None),
+            status_code=400,
+        )
 
     if isinstance(body, list):
         responses = []
@@ -119,7 +194,9 @@ async def mcp_post(
             try:
                 req = McpJsonRpcRequest.model_validate(item)
             except ValidationError as exc:
-                responses.append(_jsonrpc_error(None, -32600, "Invalid Request", exc.errors()))
+                responses.append(
+                    _jsonrpc_error(None, -32600, _summarize_validation_errors(None, exc.errors()).replace("Invalid params", "Invalid Request"), exc.errors())
+                )
                 continue
             response = _handle_rpc(req, raw_auth)
             if response is not None:
@@ -131,7 +208,10 @@ async def mcp_post(
     try:
         req = McpJsonRpcRequest.model_validate(body)
     except ValidationError as exc:
-        return JSONResponse(_jsonrpc_error(None, -32600, "Invalid Request", exc.errors()), status_code=400)
+        return JSONResponse(
+            _jsonrpc_error(None, -32600, _summarize_validation_errors(None, exc.errors()).replace("Invalid params", "Invalid Request"), exc.errors()),
+            status_code=400,
+        )
     response = _handle_rpc(req, raw_auth)
     if response is None:
         return Response(status_code=202)

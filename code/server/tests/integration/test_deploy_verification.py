@@ -137,6 +137,21 @@ def test_deploy_client_auto_upgrade_flags(mcp: McpClient, deploy_http):
     assert "sync_ma3_client" in policy
 
 
+@pytest.mark.deploy
+def test_deploy_eval_claude_db_api_key(deploy_http):
+    """Regression: eval tenant keys in api_keys table must authenticate tools/call."""
+    key = os.environ.get("MA3_EVAL_CLAUDE_KEY", "").strip()
+    if not key:
+        pytest.skip("MA3_EVAL_CLAUDE_KEY not set (eval profile key on deploy host)")
+    mcp = McpClient(deploy_http, api_key=key)
+    who = mcp.structured("ma3_whoami", {"client_version": "0.0.0", "tool_schema_version": "ma3.mcp.v0"})
+    assert who["caller"]["type"] == "api_key"
+    assert who["caller"]["via"] == "db_api_key"
+    assert who["writable_library_ids"], who
+    ctx = mcp.structured("ma3_context", {"problem": "deploy eval key auth probe", "client_version": "0.0.0"})
+    assert "cases" in ctx
+
+
 @pytest.mark.postgres
 def test_deploy_database_migration_state():
     database_url = os.environ.get("MA3_DATABASE_URL")
