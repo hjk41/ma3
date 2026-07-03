@@ -261,6 +261,12 @@ def initialize_database() -> None:
             "UPDATE libraries SET kind = ?, owner_principal_id = NULL WHERE id = ?",
             ("community", settings.default_library_id),
         )
+        _sync_legacy_library(
+            settings.default_library_id,
+            org_id=settings.default_org_id,
+            name="Community Library",
+            visibility="public",
+        )
 
         if not _column_exists(conn, "libraries", "deletion_protection"):
             _execute(conn, "ALTER TABLE libraries ADD COLUMN deletion_protection INTEGER NOT NULL DEFAULT 0")
@@ -1475,6 +1481,45 @@ def get_library(library_id: str) -> dict[str, Any] | None:
     return _row_dict(row) if row else None
 
 
+def _sync_legacy_library_if_needed(
+    conn: Any,
+    library_id: str,
+    *,
+    name: str,
+    org_id: str,
+    visibility: str,
+) -> None:
+    """Keep legacy_libraries in sync on migrated Postgres (api_key_grants FK)."""
+    if not _table_exists(conn, "legacy_libraries"):
+        return
+    from datetime import datetime, timezone
+
+    now = datetime.now(timezone.utc).replace(microsecond=0).isoformat()
+    is_public = visibility == "public"
+    if is_postgres():
+        _execute(
+            conn,
+            """
+            INSERT INTO legacy_libraries (library_id, organization_id, name, description, is_public, created_at)
+            VALUES (?, ?, ?, '', ?, ?)
+            ON CONFLICT (library_id) DO UPDATE SET
+                name = EXCLUDED.name,
+                organization_id = EXCLUDED.organization_id,
+                is_public = EXCLUDED.is_public
+            """,
+            (library_id, org_id, name, is_public, now),
+        )
+    else:
+        _execute(
+            conn,
+            """
+            INSERT OR REPLACE INTO legacy_libraries (library_id, organization_id, name, description, is_public, created_at)
+            VALUES (?, ?, ?, '', ?, ?)
+            """,
+            (library_id, org_id, name, is_public, now),
+        )
+
+
 def _format_library_row(row: dict[str, Any]) -> dict[str, Any]:
     lib_id = str(row["id"])
     kind = str(row.get("kind") or "custom")
@@ -1487,6 +1532,47 @@ def _format_library_row(row: dict[str, Any]) -> dict[str, Any]:
         "is_personal": kind == "personal",
         "is_public_default": lib_id == settings.default_library_id,
     }
+
+
+def _sync_legacy_library(
+    library_id: str,
+    *,
+    org_id: str,
+    name: str,
+    visibility: str,
+) -> None:
+    """Mirror v1 libraries into legacy_libraries when Postgres FKs still reference it."""
+    if not is_postgres():
+        return
+    from datetime import datetime, timezone
+
+    now = datetime.now(timezone.utc).replace(microsecond=0).isoformat()
+    is_public = visibility == "public"
+    with connect() as conn:
+        if not _table_exists(conn, "legacy_libraries"):
+            return
+        if is_postgres():
+            _execute(
+                conn,
+                """
+                INSERT INTO legacy_libraries (library_id, organization_id, name, description, is_public, created_at)
+                VALUES (?, ?, ?, '', ?, ?)
+                ON CONFLICT (library_id) DO UPDATE SET
+                    organization_id = EXCLUDED.organization_id,
+                    name = EXCLUDED.name,
+                    is_public = EXCLUDED.is_public
+                """,
+                (library_id, org_id, name, is_public, now),
+            )
+        else:
+            _execute(
+                conn,
+                """
+                INSERT OR REPLACE INTO legacy_libraries (library_id, organization_id, name, description, is_public, created_at)
+                VALUES (?, ?, ?, '', ?, ?)
+                """,
+                (library_id, org_id, name, is_public, now),
+            )
 
 
 def create_library(
@@ -1511,6 +1597,7 @@ def create_library(
             """,
             (library_id, org, name, visibility, kind, owner_principal_id),
         )
+    _sync_legacy_library(library_id, org_id=org, name=name, visibility=visibility)
     lib = get_library(library_id)
     assert lib is not None
     return lib
@@ -1547,6 +1634,7 @@ def ensure_library(
             """,
             (org, name, visibility, kind, owner_principal_id, library_id),
         )
+    _sync_legacy_library(library_id, org_id=org, name=name, visibility=visibility)
     lib = get_library(library_id)
     assert lib is not None
     return lib
