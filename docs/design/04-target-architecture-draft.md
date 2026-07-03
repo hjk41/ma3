@@ -123,7 +123,6 @@ Agent **每次** MCP `tools/call` 传：
 |------|------|
 | `ma3_context` | 读 |
 | `ma3_case` | case 展开 |
-| `ma3_search_explain` | 排名诊断 |
 | `ma3_report` | 写（**默认 active**） |
 | `ma3_validate` | dry-run |
 | `ma3_doctor` / `ma3_whoami` | 诊断 |
@@ -224,7 +223,7 @@ ma3_report ──► active   (default)
 
 - Library / case 浏览
 - Record 详情与 relation 图（只读）
-- Search + **explain** 面板（与 `ma3_search_explain` 同源）
+- Search + **explain** 面板（内部排名分解，**不**经 MCP 暴露）
 - Deploy banner（healthz 身份）
 
 **不包含 v1**：

@@ -126,27 +126,51 @@ if [[ -x "$SCENARIO_DIR/verify.sh" ]]; then
 fi
 
 END_TS=$(date -u +%s)
-WATCH_JSON=$(python3 "$EVAL_ROOT/scripts/ma3_watch.py" --since-line "$LOG_OFFSET" 2>/dev/null || echo '{}')
+WATCH_JSON='{}'
+if watch_out="$(python3 "$EVAL_ROOT/scripts/ma3_watch.py" --since-line "$LOG_OFFSET" 2>/dev/null)"; then
+  WATCH_JSON="$watch_out"
+elif [[ -n "$watch_out" ]]; then
+  # Non-zero exit but stdout still has JSON (legacy callers); do not append a second blob.
+  WATCH_JSON="$watch_out"
+fi
 
-python3 - <<PY
-import json, os
-watch = json.loads('''$WATCH_JSON''' if '''$WATCH_JSON'''.strip() else '{}')
+export EVAL_RUN_ID="$RUN_ID" EVAL_SCENARIO="$SCENARIO" EVAL_AGENT="$AGENT"
+export EVAL_AGENT_BACKEND="$AGENT_BACKEND" EVAL_ROUND="$ROUND"
+export EVAL_AGENT_EXIT="$AGENT_EXIT" EVAL_VERIFY_EXIT="$VERIFY_EXIT"
+export EVAL_START_TS="$START_TS" EVAL_END_TS="$END_TS" EVAL_RESULT_FILE="$RESULT_FILE"
+export EVAL_WATCH_JSON="$WATCH_JSON"
+
+RESULT_WRITE_EXIT=0
+python3 - <<'PY' || RESULT_WRITE_EXIT=$?
+import json
+import os
+
+raw = os.environ.get("EVAL_WATCH_JSON", "").strip()
+try:
+    watch = json.loads(raw) if raw else {}
+except json.JSONDecodeError:
+    watch = {"error": "invalid_watch_json", "raw_preview": raw[:200]}
+
 out = {
-    "run_id": "$RUN_ID",
-    "scenario": "$SCENARIO",
-    "agent": "$AGENT",
-    "agent_backend": "$AGENT_BACKEND",
-    "round": int("$ROUND"),
-    "agent_exit": int("$AGENT_EXIT"),
-    "verify_pass": int("$VERIFY_EXIT") == 0,
-    "duration_s": int("$END_TS") - int("$START_TS"),
+    "run_id": os.environ["EVAL_RUN_ID"],
+    "scenario": os.environ["EVAL_SCENARIO"],
+    "agent": os.environ["EVAL_AGENT"],
+    "agent_backend": os.environ["EVAL_AGENT_BACKEND"],
+    "round": os.environ["EVAL_ROUND"],
+    "agent_exit": int(os.environ["EVAL_AGENT_EXIT"]),
+    "verify_pass": int(os.environ["EVAL_VERIFY_EXIT"]) == 0,
+    "duration_s": int(os.environ["EVAL_END_TS"]) - int(os.environ["EVAL_START_TS"]),
     "ma3": watch,
 }
-path = "$RESULT_FILE"
+path = os.environ["EVAL_RESULT_FILE"]
 with open(path, "w", encoding="utf-8") as f:
     json.dump(out, f, indent=2)
 print(json.dumps(out, indent=2))
 PY
+
+if [[ "$RESULT_WRITE_EXIT" -ne 0 ]]; then
+  echo "[$RUN_ID] WARN: failed to write result json (exit=$RESULT_WRITE_EXIT)" >&2
+fi
 
 echo "==> [$RUN_ID] compose down"
 if [[ -f "$SCENARIO_DIR/docker-compose.yml" ]]; then

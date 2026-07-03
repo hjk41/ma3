@@ -158,7 +158,7 @@ Agent 无需 CLI 或手工维护 JSON 文件；接入 = MCP 配置 + 一条 poli
 - **Context boost**：task_type、target、tags、environment 等上下文加权
 - **Feedback 加权**：用户/Agent 的 up/down 影响排名
 - **pgvector ANN**（Postgres）：HNSW 索引，替代 brute-force 扫描；SQLite 降级为 BLOB cosine
-- **Explain**：`ma3_search_explain` 可查看排名原因；`ma3_context` 返回 applicability / lineage 警告
+- **Explain**：排名分解为**内部接口**（Observatory 只读面），**不**经 MCP 暴露以防刷榜；`ma3_context` 返回 applicability / lineage 警告
 
 ### 4. 信任与安全
 

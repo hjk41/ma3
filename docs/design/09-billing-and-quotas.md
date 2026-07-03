@@ -40,7 +40,6 @@ library.org_id              →  storage / library count 计入 owner org 的 bi
 |------|----------|------|
 | `ma3_context` | 是 | 1 + max(0, ceil(records_returned/10) - 1) |
 | `ma3_case` | 是 | 同上 |
-| `ma3_search_explain` | 是 | 1 |
 | `ma3_report` | **否** | 贡献路径 |
 | `ma3_feedback` | **否** | |
 | `ma3_validate` | **否** | |

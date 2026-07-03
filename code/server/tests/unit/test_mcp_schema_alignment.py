@@ -10,7 +10,6 @@ EXPECTED_TOOLS = {
     "ma3_report",
     "ma3_case",
     "ma3_locate_by_id",
-    "ma3_search_explain",
     "ma3_list_my_writes",
     "ma3_delete_record",
     "ma3_restore_record",

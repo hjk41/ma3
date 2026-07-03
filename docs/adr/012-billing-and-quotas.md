@@ -39,7 +39,7 @@ v1 **不接入** Stripe；`plan_code` 由平台管理员手工设置。
 
 具体数字存于 `plans` 表，可运营调整。
 
-**Read unit**：`ma3_context` / `ma3_case` / `ma3_search_explain` 成功响应各计 1 unit；返回 records >10 时按 `ceil(n/10)` 计。`ma3_report`、`ma3_feedback`、`ma3_validate`、maintainer 工具 **不计** billable units。
+**Read unit**：`ma3_context` / `ma3_case` 成功响应各计 1 unit；返回 records >10 时按 `ceil(n/10)` 计。（`ma3_search_explain` 已下线为内部接口，不经 MCP、不计费。）`ma3_report`、`ma3_feedback`、`ma3_validate`、maintainer 工具 **不计** billable units。
 
 ### 2. Billing account（一等实体）
 

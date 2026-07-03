@@ -82,8 +82,14 @@ def test_deploy_legacy_knowledge_searchable(mcp: McpClient):
     hit_count += len(context.get("ungrouped_records", []))
     assert hit_count >= MIN_MIHOMO_HITS, context
 
-    explain = mcp.structured("ma3_search_explain", {"problem": "nginx reverse proxy"})
-    assert explain["explain"]["hits"] >= 1, explain
+    nginx = mcp.structured(
+        "ma3_context",
+        {"problem": "nginx reverse proxy", "max_cases": 5, "max_records_per_case": 3},
+    )
+    nginx_hits = sum(len(group.get("records", [])) for group in nginx.get("cases", []))
+    nginx_hits += len(nginx.get("ungrouped_records", []))
+    assert nginx_hits >= 1, nginx
+    assert "explain" not in nginx
 
 
 def test_deploy_ma3_validate_roundtrip(mcp: McpClient):

@@ -9,8 +9,8 @@ from app.services.search_context_service import SearchContext, context_boost
 from app.storage.db import (
     _fetch_records_by_ids,
     _fetchall,
-    _like_search_records,
     _list_active_record_ids,
+    _search_tokens,
     ann_vector_search,
     connect,
     get_embeddings_batch,
@@ -19,6 +19,7 @@ from app.storage.db import (
     is_postgres,
     pgvector_ready,
 )
+from app.storage.ranking import RankInput, rank
 
 
 def _normalize_scores(scores: dict[str, float]) -> dict[str, float]:
@@ -30,15 +31,53 @@ def _normalize_scores(scores: dict[str, float]) -> dict[str, float]:
     return {rid: score / max_score for rid, score in scores.items()}
 
 
-def _feedback_multiplier(up: int, down: int) -> float:
-    net = up - down
-    if net <= -3:
-        return 0.3
-    if net < 0:
-        return 0.7
-    if net >= 3:
-        return 1.15
-    return 1.0
+def _lexical_relevance(library_ids: set[str], problem: str, pool_limit: int) -> dict[str, float]:
+    """Weighted-token-match relevance in [0,1] (design/12 §3.3), replacing the old
+    ``ORDER BY created_at DESC`` lexical fallback.
+
+    score = Σ_t (2·[token in problem] + 1·[token in summary]) / (|T|·3)
+
+    Uses the raw match fraction directly (NOT pool-max normalized) so a record's
+    relevance is independent of what else is in the candidate pool — this keeps
+    ranking stable when unrelated records are added (design/12 §7.2 pool-stability).
+    """
+    if not library_ids:
+        return {}
+    tokens = [t.lower() for t in _search_tokens(problem)]
+    if not tokens:
+        return {}
+    placeholders = ",".join("?" for _ in library_ids)
+    op = "ILIKE" if is_postgres() else "LIKE"
+    token_clauses = " OR ".join(f"(problem {op} ? OR result_summary {op} ?)" for _ in tokens)
+    query = f"""
+        SELECT id, problem, result_summary
+        FROM records
+        WHERE library_id IN ({placeholders}) AND status = 'active'
+          AND ({token_clauses})
+        LIMIT ?
+    """
+    params: list[Any] = list(library_ids)
+    for token in tokens:
+        pattern = f"%{token[:200]}%"
+        params.extend([pattern, pattern])
+    params.append(pool_limit)
+    with connect() as conn:
+        rows = _fetchall(conn, query, params)
+    denom = float(len(tokens) * 3)
+    scores: dict[str, float] = {}
+    for row in rows:
+        rid = str(row["id"])
+        problem_text = (row["problem"] or "").lower()
+        summary_text = (row["result_summary"] or "").lower()
+        raw = 0
+        for token in tokens:
+            if token in problem_text:
+                raw += 2
+            if token in summary_text:
+                raw += 1
+        if raw > 0:
+            scores[rid] = raw / denom
+    return scores
 
 
 def _fts_query_text(problem: str) -> str:
@@ -160,90 +199,66 @@ def _apply_context_boost(
     return adjusted
 
 
-def _apply_feedback_and_filter(
-    combined: dict[str, float],
-    library_ids: set[str],
-    *,
-    explain: bool,
-    explain_map: dict[str, dict[str, Any]] | None = None,
-) -> tuple[dict[str, float], dict[str, dict[str, Any]]]:
-    if not combined:
-        return {}, {}
-    explain_map = explain_map or {}
-    record_ids = list(combined)
-    superseded = get_superseded_record_ids(record_ids, library_ids)
-    feedback = get_feedback_summaries(record_ids)
-    adjusted: dict[str, float] = {}
-    for record_id, base_score in combined.items():
-        if record_id in superseded:
-            if explain:
-                explain_map[record_id] = {"excluded": "superseded", "base_score": base_score}
-            continue
-        fb = feedback.get(record_id, {"up": 0, "down": 0})
-        factor = _feedback_multiplier(int(fb.get("up", 0)), int(fb.get("down", 0)))
-        final = base_score * factor
-        adjusted[record_id] = final
-        if explain:
-            entry = explain_map.setdefault(record_id, {})
-            entry.setdefault("base_score", round(base_score, 4))
-            entry["feedback_factor"] = factor
-            entry["combined_score"] = round(final, 4)
-            entry["feedback"] = fb
-    return adjusted, explain_map
-
-
-def _hybrid_search(
+def _hybrid_relevance(
     library_ids: set[str],
     problem: str,
-    limit: int,
+    pool_limit: int,
     *,
-    explain: bool = False,
-    context: SearchContext | None = None,
-) -> tuple[list[dict[str, Any]], dict[str, dict[str, Any]]]:
-    pool_limit = max(limit * 4, 40)
+    explain: bool,
+    explain_map: dict[str, dict[str, Any]],
+) -> dict[str, float]:
+    """Postgres FTS + vector fusion → raw relevance dict (pre context-boost)."""
     fts_scores = _fts_search_pg(library_ids, problem, limit=pool_limit) if is_postgres() else {}
     vector_scores = _vector_scores(library_ids, problem, None, limit=pool_limit)
-
     candidate_ids = set(fts_scores) | set(vector_scores)
     if not candidate_ids:
-        records = _like_search_records(library_ids, problem, limit)
-        return records, {}
-
+        return {}
     fts_norm = _normalize_scores(fts_scores)
     combined: dict[str, float] = {}
     for record_id in candidate_ids:
         fts_part = fts_norm.get(record_id, 0.0)
         vec_part = vector_scores.get(record_id, 0.0)
         if fts_part and vec_part:
-            hybrid = 0.4 * fts_part + 0.6 * vec_part
-            combined[record_id] = max(vec_part, hybrid)
+            combined[record_id] = max(vec_part, 0.4 * fts_part + 0.6 * vec_part)
         elif vec_part:
             combined[record_id] = vec_part
         else:
             combined[record_id] = fts_part * 0.5
-
-    explain_map: dict[str, dict[str, Any]] = {}
-    combined = _apply_context_boost(combined, library_ids, context, explain=explain, explain_map=explain_map)
-    adjusted, explain_map = _apply_feedback_and_filter(combined, library_ids, explain=explain, explain_map=explain_map)
     if explain:
-        for record_id, base in combined.items():
+        for record_id in combined:
             entry = explain_map.setdefault(record_id, {})
-            if "excluded" not in entry:
-                entry.setdefault("fts", round(fts_norm.get(record_id, 0.0), 4))
-                entry.setdefault("vector", round(vector_scores.get(record_id, 0.0), 4))
-                if "base_score" not in entry:
-                    entry["base_score"] = round(base, 4)
+            entry.setdefault("fts", round(fts_norm.get(record_id, 0.0), 4))
+            entry.setdefault("vector", round(vector_scores.get(record_id, 0.0), 4))
+    return combined
 
-    ranked_ids = [rid for rid, _ in sorted(adjusted.items(), key=lambda item: item[1], reverse=True)[:limit]]
-    records = _fetch_records_by_ids(ranked_ids, library_ids, include_payload=True)
-    order = {rid: idx for idx, rid in enumerate(ranked_ids)}
-    records.sort(key=lambda row: order.get(str(row["id"]), 10_000))
-    if explain:
-        for record in records:
-            rid = str(record["id"])
-            if rid in explain_map:
-                record["_rank"] = explain_map[rid]
-    return records, explain_map
+
+def _relevance_pool(
+    library_ids: set[str],
+    problem: str,
+    pool_limit: int,
+    *,
+    explain: bool,
+    context: SearchContext | None,
+    explain_map: dict[str, dict[str, Any]],
+) -> dict[str, float]:
+    """Unified relevance stage: pick a mode, fuse, apply context boost, clamp to [0,1].
+
+    Always returns a relevance dict feeding the GTN stage — the lexical path no
+    longer short-circuits to ``created_at DESC`` (design/12 B1)."""
+    if settings.disable_embeddings:
+        relevance = _lexical_relevance(library_ids, problem, pool_limit)
+    elif is_postgres():
+        relevance = _hybrid_relevance(
+            library_ids, problem, pool_limit, explain=explain, explain_map=explain_map
+        )
+    else:
+        relevance = _vector_scores(library_ids, problem, None, limit=pool_limit)
+        if not relevance:
+            relevance = _lexical_relevance(library_ids, problem, pool_limit)
+    if not relevance:
+        return {}
+    relevance = _apply_context_boost(relevance, library_ids, context, explain=explain, explain_map=explain_map)
+    return {rid: max(0.0, min(1.0, score)) for rid, score in relevance.items()}
 
 
 def search_records(
@@ -254,31 +269,61 @@ def search_records(
     explain: bool = False,
     context: SearchContext | None = None,
 ) -> tuple[list[dict[str, Any]], dict[str, dict[str, Any]]]:
+    """Unified search: relevance pool → GTN scoring → hide clearly-wrong → truncate.
+
+    Same pipeline for every backend/embedding mode so feedback (Wilson) and the
+    clearly-wrong floor always apply (design/12 §5)."""
     if not library_ids:
         return [], {}
     problem = problem.strip()
     if not problem:
         return [], {}
 
-    if settings.disable_embeddings:
-        return _like_search_records(library_ids, problem, limit), {}
+    pool_limit = max(limit * 4, 40)
+    explain_map: dict[str, dict[str, Any]] = {}
+    relevance = _relevance_pool(
+        library_ids, problem, pool_limit, explain=explain, context=context, explain_map=explain_map
+    )
+    if not relevance:
+        return [], {}
 
-    if is_postgres():
-        return _hybrid_search(library_ids, problem, limit, explain=explain, context=context)
+    record_ids = list(relevance)
+    superseded = get_superseded_record_ids(record_ids, library_ids)
+    feedback = get_feedback_summaries(record_ids)
+    records = _fetch_records_by_ids(record_ids, library_ids, include_payload=True)
+    by_id = {str(row["id"]): row for row in records}
 
-    vector_scores = _vector_scores(library_ids, problem, None, limit=limit * 4)
-    if vector_scores:
-        explain_map: dict[str, dict[str, Any]] = {}
-        boosted = _apply_context_boost(vector_scores, library_ids, context, explain=explain, explain_map=explain_map)
-        adjusted, explain_map = _apply_feedback_and_filter(boosted, library_ids, explain=explain, explain_map=explain_map)
-        ranked_ids = [rid for rid, _ in sorted(adjusted.items(), key=lambda item: item[1], reverse=True)[:limit]]
-        records = _fetch_records_by_ids(ranked_ids, library_ids, include_payload=True)
+    inputs: list[RankInput] = []
+    for rid, rel in relevance.items():
+        row = by_id.get(rid)
+        if row is None:
+            continue
+        fb = feedback.get(rid, {"up": 0, "down": 0})
+        inputs.append(
+            RankInput(
+                record_id=rid,
+                relevance=rel,
+                up=int(fb.get("up", 0)),
+                down=int(fb.get("down", 0)),
+                superseded=rid in superseded,
+                created_at=row.get("created_at"),
+            )
+        )
+
+    ranked = rank(inputs)
+    if settings.search_hide_clearly_wrong:
+        ranked = [r for r in ranked if not r.is_wrong]
+    ranked = ranked[:limit]
+
+    ordered: list[dict[str, Any]] = []
+    for result in ranked:
+        row = by_id.get(result.record_id)
+        if row is None:
+            continue
         if explain:
-            for record in records:
-                rid = str(record["id"])
-                if rid in explain_map:
-                    record["_rank"] = explain_map[rid]
-        return records, explain_map
-
-    records = _like_search_records(library_ids, problem, limit)
-    return records, {}
+            entry = explain_map.setdefault(result.record_id, {})
+            entry.update(result.explain())
+            entry["feedback"] = feedback.get(result.record_id, {"up": 0, "down": 0})
+            row["_rank"] = entry
+        ordered.append(row)
+    return ordered, explain_map

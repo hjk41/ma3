@@ -23,7 +23,6 @@ from app.models.mcp_payloads import (
     Ma3ReportPayload,
     Ma3RestoreRecordPayload,
     Ma3ReviewRecordPayload,
-    Ma3SearchExplainPayload,
     Ma3ValidatePayload,
     Ma3WhoamiPayload,
     PAYLOAD_BY_TOOL,
@@ -53,7 +52,6 @@ _TOOL_ORDER = (
     "ma3_context",
     "ma3_case",
     "ma3_locate_by_id",
-    "ma3_search_explain",
     "ma3_report",
     "ma3_list_my_writes",
     "ma3_delete_record",
@@ -74,7 +72,6 @@ _TOOL_DESCRIPTIONS: dict[str, str] = {
     "ma3_restore_record": "Restore a trashed record in a deletion-protected library. Required: record_id.",
     "ma3_case": "Read one case timeline. Required: case_id.",
     "ma3_locate_by_id": "Fetch a single record (vk_...) or case (cs_...) by its id. Required: id.",
-    "ma3_search_explain": "Search with ranking explain. Required: problem.",
     "ma3_doctor": "Server, auth, and index diagnostics.",
     "ma3_whoami": "Caller identity and library visibility.",
     "ma3_feedback": "Thumbs up/down on an active record. Required: record_id, vote (up|down|clear).",
@@ -297,13 +294,8 @@ def call_mcp_tool(name: str, arguments: dict[str, Any], auth: McpAuthContext) ->
 
     if name == "ma3_context":
         assert isinstance(payload, Ma3ContextPayload)
-        body = _context_payload(auth, payload, explain=payload.include_explain)
+        body = _context_payload(auth, payload, explain=False)
         return _result(body, client_report=client_report, summary=f"{len(body['cases'])} cases")
-
-    if name == "ma3_search_explain":
-        assert isinstance(payload, Ma3SearchExplainPayload)
-        body = _context_payload(auth, payload, explain=True)
-        return _result(body, client_report=client_report, summary="search explain")
 
     if name == "ma3_case":
         assert isinstance(payload, Ma3CasePayload)

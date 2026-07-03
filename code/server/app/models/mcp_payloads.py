@@ -70,7 +70,6 @@ _CONTEXT_EXAMPLE = {
     "tags": ["mcp", "schema-validation"],
     "max_cases": 5,
     "max_records_per_case": 3,
-    "include_explain": False,
 }
 
 
@@ -96,7 +95,6 @@ class Ma3ContextPayload(BaseModel):
     tags: list[str] = Field(default_factory=list)
     max_cases: int = Field(default=3, ge=1, le=20)
     max_records_per_case: int = Field(default=3, ge=1, le=10)
-    include_explain: bool = False
     include_full_json: bool = False
     client_version: str | None = Field(
         default=None,
@@ -109,15 +107,6 @@ class Ma3ContextPayload(BaseModel):
     model_config = ConfigDict(
         extra="forbid",
         json_schema_extra={"examples": [_CONTEXT_EXAMPLE]},
-    )
-
-
-class Ma3SearchExplainPayload(Ma3ContextPayload):
-    """Wire payload for ``ma3_search_explain``. ``include_explain`` is forced True server-side."""
-
-    model_config = ConfigDict(
-        extra="forbid",
-        json_schema_extra={"examples": [{**_CONTEXT_EXAMPLE, "include_explain": True}]},
     )
 
 
@@ -356,7 +345,6 @@ class Ma3ValidatePayload(BaseModel):
     tool_name: Literal[
         "ma3_report",
         "ma3_context",
-        "ma3_search_explain",
         "ma3_case",
         "ma3_locate_by_id",
         "ma3_list_my_writes",
@@ -394,7 +382,6 @@ PAYLOAD_BY_TOOL: dict[str, type[BaseModel]] = {
     "ma3_list_my_writes": Ma3ListMyWritesPayload,
     "ma3_delete_record": Ma3DeleteRecordPayload,
     "ma3_restore_record": Ma3RestoreRecordPayload,
-    "ma3_search_explain": Ma3SearchExplainPayload,
     "ma3_doctor": Ma3DoctorPayload,
     "ma3_whoami": Ma3WhoamiPayload,
     "ma3_list_drafts": Ma3ListDraftsPayload,

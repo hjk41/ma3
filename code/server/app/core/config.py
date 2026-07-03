@@ -17,6 +17,16 @@ def _env_str(name: str, default: str) -> str:
     return default if raw is None or not raw.strip() else raw.strip()
 
 
+def _env_float(name: str, default: float) -> float:
+    raw = os.environ.get(name)
+    if raw is None or not raw.strip():
+        return default
+    try:
+        return float(raw.strip())
+    except ValueError:
+        return default
+
+
 @dataclass(slots=True)
 class Settings:
     service_name: str = "ma3"
@@ -50,6 +60,28 @@ class Settings:
     maintainer_api_keys: tuple[str, ...] = field(default_factory=lambda: tuple())
     vector_scan_limit: int = field(default_factory=lambda: int(os.environ.get("MA3_VECTOR_SCAN_LIMIT", "500")))
     disable_embeddings: bool = field(default_factory=lambda: _env_bool("MA3_DISABLE_EMBEDDINGS", False))
+
+    # Search ranking (design/12 — Scheme B Gate-Then-Nudge). See validate_ranking_config().
+    search_wilson_z: float = field(default_factory=lambda: _env_float("MA3_SEARCH_WILSON_Z", 1.96))
+    search_t_high: float = field(default_factory=lambda: _env_float("MA3_SEARCH_T_HIGH", 0.65))
+    search_t_mid: float = field(default_factory=lambda: _env_float("MA3_SEARCH_T_MID", 0.5))
+    search_t_floor: float = field(default_factory=lambda: _env_float("MA3_SEARCH_T_FLOOR", 0.25))
+    search_rel_min: float = field(default_factory=lambda: _env_float("MA3_SEARCH_REL_MIN", 0.35))
+    search_epsilon: float = field(default_factory=lambda: _env_float("MA3_SEARCH_EPSILON", 0.05))
+    search_delta: float = field(default_factory=lambda: _env_float("MA3_SEARCH_DELTA", 0.10))
+    search_q_verified: float = field(default_factory=lambda: _env_float("MA3_SEARCH_Q_VERIFIED", 0.02))
+    search_q_lean: float = field(default_factory=lambda: _env_float("MA3_SEARCH_Q_LEAN", 0.02))
+    search_recency_tau_days: float = field(
+        default_factory=lambda: _env_float("MA3_SEARCH_RECENCY_TAU_DAYS", 180.0)
+    )
+    search_hide_clearly_wrong: bool = field(
+        default_factory=lambda: _env_bool("MA3_SEARCH_HIDE_CLEARLY_WRONG", True)
+    )
+
+    @property
+    def search_cap(self) -> float:
+        """clearly-wrong relevance ceiling = rel_min - delta."""
+        return self.search_rel_min - self.search_delta
     embedding_model: str = field(
         default_factory=lambda: _env_str("MA3_EMBEDDING_MODEL", "sentence-transformers/all-MiniLM-L6-v2")
     )
@@ -97,6 +129,7 @@ class Settings:
                 "maintainer_api_keys",
                 tuple(item.strip() for item in raw_maintainers.split(",") if item.strip()),
             )
+        validate_ranking_config(self)
 
     @property
     def authing_configured(self) -> bool:
@@ -134,6 +167,39 @@ class Settings:
         if self.authing_configured:
             flags.append("authing")
         return tuple(flags)
+
+
+class RankingConfigError(ValueError):
+    """Raised when search-ranking hyperparameters violate the GTN invariants."""
+
+
+def validate_ranking_config(s: "Settings") -> None:
+    """Fail fast if MA3_SEARCH_* config breaks the Scheme B invariants (design/12 §4).
+
+    Runs at startup (via ``__post_init__``) so a bad env/deploy config crashes
+    immediately instead of silently mis-ranking. Also reused by tests as the guard.
+    """
+    q = max(s.search_q_verified, s.search_q_lean)
+    # Core invariant: 2·max(|q|) < epsilon < delta (trust nudge can never flip a
+    # relevance gap of epsilon, and clearly-wrong cap sits a full delta below rel_min).
+    if not (2 * q < s.search_epsilon < s.search_delta):
+        raise RankingConfigError(
+            f"ranking invariant violated: 2*max(q)={2 * q} must be < epsilon={s.search_epsilon} "
+            f"< delta={s.search_delta}"
+        )
+    if abs(s.search_cap - (s.search_rel_min - s.search_delta)) > 1e-9:
+        raise RankingConfigError(
+            f"cap={s.search_cap} must equal rel_min-delta={s.search_rel_min - s.search_delta}"
+        )
+    if not (0.0 <= s.search_t_floor < s.search_t_mid < s.search_t_high <= 1.0):
+        raise RankingConfigError(
+            f"thresholds must satisfy 0<=t_floor<t_mid<t_high<=1; got "
+            f"floor={s.search_t_floor}, mid={s.search_t_mid}, high={s.search_t_high}"
+        )
+    if s.search_q_verified < 0 or s.search_q_lean < 0:
+        raise RankingConfigError("q_verified and q_lean are magnitudes and must be >= 0")
+    if not (0.0 < s.search_rel_min <= 1.0):
+        raise RankingConfigError(f"rel_min must be in (0,1]; got {s.search_rel_min}")
 
 
 settings = Settings()

@@ -17,7 +17,7 @@ Q11：v1 是否需要 UI。**维护者**（人或 Agent）需「看库里有什�
 | Overview | deploy banner、library 统计、doctor 摘要 |
 | Cases | case 列表与详情 |
 | Records | record 详情、relations |
-| Search | 查询 + explain 面板（与 `ma3_search_explain` 同源逻辑） |
+| Search | 查询 + explain 面板（内部排名分解逻辑；explain **不**经 MCP 暴露，防刷榜/SEO） |
 
 **v1 以只读浏览为主**；**人 — 维护者** 另有写动作（与 ADR-007/008 一致，对齐 Pitch §维护分层）：
 

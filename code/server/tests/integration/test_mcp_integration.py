@@ -9,7 +9,6 @@ EXPECTED_TOOLS = {
     "ma3_report",
     "ma3_case",
     "ma3_locate_by_id",
-    "ma3_search_explain",
     "ma3_list_my_writes",
     "ma3_delete_record",
     "ma3_restore_record",
@@ -87,6 +86,32 @@ def test_ma3_validate_success_and_failure(isolated_client):
     assert bad["validation_errors"]
 
 
+def test_search_explain_is_not_exposed(isolated_client):
+    mcp = McpClient(isolated_client)
+
+    # ma3_search_explain tool is removed (internal-only ranking explain)
+    assert "ma3_search_explain" not in EXPECTED_TOOLS
+    err = mcp.call("ma3_search_explain", {"problem": "x"}, expect_error=True)
+    assert err["code"] in (-32601, -32602, -32000, 404) or "unknown tool" in str(err).lower()
+
+    # ma3_context must reject include_explain (extra=forbid)
+    ctx_err = mcp.call(
+        "ma3_context",
+        {"problem": "x", "include_explain": True},
+        expect_error=True,
+    )
+    assert ctx_err
+
+    # ma3_validate no longer accepts ma3_search_explain as a target schema
+    # (tool_name Literal rejects it → the validate call itself errors)
+    validate_err = mcp.call(
+        "ma3_validate",
+        {"tool_name": "ma3_search_explain", "arguments": {"problem": "x"}},
+        expect_error=True,
+    )
+    assert validate_err
+
+
 def test_ma3_report_context_case_roundtrip(isolated_client):
     mcp = McpClient(isolated_client, api_key="ma3dev")
     problem = "mihomo proxy docker subscription URL unset"
@@ -120,8 +145,16 @@ def test_ma3_report_context_case_roundtrip(isolated_client):
     assert case["case"]["id"] == case_id
     assert any(rec["id"] == record_id for rec in case["case"]["records"])
 
-    explain = mcp.structured("ma3_search_explain", {"problem": "mihomo proxy"})
-    assert explain["explain"]["hits"] >= 1
+    # explain is internal-only now: ma3_context must not surface ranking internals
+    assert "explain" not in context
+    # per-record ranking explain must not leak either. Derive the forbidden key set
+    # from RankResult.explain() so new explain fields are auto-covered (design/12 §7.2).
+    from app.storage.ranking import RankInput, score_one
+
+    _INTERNAL_RANK_KEYS = {"_rank", "rank", *score_one(RankInput("x", relevance=0.5)).explain().keys()}
+    for group in context["cases"]:
+        for rec in group.get("records", []):
+            assert _INTERNAL_RANK_KEYS.isdisjoint(rec.keys()), rec.keys()
 
 
 def test_ma3_whoami_and_doctor(isolated_client):

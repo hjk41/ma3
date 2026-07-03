@@ -427,42 +427,6 @@ def _search_tokens(problem: str) -> list[str]:
     return tokens[:10] or [problem[:200]]
 
 
-def _like_search_records(library_ids: set[str], problem: str, limit: int = 20) -> list[dict[str, Any]]:
-    if not library_ids:
-        return []
-    placeholders = ",".join("?" for _ in library_ids)
-    op = "ILIKE" if is_postgres() else "LIKE"
-    tokens = _search_tokens(problem)
-    token_clauses = " OR ".join(f"(problem {op} ? OR result_summary {op} ?)" for _ in tokens)
-    query = f"""
-        SELECT id, library_id, case_id, status, problem, outcome, result_summary, created_at, payload_json
-        FROM records
-        WHERE library_id IN ({placeholders}) AND status = 'active'
-          AND ({token_clauses})
-        ORDER BY created_at DESC
-        LIMIT ?
-    """
-    params: list[Any] = list(library_ids)
-    for token in tokens:
-        pattern = f"%{token[:200]}%"
-        params.extend([pattern, pattern])
-    params.append(limit * 2)
-    with connect() as conn:
-        rows = _fetchall(conn, query, params)
-    out: list[dict[str, Any]] = []
-    for row in rows:
-        item = _row_dict(row)
-        payload = item.pop("payload_json", None)
-        if isinstance(payload, str):
-            item["payload"] = json.loads(payload)
-        elif isinstance(payload, dict):
-            item["payload"] = payload
-        out.append(item)
-    superseded = get_superseded_record_ids([str(r["id"]) for r in out], library_ids)
-    filtered = [r for r in out if str(r["id"]) not in superseded]
-    return filtered[:limit]
-
-
 def _fetch_records_by_ids(
     record_ids: list[str],
     library_ids: set[str],

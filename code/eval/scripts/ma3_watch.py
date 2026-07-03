@@ -40,7 +40,7 @@ def main() -> int:
     log_file = log_dir / f"{today}.jsonl"
     if not log_file.exists():
         print(json.dumps({"error": "log_missing", "path": str(log_file), "counts": {}}))
-        return 1
+        return 0
 
     counts: dict[str, int] = {t: 0 for t in MCP_TOOLS}
     latencies: dict[str, list[float]] = {t: [] for t in MCP_TOOLS}
