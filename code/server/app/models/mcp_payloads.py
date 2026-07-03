@@ -150,7 +150,14 @@ class Ma3ReportPayload(BaseModel):
     report_kind: str | None = None
     confirmation: str | None = None
     target_record_id: str | None = None
-    library_id: str | None = None
+    library_id: str | None = Field(
+        default=None,
+        description=(
+            "Target library for supplement/new writes. Omit only when the caller has exactly "
+            "one owned personal writable library (DB keys); pass explicitly for public/community "
+            "writes (usually lib_default)."
+        ),
+    )
     include_full_json: bool = False
     client_version: str | None = Field(
         default=None,

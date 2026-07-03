@@ -85,6 +85,14 @@ def _http_to_jsonrpc_code(status_code: int) -> int:
     return -32000
 
 
+def _http_exception_payload(exc: HTTPException) -> tuple[str, dict[str, Any]]:
+    detail = exc.detail
+    if isinstance(detail, dict):
+        message = str(detail.get("message") or detail.get("error") or "request failed")
+        return message, {"status_code": exc.status_code, "detail": detail}
+    return str(detail), {"status_code": exc.status_code}
+
+
 def _handle_rpc(req: McpJsonRpcRequest, raw_auth: str | None) -> dict[str, Any] | None:
     # JSON-RPC notifications intentionally receive no response.
     if req.id is None:
@@ -146,7 +154,8 @@ def _handle_rpc(req: McpJsonRpcRequest, raw_auth: str | None) -> dict[str, Any] 
             },
         )
     except HTTPException as exc:
-        return _jsonrpc_error(req.id, _http_to_jsonrpc_code(exc.status_code), str(exc.detail), {"status_code": exc.status_code})
+        message, data = _http_exception_payload(exc)
+        return _jsonrpc_error(req.id, _http_to_jsonrpc_code(exc.status_code), message, data)
     except ValueError as exc:
         return _jsonrpc_error(req.id, -32602, f"Invalid params: {exc}", {"detail": str(exc)})
 

@@ -18,9 +18,10 @@ review):
   so the ~50 existing ma3_report call sites and deployed agents keep working.
   When a caller DOES set ``report_kind`` to ``supplement``/``new`` it must also
   send a valid ``confirmation`` (opting into the judgment tree).
-* "Default personal library" from the design maps to the caller's single writable
-  library in the current auth model (per-user personal-library provisioning is
-  future work); ``lib_default`` remains the community library.
+* "Default personal library" for DB-backed API keys: omitting ``library_id`` on
+  ``new``/``supplement`` writes defaults to the caller's single owned personal library
+  (``kind=personal``); public/community writes require explicit ``library_id``.
+  Dev bypass and env writer/maintainer keys still default to ``lib_default``.
 """
 from __future__ import annotations
 

@@ -289,6 +289,12 @@ def call_mcp_tool(name: str, arguments: dict[str, Any], auth: McpAuthContext) ->
             "maintainer_library_ids": sorted(auth.maintainer_library_ids),
             "writable_libraries": writable,
             "readable_libraries": readable,
+            "library_selection": {
+                "default_write_behavior": (
+                    "new/supplement without library_id defaults to the caller's single owned "
+                    "personal library (DB keys only); pass library_id explicitly for public/community writes"
+                ),
+            },
         }
         return _result(structured, client_report=client_report, summary=json.dumps(structured["caller"]))
 

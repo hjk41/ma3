@@ -105,7 +105,9 @@ def initialize_database() -> None:
               id TEXT PRIMARY KEY,
               org_id TEXT NOT NULL,
               name TEXT NOT NULL,
-              visibility TEXT NOT NULL DEFAULT 'private'
+              visibility TEXT NOT NULL DEFAULT 'private',
+              kind TEXT NOT NULL DEFAULT 'custom',
+              owner_principal_id TEXT
             )
             """,
         )
@@ -249,6 +251,16 @@ def initialize_database() -> None:
                 "UPDATE libraries SET name = ?, visibility = ? WHERE id = ?",
                 ("Community Library", "public", settings.default_library_id),
             )
+
+        if not _column_exists(conn, "libraries", "kind"):
+            _execute(conn, "ALTER TABLE libraries ADD COLUMN kind TEXT NOT NULL DEFAULT 'custom'")
+        if not _column_exists(conn, "libraries", "owner_principal_id"):
+            _execute(conn, "ALTER TABLE libraries ADD COLUMN owner_principal_id TEXT")
+        _execute(
+            conn,
+            "UPDATE libraries SET kind = ?, owner_principal_id = NULL WHERE id = ?",
+            ("community", settings.default_library_id),
+        )
 
         if not _column_exists(conn, "libraries", "deletion_protection"):
             _execute(conn, "ALTER TABLE libraries ADD COLUMN deletion_protection INTEGER NOT NULL DEFAULT 0")
@@ -1463,22 +1475,77 @@ def get_library(library_id: str) -> dict[str, Any] | None:
     return _row_dict(row) if row else None
 
 
+def _format_library_row(row: dict[str, Any]) -> dict[str, Any]:
+    lib_id = str(row["id"])
+    kind = str(row.get("kind") or "custom")
+    return {
+        "library_id": lib_id,
+        "name": row["name"],
+        "visibility": row["visibility"],
+        "kind": kind,
+        "owner_principal_id": row.get("owner_principal_id"),
+        "is_personal": kind == "personal",
+        "is_public_default": lib_id == settings.default_library_id,
+    }
+
+
 def create_library(
     library_id: str,
     *,
     name: str,
     visibility: str = "private",
     org_id: str | None = None,
+    kind: str = "custom",
+    owner_principal_id: str | None = None,
 ) -> dict[str, Any]:
     org = org_id or settings.default_org_id
     with connect() as conn:
         _execute(
             conn,
             """
-            INSERT INTO libraries (id, org_id, name, visibility, deletion_protection, retention_days)
-            VALUES (?, ?, ?, ?, 0, 30)
+            INSERT INTO libraries (
+              id, org_id, name, visibility, kind, owner_principal_id,
+              deletion_protection, retention_days
+            )
+            VALUES (?, ?, ?, ?, ?, ?, 0, 30)
             """,
-            (library_id, org, name, visibility),
+            (library_id, org, name, visibility, kind, owner_principal_id),
+        )
+    lib = get_library(library_id)
+    assert lib is not None
+    return lib
+
+
+def ensure_library(
+    library_id: str,
+    *,
+    name: str,
+    visibility: str = "private",
+    org_id: str | None = None,
+    kind: str = "custom",
+    owner_principal_id: str | None = None,
+) -> dict[str, Any]:
+    """Create or update library metadata (idempotent bootstrap helper)."""
+    existing = get_library(library_id)
+    if existing is None:
+        return create_library(
+            library_id,
+            name=name,
+            visibility=visibility,
+            org_id=org_id,
+            kind=kind,
+            owner_principal_id=owner_principal_id,
+        )
+    org = org_id or existing.get("org_id") or settings.default_org_id
+    with connect() as conn:
+        _execute(
+            conn,
+            """
+            UPDATE libraries
+            SET org_id = ?, name = ?, visibility = ?, kind = ?, owner_principal_id = ?
+            WHERE id = ?
+            """,
+            (org, name, visibility, kind, owner_principal_id, library_id),
         )
     lib = get_library(library_id)
     assert lib is not None
@@ -1495,19 +1562,58 @@ def set_deletion_protection(library_id: str, *, enabled: bool, retention_days: i
 
 
 def list_libraries(library_ids: set[str] | None = None) -> list[dict[str, Any]]:
+    cols = "id, name, visibility, kind, owner_principal_id"
     with connect() as conn:
         if library_ids is None:
-            rows = _fetchall(conn, "SELECT id, name, visibility FROM libraries ORDER BY id")
+            rows = _fetchall(conn, f"SELECT {cols} FROM libraries ORDER BY id")
         elif not library_ids:
             return []
         else:
             placeholders = ",".join("?" for _ in library_ids)
             rows = _fetchall(
                 conn,
-                f"SELECT id, name, visibility FROM libraries WHERE id IN ({placeholders}) ORDER BY id",
+                f"SELECT {cols} FROM libraries WHERE id IN ({placeholders}) ORDER BY id",
                 list(library_ids),
             )
-    return [{"library_id": r["id"], "name": r["name"], "visibility": r["visibility"]} for r in rows]
+    return [_format_library_row(_row_dict(r)) for r in rows]
+
+
+def get_api_key_by_id(key_id: str) -> dict[str, Any] | None:
+    with connect() as conn:
+        if not _table_exists(conn, "api_keys"):
+            return None
+        row = _fetchone(
+            conn,
+            """
+            SELECT key_id, principal_id, label, created_at, revoked_at, expires_at
+            FROM api_keys WHERE key_id = ?
+            """,
+            (key_id,),
+        )
+    return _row_dict(row) if row else None
+
+
+def upsert_api_key_grant(key_id: str, library_id: str, role: str) -> None:
+    with connect() as conn:
+        if not _table_exists(conn, "api_key_grants"):
+            return
+        existing = _fetchone(
+            conn,
+            "SELECT 1 FROM api_key_grants WHERE key_id = ? AND library_id = ?",
+            (key_id, library_id),
+        )
+        if existing:
+            _execute(
+                conn,
+                "UPDATE api_key_grants SET role = ? WHERE key_id = ? AND library_id = ?",
+                (role, key_id, library_id),
+            )
+        else:
+            _execute(
+                conn,
+                "INSERT INTO api_key_grants (key_id, library_id, role) VALUES (?, ?, ?)",
+                (key_id, library_id, role),
+            )
 
 
 def get_api_key_by_hash(key_hash: str) -> dict[str, Any] | None:

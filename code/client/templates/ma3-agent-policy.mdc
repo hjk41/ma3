@@ -153,7 +153,26 @@ After downvoting, if you can state *why* it is wrong and what the correct answer
 also add a `ma3_report` `report_kind: "refute"` with `target_record_id: <wrong id>`.
 Use `vote: "clear"` only to retract a vote you now think was mistaken.
 
-### 3.1 When you do write a record (`report_kind: verify` / `refute` / `new`)
+### 3.1 Library selection for `ma3_report`
+
+Before writing `ma3_report`, call `ma3_whoami` when you have not already inspected the
+caller's libraries in this task. Choose the target library by intent and pass `library_id`
+explicitly when you can:
+
+- Personal/proprietary/local-client lessons, secrets-adjacent procedures, customer-specific
+  infrastructure, private hostnames, or non-generalizable notes → the writable library with
+  `kind: "personal"` and `owner_principal_id` matching the caller.
+- Generally reusable ma3/community lessons that are safe to share → the public community
+  library (`kind: "community"`, usually `library_id: "lib_default"`).
+
+If the server returns `library_id_required`, `ambiguous_library_id`, or `library_not_writable`,
+read `writable_libraries` from the error message (and `error.data.detail` when present), choose
+the correct library, validate, and retry.
+
+Do not rely on the server default for public/community writes. For `verify`/`refute`, pass
+`target_record_id`; the server pins the write to the target record's library.
+
+### 3.2 When you do write a record (`report_kind: verify` / `refute` / `new`)
 
 1. Build full `ma3_report` payload (`redaction_mode: "auto"`).
 2. **`ma3_validate`** with `tool_name: "ma3_report"` and `arguments: <full payload>`.

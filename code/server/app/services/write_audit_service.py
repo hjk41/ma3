@@ -12,6 +12,7 @@ from app.storage import db
 
 _VALID_REPORT_KINDS = frozenset({"verify", "refute", "supplement", "new"})
 _VALID_CONFIRMATIONS = frozenset({"user_confirmed", "agent_judged", "verify_direct"})
+_LEGACY_DEFAULT_VIAS = frozenset({"dev_api_key", "writer_api_key", "maintainer_api_key"})
 
 
 class ReportWritePlan:
@@ -39,7 +40,7 @@ def resolve_report_write_plan(payload: Ma3ReportPayload, auth: McpAuthContext) -
             raise HTTPException(status_code=404, detail="target record not found")
         library_id = str(target["library_id"])
         if library_id not in auth.writable_library_ids:
-            raise HTTPException(status_code=403, detail="writer access required for target library")
+            _raise_library_not_writable(library_id, auth)
         return ReportWritePlan(library_id=library_id, report_kind=report_kind, confirmation="verify_direct")
 
     confirmation = payload.confirmation
@@ -50,20 +51,111 @@ def resolve_report_write_plan(payload: Ma3ReportPayload, auth: McpAuthContext) -
     if confirmation not in _VALID_CONFIRMATIONS or confirmation == "verify_direct":
         raise HTTPException(status_code=400, detail=f"invalid confirmation: {confirmation}")
 
-    library_id = payload.library_id or _default_writable_library(auth)
-    if library_id not in auth.writable_library_ids:
-        raise HTTPException(status_code=403, detail="writer access required for library")
+    if payload.library_id:
+        library_id = payload.library_id
+        if library_id not in auth.writable_library_ids:
+            _raise_library_not_writable(library_id, auth)
+    else:
+        library_id = _default_writable_library(auth)
 
     return ReportWritePlan(library_id=library_id, report_kind=report_kind, confirmation=confirmation)
+
+
+def _uses_legacy_default_path(auth: McpAuthContext) -> bool:
+    """Dev bypass and env-configured writer/maintainer keys keep lib_default default."""
+    if auth.principal.is_admin_bypass:
+        return True
+    return auth.principal.via in _LEGACY_DEFAULT_VIAS
 
 
 def _default_writable_library(auth: McpAuthContext) -> str:
     writable = auth.writable_library_ids
     if not writable:
         raise HTTPException(status_code=403, detail="writer access required")
-    if settings.default_library_id in writable:
-        return settings.default_library_id
-    return sorted(writable)[0]
+    if _uses_legacy_default_path(auth):
+        if settings.default_library_id in writable:
+            return settings.default_library_id
+        return sorted(writable)[0]
+    return _default_personal_writable_library(auth)
+
+
+def _default_personal_writable_library(auth: McpAuthContext) -> str:
+    libs = db.list_libraries(auth.writable_library_ids)
+    principal_id = auth.principal.principal_id
+    personal = [
+        lib
+        for lib in libs
+        if lib.get("kind") == "personal" and lib.get("owner_principal_id") == principal_id
+    ]
+    if len(personal) == 1:
+        return str(personal[0]["library_id"])
+    if len(personal) == 0:
+        _raise_library_selection_required(
+            error="library_id_required",
+            reason="no writable personal library found; pass library_id explicitly",
+            writable_libraries=libs,
+        )
+    _raise_library_selection_required(
+        error="ambiguous_library_id",
+        reason="multiple writable personal libraries found; pass library_id explicitly",
+        writable_libraries=libs,
+    )
+
+
+def _format_library_choice(lib: dict[str, Any]) -> str:
+    return f'{lib["library_id"]} ("{lib["name"]}", {lib.get("kind", "custom")})'
+
+
+def _library_selection_error_message(
+    *,
+    error: str,
+    reason: str,
+    writable_libraries: list[dict[str, Any]],
+) -> str:
+    if writable_libraries:
+        choices = ", ".join(_format_library_choice(lib) for lib in writable_libraries)
+        return f"{error}: {reason}. Writable libraries: {choices}."
+    return f"{error}: {reason}."
+
+
+def _raise_library_selection_required(
+    *,
+    error: str,
+    reason: str,
+    writable_libraries: list[dict[str, Any]],
+) -> None:
+    message = _library_selection_error_message(
+        error=error,
+        reason=reason,
+        writable_libraries=writable_libraries,
+    )
+    raise HTTPException(
+        status_code=400,
+        detail={
+            "error": error,
+            "reason": reason,
+            "message": message,
+            "writable_libraries": writable_libraries,
+        },
+    )
+
+
+def _raise_library_not_writable(library_id: str, auth: McpAuthContext) -> None:
+    writable_libraries = db.list_libraries(auth.writable_library_ids)
+    choices = ", ".join(_format_library_choice(lib) for lib in writable_libraries) or "(none)"
+    message = (
+        f"library_not_writable: {library_id} is not writable with this key. "
+        f"Writable libraries: {choices}."
+    )
+    raise HTTPException(
+        status_code=403,
+        detail={
+            "error": "library_not_writable",
+            "library_id": library_id,
+            "message": message,
+            "writable_libraries": writable_libraries,
+        },
+    )
 
 
 def append_write_audit(
