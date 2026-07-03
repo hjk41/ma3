@@ -25,6 +25,9 @@
 | `server/app/core/security.py` | **refactor** | DB key grants 替代 env writer/maintainer 列表 |
 | `server/app/api/routes_mcp.py` | **保留 refactor** | ADR-014：错误 message 必须可自纠（`_summarize_validation_errors`） |
 | `server/app/storage/db.py` | **refactor** | ADR-011 tables + ADR-012 billing/usage tables |
+| `server/app/storage/search.py` | **refactor** | [`12-search-ranking.md`](12-search-ranking.md)：tier×relevance 字典序 + Wilson；lexical-only 弃 created_at |
+| `server/app/services/search_context_service.py` | **保留** | context_boost 并入 relevance |
+| `server/app/services/feedback_service.py` | **保留** | 每 principal 一票 → correctness_tier |
 
 ## Client
 
