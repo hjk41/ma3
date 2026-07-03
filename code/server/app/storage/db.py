@@ -88,6 +88,7 @@ def _row_dict(row: Any) -> dict[str, Any]:
 
 def initialize_database() -> None:
     payload_type = "JSONB NOT NULL" if is_postgres() else "TEXT NOT NULL"
+    blob_type = "BYTEA NOT NULL" if is_postgres() else "BLOB NOT NULL"
     with connect() as conn:
         _execute(
             conn,
@@ -185,10 +186,10 @@ def initialize_database() -> None:
         _execute(conn, "CREATE INDEX IF NOT EXISTS idx_record_relations_target ON record_relations(target_id, relation_type)")
         _execute(
             conn,
-            """
+            f"""
             CREATE TABLE IF NOT EXISTS record_embeddings (
               record_id TEXT PRIMARY KEY,
-              embedding BLOB NOT NULL,
+              embedding {blob_type},
               model TEXT NOT NULL,
               created_at TEXT NOT NULL
             )
@@ -377,10 +378,16 @@ def _run_pgvector_migration() -> None:
 def _migrate_pgvector(conn: Any) -> None:
     global _pgvector_ready
     _pgvector_ready = False
-    try:
-        _execute(conn, "CREATE EXTENSION IF NOT EXISTS vector")
-    except Exception:
-        return
+    # The app role (e.g. ma3user) often lacks CREATE EXTENSION; deploys pre-create
+    # the extension as a superuser. Only attempt CREATE when it is actually missing
+    # so a permission error does not abort the rest of the vector migration (which
+    # adds embedding_vec + the HNSW index and must run on a fresh schema too).
+    already = _fetchone(conn, "SELECT 1 FROM pg_extension WHERE extname = 'vector'")
+    if not already:
+        try:
+            _execute(conn, "CREATE EXTENSION IF NOT EXISTS vector")
+        except Exception:
+            return
     dim = settings.embedding_dim
     if not _column_exists(conn, "record_embeddings", "library_id"):
         _execute(conn, "ALTER TABLE record_embeddings ADD COLUMN library_id TEXT")
@@ -388,7 +395,7 @@ def _migrate_pgvector(conn: Any) -> None:
         _execute(conn, f"ALTER TABLE record_embeddings ADD COLUMN status TEXT NOT NULL DEFAULT 'active'")
     vec_col = f"embedding_vec vector({dim})"
     if not _column_exists(conn, "record_embeddings", "embedding_vec"):
-        _execute(conn, f"ALTER TABLE record_embeddings ADD COLUMN embedding_vec {vec_col}")
+        _execute(conn, f"ALTER TABLE record_embeddings ADD COLUMN {vec_col}")
     _execute(
         conn,
         """
