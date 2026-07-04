@@ -135,42 +135,21 @@ def test_report_without_library_id_requires_explicit_when_no_personal_library(is
     assert err["data"]["detail"]["error"] == "library_id_required"
 
 
-def test_report_without_library_id_is_ambiguous_with_multiple_personal_libraries(isolated_client):
-    mcp = McpClient(isolated_client)
-    principal = "user:multi-personal"
-    personal_a = _seed_personal_library(principal, lib_id=db.new_id("lib"), name="Personal A")
-    personal_b = _seed_personal_library(principal, lib_id=db.new_id("lib"), name="Personal B")
-    plaintext = f"ma3k_{secrets.token_hex(16)}"
-    key_id = f"key_{secrets.token_hex(6)}"
-    db.upsert_user_principal(sso_user="multi-personal", display_name="multi-personal")
-    db.insert_api_key(
-        key_id=key_id,
-        key_hash=hash_key(plaintext),
-        principal_id=principal,
-        label="dual-personal",
-        grants=[
-            {"library_id": personal_a, "role": "writer"},
-            {"library_id": personal_b, "role": "writer"},
-            {"library_id": settings.default_library_id, "role": "writer"},
-        ],
-    )
+def test_only_one_owned_personal_library_per_principal(isolated_client):
+    """Schema enforces one personal library per owner; ambiguity case is prevented."""
+    from app.services.onboarding_service import ensure_personal_library
 
-    err = mcp.call(
-        "ma3_report",
-        {
-            "problem": "ambiguous personal default",
-            "outcome": "resolved",
-            "result_summary": "x",
-            "based_on_record_ids": [],
-            "evidence": _EVIDENCE,
-        },
-        api_key=plaintext,
-        expect_error=True,
-    )
-    assert err["code"] == -32000
-    assert "ambiguous_library_id" in err["message"]
-    assert personal_a in err["message"]
-    assert personal_b in err["message"]
+    principal = "user:multi-personal"
+    db.upsert_user_principal(sso_user="multi-personal", display_name="multi-personal")
+    first = ensure_personal_library(principal, "Multi")
+    second = ensure_personal_library(principal, "Multi")
+    assert first["library_id"] == second["library_id"]
+    libs = [
+        lib
+        for lib in db.list_libraries()
+        if lib.get("kind") == "personal" and lib.get("owner_principal_id") == principal
+    ]
+    assert len(libs) == 1
 
 
 def test_explicit_public_report_writes_community_library(isolated_client):

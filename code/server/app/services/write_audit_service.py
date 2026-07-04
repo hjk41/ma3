@@ -16,17 +16,24 @@ _LEGACY_DEFAULT_VIAS = frozenset({"dev_api_key", "writer_api_key", "maintainer_a
 
 
 class ReportWritePlan:
-    __slots__ = ("library_id", "report_kind", "confirmation")
+    __slots__ = ("library_id", "report_kind", "confirmation", "selection_reason")
 
-    def __init__(self, *, library_id: str, report_kind: str, confirmation: str) -> None:
+    def __init__(
+        self,
+        *,
+        library_id: str,
+        report_kind: str,
+        confirmation: str,
+        selection_reason: str,
+    ) -> None:
         self.library_id = library_id
         self.report_kind = report_kind
         self.confirmation = confirmation
+        self.selection_reason = selection_reason
 
 
 def resolve_report_write_plan(payload: Ma3ReportPayload, auth: McpAuthContext) -> ReportWritePlan:
     """Resolve target library and audit metadata for ma3_report."""
-    explicit_kind = payload.report_kind is not None
     report_kind = payload.report_kind or "new"
 
     if report_kind not in _VALID_REPORT_KINDS:
@@ -41,24 +48,35 @@ def resolve_report_write_plan(payload: Ma3ReportPayload, auth: McpAuthContext) -
         library_id = str(target["library_id"])
         if library_id not in auth.writable_library_ids:
             _raise_library_not_writable(library_id, auth)
-        return ReportWritePlan(library_id=library_id, report_kind=report_kind, confirmation="verify_direct")
+        return ReportWritePlan(
+            library_id=library_id,
+            report_kind=report_kind,
+            confirmation="verify_direct",
+            selection_reason="verify_target_library",
+        )
 
-    confirmation = payload.confirmation
-    if explicit_kind and not confirmation:
-        raise HTTPException(status_code=400, detail="confirmation required for supplement/new reports")
-    if confirmation is None:
-        confirmation = "agent_judged"
+    confirmation = payload.confirmation or "agent_judged"
     if confirmation not in _VALID_CONFIRMATIONS or confirmation == "verify_direct":
         raise HTTPException(status_code=400, detail=f"invalid confirmation: {confirmation}")
 
     if payload.library_id:
         library_id = payload.library_id
+        selection_reason = "explicit_library_id"
         if library_id not in auth.writable_library_ids:
             _raise_library_not_writable(library_id, auth)
+    elif _uses_legacy_default_path(auth):
+        library_id = _legacy_default_writable_library(auth)
+        selection_reason = "legacy_default_library"
     else:
-        library_id = _default_writable_library(auth)
+        library_id = _default_personal_writable_library(auth)
+        selection_reason = "default_owned_personal_library"
 
-    return ReportWritePlan(library_id=library_id, report_kind=report_kind, confirmation=confirmation)
+    return ReportWritePlan(
+        library_id=library_id,
+        report_kind=report_kind,
+        confirmation=confirmation,
+        selection_reason=selection_reason,
+    )
 
 
 def _uses_legacy_default_path(auth: McpAuthContext) -> bool:
@@ -68,15 +86,13 @@ def _uses_legacy_default_path(auth: McpAuthContext) -> bool:
     return auth.principal.via in _LEGACY_DEFAULT_VIAS
 
 
-def _default_writable_library(auth: McpAuthContext) -> str:
+def _legacy_default_writable_library(auth: McpAuthContext) -> str:
     writable = auth.writable_library_ids
     if not writable:
         raise HTTPException(status_code=403, detail="writer access required")
-    if _uses_legacy_default_path(auth):
-        if settings.default_library_id in writable:
-            return settings.default_library_id
-        return sorted(writable)[0]
-    return _default_personal_writable_library(auth)
+    if settings.default_library_id in writable:
+        return settings.default_library_id
+    return sorted(writable)[0]
 
 
 def _default_personal_writable_library(auth: McpAuthContext) -> str:
@@ -188,6 +204,8 @@ def format_my_writes(rows: list[dict[str, Any]], *, key_prefix: str | None) -> l
             "library_name": row.get("library_name") or row["library_id"],
             "report_kind": row["report_kind"],
             "confirmation": row["confirmation"],
+            "status": row.get("record_status") or "active",
+            "publish_at": row.get("publish_at"),
         }
         if key_prefix:
             entry["key_prefix"] = key_prefix

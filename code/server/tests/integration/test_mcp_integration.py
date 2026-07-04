@@ -11,6 +11,8 @@ EXPECTED_TOOLS = {
     "ma3_locate_by_id",
     "ma3_list_my_writes",
     "ma3_delete_record",
+    "ma3_publish_record",
+    "ma3_patch_record",
     "ma3_restore_record",
     "ma3_list_drafts",
     "ma3_review_record",

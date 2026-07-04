@@ -39,16 +39,21 @@ set -a
 source "\${LEGACY_DIR}/ma3.env"
 set +a
 
-echo "==> Stop legacy uvicorn on port \${PORT}"
-pkill -f "uvicorn app.main:app.*--port \${PORT}" || true
-sleep 2
-
 cd "\${REMOTE_DIR}/code/server"
 if [[ ! -d .venv ]]; then
   python3 -m venv .venv
 fi
 .venv/bin/pip install -q --upgrade pip
 .venv/bin/pip install -q -r requirements.txt
+
+echo "==> Pre-deploy DB inventory"
+export MA3_DATABASE_URL="\${MA3_DATABASE_URL}"
+.venv/bin/python scripts/db_inventory.py -o /tmp/ma3-deploy-pre.json
+python3 -m json.tool /tmp/ma3-deploy-pre.json
+
+echo "==> Stop legacy uvicorn on port \${PORT}"
+pkill -f "uvicorn app.main:app.*--port \${PORT}" || true
+sleep 2
 
 mkdir -p "\${REMOTE_DIR}/data"
 if [[ -d "\${LEGACY_DIR}/data/hf-cache" ]]; then
@@ -75,6 +80,7 @@ MA3_AUTHING_APP_ID=\${MA3_AUTHING_APP_ID}
 MA3_AUTHING_APP_SECRET=\${MA3_AUTHING_APP_SECRET}
 MA3_PUBLIC_BASE_URL=\${MA3_PUBLIC_BASE_URL:-http://127.0.0.1:\${PORT}}
 MA3_AUTHING_REDIRECT_URI=\${MA3_AUTHING_REDIRECT_URI:-\${MA3_PUBLIC_BASE_URL:-http://127.0.0.1:\${PORT}}/auth/callback}
+MA3_AUTH_ADMIN_USERS=\${MA3_AUTH_ADMIN_USERS:?MA3_AUTH_ADMIN_USERS required when Authing is enabled}
 AUTHING
 fi
 
@@ -87,10 +93,17 @@ else
   echo "   WARN: could not ensure pgvector extension (need passwordless sudo to postgres superuser); vector ANN search will be disabled and search falls back to FTS"
 fi
 
-echo "==> Migrate legacy tables to v1 schema in same DB"
+echo "==> Backfill legacy tables into v1 schema (same DB)"
 export MA3_DATABASE_URL="\${MA3_DATABASE_URL}"
-export MA3_MIGRATE_RENAME=1
-.venv/bin/python scripts/migrate_legacy_pg.py
+export MA3_MIGRATE_RENAME=0
+export MA3_MIGRATE_BACKFILL=1
+export MA3_DISABLE_EMBEDDINGS=1
+.venv/bin/python scripts/migrate_legacy_pg.py | tee /tmp/ma3-backfill.json
+python3 -m json.tool /tmp/ma3-backfill.json
+
+echo "==> Post-backfill DB inventory check (before start)"
+.venv/bin/python scripts/db_inventory.py --compare /tmp/ma3-deploy-pre.json --backfill /tmp/ma3-backfill.json \
+  -o /tmp/ma3-deploy-post-backfill.json
 
 echo "==> Start ma3_v1 uvicorn"
 set -a
@@ -101,9 +114,9 @@ nohup .venv/bin/python -m uvicorn app.main:app \
   > /tmp/ma3-v1-uvicorn.log 2>&1 &
 echo \$! > "\${REMOTE_DIR}/ma3.pid"
 
-echo "==> healthz"
+echo "==> healthz (wait up to 180s — embedding model loads before accepting traffic)"
 ready=0
-for _ in \$(seq 1 60); do
+for _ in \$(seq 1 90); do
   if curl -sf "http://127.0.0.1:\${PORT}/healthz" >/tmp/ma3-healthz.json 2>/dev/null; then
     ready=1
     break
@@ -111,18 +124,23 @@ for _ in \$(seq 1 60); do
   sleep 2
 done
 if [[ "\$ready" -ne 1 ]]; then
-  echo "healthz not ready after 120s" >&2
+  echo "healthz not ready after 180s" >&2
   tail -40 /tmp/ma3-v1-uvicorn.log >&2 || true
   exit 1
 fi
 python3 -m json.tool /tmp/ma3-healthz.json
 
-echo "==> Integration verification"
+echo "==> Post-deploy DB inventory check (service up)"
+.venv/bin/python scripts/db_inventory.py --compare /tmp/ma3-deploy-pre.json --backfill /tmp/ma3-backfill.json \
+  -o /tmp/ma3-deploy-post.json
+
+echo "==> Integration verification (deploy/README.md: must pass before reporting to user)"
 export MA3_BASE_URL="http://127.0.0.1:\${PORT}"
 export MA3_API_KEY=ma3dev
 export MA3_EXPECT_INSTANCE_ID=ma3-v1-202
-export MA3_EXPECT_MIN_RECORDS=30
-export MA3_EXPECT_MIN_CASES=20
+export MA3_READY_TIMEOUT=180
+export MA3_EXPECT_MIN_RECORDS="\$(python3 -c "import json; inv=json.load(open('/tmp/ma3-deploy-post.json')); print(inv['v1_records'])")"
+export MA3_EXPECT_MIN_CASES="\$(python3 -c "import json; pre=json.load(open('/tmp/ma3-deploy-pre.json')); post=json.load(open('/tmp/ma3-deploy-post.json')); print(max(pre.get('v1_cases',0), post.get('v1_cases',0), 20))")"
 export MA3_EXPECT_MIN_MIHOMO_HITS=1
 export MA3_EXPECT_MIN_LIBRARIES=2
 if [[ -f /home/hct/ma3-eval/profiles/claude/.claude.json ]]; then

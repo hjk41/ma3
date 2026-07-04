@@ -74,10 +74,16 @@ def _resolve_db_api_key(raw: str) -> ResolvedPrincipal | None:
         return None
     if resolved is None:
         return None
+    from app.services.principal_service import resolve_display_name
+
+    display_name = resolve_display_name(
+        resolved.principal_id,
+        fallback=resolved.label or resolved.principal_id,
+    )
     return ResolvedPrincipal(
         principal_id=resolved.principal_id,
         kind="api_key",
-        display_name=resolved.label or resolved.principal_id,
+        display_name=display_name,
         via="db_api_key",
         library_id=next(iter(sorted(resolved.readable)), None),
         role=resolved.role_summary,
@@ -197,7 +203,13 @@ class McpAuthContext:
             if p.via == "invalid_credentials":
                 return {"type": "invalid", "principal_id": p.principal_id, "kind": "anonymous", "via": p.via}
             return {"type": "anonymous", "principal_id": p.principal_id, "kind": "anonymous", "via": "anonymous"}
-        return {"type": p.kind, "principal_id": p.principal_id, "via": p.via, "role": p.role}
+        return {
+            "type": p.kind,
+            "principal_id": p.principal_id,
+            "display_name": p.display_name,
+            "via": p.via,
+            "role": p.role,
+        }
 
 
 def resolve_mcp_auth(cred: RawCredential | None) -> McpAuthContext:

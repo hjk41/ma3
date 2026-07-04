@@ -148,7 +148,14 @@ class Ma3ReportPayload(BaseModel):
     redaction_mode: Literal["auto", "none"] = "auto"
     visibility: Literal["active", "draft"] = "active"
     report_kind: str | None = None
-    confirmation: str | None = None
+    confirmation: str | None = Field(
+        default=None,
+        description=(
+            "Optional audit metadata, never a gate: how the write was confirmed "
+            "(user_confirmed | agent_judged). Omit to default to agent_judged. "
+            "Do NOT stop to ask the user for this value."
+        ),
+    )
     target_record_id: str | None = None
     library_id: str | None = Field(
         default=None,
@@ -325,6 +332,44 @@ class Ma3DeleteRecordPayload(BaseModel):
     )
 
 
+class Ma3PublishRecordPayload(BaseModel):
+    """Wire payload for ``ma3_publish_record``."""
+
+    record_id: str = Field(..., min_length=1)
+    include_full_json: bool = False
+    client_version: str | None = None
+
+    model_config = ConfigDict(
+        extra="forbid",
+        json_schema_extra={"examples": [{"record_id": "vk_01HX9F..."}]},
+    )
+
+
+class Ma3PatchRecordPayload(BaseModel):
+    """Wire payload for ``ma3_patch_record`` (buffered owner edit)."""
+
+    record_id: str = Field(..., min_length=1)
+    problem: str = Field(..., min_length=1)
+    outcome: str = Field(..., min_length=1)
+    result_summary: str = Field(..., min_length=1)
+    include_full_json: bool = False
+    client_version: str | None = None
+
+    model_config = ConfigDict(
+        extra="forbid",
+        json_schema_extra={
+            "examples": [
+                {
+                    "record_id": "vk_01HX9F...",
+                    "problem": "updated problem",
+                    "outcome": "resolved",
+                    "result_summary": "updated summary",
+                }
+            ]
+        },
+    )
+
+
 class Ma3RestoreRecordPayload(BaseModel):
     """Wire payload for ``ma3_restore_record``."""
 
@@ -356,6 +401,8 @@ class Ma3ValidatePayload(BaseModel):
         "ma3_locate_by_id",
         "ma3_list_my_writes",
         "ma3_delete_record",
+        "ma3_publish_record",
+        "ma3_patch_record",
         "ma3_restore_record",
         "ma3_doctor",
         "ma3_whoami",
@@ -388,6 +435,8 @@ PAYLOAD_BY_TOOL: dict[str, type[BaseModel]] = {
     "ma3_locate_by_id": Ma3LocateByIdPayload,
     "ma3_list_my_writes": Ma3ListMyWritesPayload,
     "ma3_delete_record": Ma3DeleteRecordPayload,
+    "ma3_publish_record": Ma3PublishRecordPayload,
+    "ma3_patch_record": Ma3PatchRecordPayload,
     "ma3_restore_record": Ma3RestoreRecordPayload,
     "ma3_doctor": Ma3DoctorPayload,
     "ma3_whoami": Ma3WhoamiPayload,

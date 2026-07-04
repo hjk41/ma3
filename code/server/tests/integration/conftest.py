@@ -23,6 +23,9 @@ def isolated_client(tmp_path, monkeypatch):
     monkeypatch.setattr(settings, "dev_api_key", "ma3dev")
     monkeypatch.setattr(settings, "disable_embeddings", True)
     initialize_database()
+    from app.storage import db as _db
+
+    _db.set_library_write_buffer_hours(settings.default_library_id, 0)
 
     from app.main import app
 

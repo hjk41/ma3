@@ -53,6 +53,8 @@ def clear_session_cookie(response: Response, request: Request) -> None:
         settings.auth_session_cookie,
         path="/",
         secure=_cookie_secure(request),
+        httponly=True,
+        samesite="lax",
     )
 
 
@@ -85,7 +87,10 @@ def set_oauth_state_cookies(
 
 
 def pop_oauth_next(request: Request) -> str:
-    return request.cookies.get("ma3_oauth_next") or "/ui/observatory/"
+    raw = (request.cookies.get("ma3_oauth_next") or "/ui/observatory/").strip().strip('"')
+    if not raw.startswith("/") or raw.startswith("//"):
+        return "/ui/observatory/"
+    return raw
 
 
 def validate_oauth_state(request: Request, state: str | None) -> bool:
@@ -114,7 +119,7 @@ def resolve_session_user(request: Request) -> SessionUser | None:
     return SessionUser(
         principal_id=principal["principal_id"],
         sub=authing_user.sub,
-        display_name=authing_user.display_name,
+        display_name=principal["display_name"],
         email=authing_user.email,
         phone=authing_user.phone,
         is_admin=authing_user.is_admin,

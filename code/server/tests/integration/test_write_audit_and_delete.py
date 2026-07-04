@@ -106,25 +106,21 @@ def test_legacy_report_defaults_to_new_agent_judged(isolated_client):
     )
 
 
-def test_explicit_new_requires_confirmation(isolated_client):
-    """Opting into the judgment tree (report_kind set) requires a valid confirmation."""
+def test_explicit_new_defaults_confirmation_to_agent_judged(isolated_client):
+    """Explicit report_kind without confirmation defaults to agent_judged (not a gate)."""
     mcp = McpClient(isolated_client, api_key="ma3dev")
-    err = mcp.rpc(
-        "tools/call",
+    report = mcp.structured(
+        "ma3_report",
         {
-            "name": "ma3_report",
-            "arguments": {
-                "problem": "explicit new without confirmation",
-                "outcome": "resolved",
-                "result_summary": "should be rejected",
-                "report_kind": "new",
-                "evidence": _EVIDENCE,
-            },
+            "problem": "explicit new without confirmation",
+            "outcome": "resolved",
+            "result_summary": "should succeed with agent_judged",
+            "report_kind": "new",
+            "evidence": _EVIDENCE,
         },
-        expect_error=True,
     )
-    assert err["code"] == -32000
-    assert "confirmation" in err["message"].lower()
+    assert report["confirmation"] == "agent_judged"
+    assert report["library_selection_reason"] == "legacy_default_library"
 
 
 def test_invalid_confirmation_rejected(isolated_client):

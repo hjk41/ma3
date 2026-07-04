@@ -19,9 +19,17 @@ def authing_client(monkeypatch):
     return TestClient(app, raise_server_exceptions=True)
 
 
-def test_auth_login_redirects_when_configured(authing_client: TestClient):
+def test_auth_login_redirects_to_authing(authing_client: TestClient):
     with patch("app.api.routes_auth.authing_client.build_authorize_url", return_value="https://id.example/authorize"):
         response = authing_client.get("/auth/login", follow_redirects=False)
+    assert response.status_code == 302
+    assert response.headers["location"] == "https://id.example/authorize"
+    assert settings.auth_oauth_state_cookie in response.cookies
+
+
+def test_auth_login_start_redirects_when_configured(authing_client: TestClient):
+    with patch("app.api.routes_auth.authing_client.build_authorize_url", return_value="https://id.example/authorize"):
+        response = authing_client.get("/auth/login/start", follow_redirects=False)
     assert response.status_code == 302
     assert response.headers["location"] == "https://id.example/authorize"
     assert settings.auth_oauth_state_cookie in response.cookies
@@ -77,6 +85,45 @@ def test_observatory_requires_login_when_authing_enabled(authing_client: TestCli
     response = authing_client.get("/ui/observatory/", follow_redirects=False)
     assert response.status_code == 302
     assert response.headers["location"].startswith("/auth/login")
+
+
+def test_observatory_logged_in_non_admin_returns_403(authing_client: TestClient):
+    from app.auth.session import SessionUser
+
+    import app.api.ui_session as ui_session
+
+    session = SessionUser(
+        principal_id="user:regular_user",
+        sub="regular_user",
+        display_name="普通用户",
+        email=None,
+        phone=None,
+        is_admin=False,
+    )
+    with (
+        patch("app.auth.session.resolve_session_user", return_value=session),
+        patch.object(ui_session, "resolve_session_user", return_value=session),
+    ):
+        response = authing_client.get("/ui/observatory/", follow_redirects=False)
+    assert response.status_code == 403
+    assert "返回我的主页" in response.text
+
+
+def test_auth_logout_clears_session_and_redirects_to_authing_logout(authing_client: TestClient):
+    authing_client.cookies.set(settings.auth_session_cookie, "atk_test")
+    with patch(
+        "app.api.routes_auth.authing_client.build_logout_url",
+        return_value="https://ma3.authing.cn/oidc/session/end?client_id=test",
+    ) as mock_logout:
+        response = authing_client.get("/auth/logout", follow_redirects=False)
+    assert response.status_code == 302
+    assert response.headers["location"] == "https://ma3.authing.cn/oidc/session/end?client_id=test"
+    mock_logout.assert_called_once_with(
+        post_logout_redirect=settings.resolve_authing_post_logout_redirect_uri(),
+    )
+    assert response.cookies.get(settings.auth_session_cookie) in ("", None)
+    whoami = authing_client.get("/auth/whoami")
+    assert whoami.status_code == 401
 
 
 def test_upsert_user_principal_sqlite():

@@ -1,7 +1,7 @@
 ---
 description: ma3 agent policy — query before work, report reusable outcomes
 alwaysApply: true
-ma3_skill_bundle_version: "1.5.0"
+ma3_skill_bundle_version: "1.5.1"
 ma3_tool_schema_version: "ma3.mcp.v1"
 ---
 
@@ -173,6 +173,10 @@ Do not rely on the server default for public/community writes. For `verify`/`ref
 `target_record_id`; the server pins the write to the target record's library.
 
 ### 3.2 When you do write a record (`report_kind: verify` / `refute` / `new`)
+
+`confirmation` is optional audit metadata (`user_confirmed` | `agent_judged`). **Omit it**
+to default to `agent_judged`. The server does **not** require the user to type a confirmation
+phrase — do not stop in headless/CI sessions to ask for one.
 
 1. Build full `ma3_report` payload (`redaction_mode: "auto"`).
 2. **`ma3_validate`** with `tool_name: "ma3_report"` and `arguments: <full payload>`.

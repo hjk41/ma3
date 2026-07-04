@@ -259,6 +259,14 @@ def initialize_database() -> None:
             _execute(conn, "ALTER TABLE libraries ADD COLUMN owner_principal_id TEXT")
         _execute(
             conn,
+            """
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_libraries_personal_owner
+            ON libraries (owner_principal_id)
+            WHERE kind = 'personal' AND owner_principal_id IS NOT NULL
+            """,
+        )
+        _execute(
+            conn,
             "UPDATE libraries SET kind = ?, owner_principal_id = NULL WHERE id = ?",
             ("community", settings.default_library_id),
         )
@@ -275,6 +283,12 @@ def initialize_database() -> None:
             _execute(conn, "ALTER TABLE libraries ADD COLUMN retention_days INTEGER NOT NULL DEFAULT 30")
         if not _column_exists(conn, "records", "trashed_at"):
             _execute(conn, "ALTER TABLE records ADD COLUMN trashed_at TEXT")
+        if not _column_exists(conn, "libraries", "write_buffer_hours"):
+            _execute(conn, "ALTER TABLE libraries ADD COLUMN write_buffer_hours INTEGER NOT NULL DEFAULT 24")
+        if not _column_exists(conn, "records", "publish_at"):
+            _execute(conn, "ALTER TABLE records ADD COLUMN publish_at TEXT")
+        if not _column_exists(conn, "principals", "display_name_locked"):
+            _execute(conn, "ALTER TABLE principals ADD COLUMN display_name_locked INTEGER NOT NULL DEFAULT 0")
         if not _column_exists(conn, "record_relations", "source_deleted"):
             _execute(conn, "ALTER TABLE record_relations ADD COLUMN source_deleted INTEGER NOT NULL DEFAULT 0")
 
@@ -343,6 +357,10 @@ def initialize_database() -> None:
         )
         _execute(conn, "CREATE INDEX IF NOT EXISTS idx_api_keys_hash ON api_keys (key_hash)")
         _execute(conn, "CREATE INDEX IF NOT EXISTS idx_api_keys_principal ON api_keys (principal_id)")
+        if not _column_exists(conn, "api_keys", "key_prefix"):
+            _execute(conn, "ALTER TABLE api_keys ADD COLUMN key_prefix TEXT")
+        if not _column_exists(conn, "api_keys", "key_ciphertext"):
+            _execute(conn, "ALTER TABLE api_keys ADD COLUMN key_ciphertext TEXT")
         _execute(
             conn,
             """
@@ -708,6 +726,8 @@ def index_record(
     payload: dict[str, Any],
     created_at: str,
 ) -> None:
+    if status == "buffered":
+        return
     from app.core.config import settings as app_settings
     from app.services.embedding_service import embed_record_text, serialize_embedding
 
@@ -806,6 +826,7 @@ def insert_record(
     idempotency_key: str | None = None,
     principal_id: str | None = None,
     payload_hash: str | None = None,
+    publish_at: str | None = None,
 ) -> dict[str, Any]:
     from datetime import datetime, timezone
 
@@ -847,19 +868,19 @@ def insert_record(
             _execute(
                 conn,
                 """
-                INSERT INTO records (id, library_id, case_id, status, problem, outcome, result_summary, payload_json, created_by, created_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?::jsonb, ?, ?)
+                INSERT INTO records (id, library_id, case_id, status, problem, outcome, result_summary, payload_json, created_by, created_at, publish_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?::jsonb, ?, ?, ?)
                 """,
-                (rid, library_id, case_id, status, problem, outcome, result_summary, raw, principal_id, now),
+                (rid, library_id, case_id, status, problem, outcome, result_summary, raw, principal_id, now, publish_at),
             )
         else:
             _execute(
                 conn,
                 """
-                INSERT INTO records (id, library_id, case_id, status, problem, outcome, result_summary, payload_json, created_by, created_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                INSERT INTO records (id, library_id, case_id, status, problem, outcome, result_summary, payload_json, created_by, created_at, publish_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
-                (rid, library_id, case_id, status, problem, outcome, result_summary, raw, principal_id, now),
+                (rid, library_id, case_id, status, problem, outcome, result_summary, raw, principal_id, now, publish_at),
             )
         if idempotency_key and principal_id and payload_hash:
             _execute(
@@ -908,6 +929,16 @@ def insert_record(
             "status": row["status"] if row else status,
             "created_at": row["created_at"] if row else now,
             "idempotent_replay": True,
+        }
+    if status == "buffered":
+        return {
+            "record_id": rid,
+            "library_id": library_id,
+            "case_id": case_id,
+            "status": status,
+            "created_at": now,
+            "publish_at": publish_at,
+            "idempotent_replay": False,
         }
     index_record(
         record_id=rid,
@@ -1303,6 +1334,45 @@ def _column_exists(conn: Any, table_name: str, column_name: str) -> bool:
     return row is not None
 
 
+def get_user_principal(principal_id: str) -> dict[str, Any] | None:
+    with connect() as conn:
+        if not _table_exists(conn, "principals"):
+            return None
+        id_col = _principal_id_column(conn)
+        locked_col = ", display_name_locked" if _column_exists(conn, "principals", "display_name_locked") else ""
+        row = _fetchone(
+            conn,
+            f"SELECT {id_col} AS principal_id, kind, display_name{locked_col}, created_at FROM principals WHERE {id_col} = ?",
+            (principal_id,),
+        )
+    return _row_dict(row) if row else None
+
+
+def set_user_display_name(principal_id: str, display_name: str) -> dict[str, Any] | None:
+    with connect() as conn:
+        if not _table_exists(conn, "principals"):
+            return None
+        id_col = _principal_id_column(conn)
+        if _column_exists(conn, "principals", "display_name_locked"):
+            _execute(
+                conn,
+                f"UPDATE principals SET display_name = ?, display_name_locked = 1 WHERE {id_col} = ?",
+                (display_name, principal_id),
+            )
+        else:
+            _execute(
+                conn,
+                f"UPDATE principals SET display_name = ? WHERE {id_col} = ?",
+                (display_name, principal_id),
+            )
+    return get_user_principal(principal_id)
+
+
+def set_library_name(library_id: str, name: str) -> None:
+    with connect() as conn:
+        _execute(conn, "UPDATE libraries SET name = ? WHERE id = ?", (name, library_id))
+
+
 def upsert_user_principal(
     *,
     sso_user: str,
@@ -1321,6 +1391,22 @@ def upsert_user_principal(
         id_col = _principal_id_column(conn)
         has_sso_user = _column_exists(conn, "principals", "sso_user")
         has_metadata = _column_exists(conn, "principals", "metadata_json")
+        has_locked = _column_exists(conn, "principals", "display_name_locked")
+        if has_locked:
+            if is_postgres():
+                locked_sql = (
+                    "display_name = CASE WHEN principals.display_name_locked = 1 "
+                    "THEN principals.display_name ELSE EXCLUDED.display_name END,"
+                )
+            else:
+                locked_sql = (
+                    "display_name = CASE WHEN display_name_locked = 1 "
+                    "THEN display_name ELSE excluded.display_name END,"
+                )
+        else:
+            locked_sql = (
+                "display_name = EXCLUDED.display_name," if is_postgres() else "display_name = excluded.display_name,"
+            )
 
         if is_postgres() and has_sso_user and has_metadata:
             _execute(
@@ -1329,7 +1415,7 @@ def upsert_user_principal(
                 INSERT INTO principals ({id_col}, kind, display_name, sso_user, created_at, metadata_json)
                 VALUES (?, 'user', ?, ?, ?, ?::jsonb)
                 ON CONFLICT ({id_col}) DO UPDATE SET
-                    display_name = EXCLUDED.display_name,
+                    {locked_sql}
                     sso_user = EXCLUDED.sso_user,
                     metadata_json = EXCLUDED.metadata_json
                 """,
@@ -1342,7 +1428,7 @@ def upsert_user_principal(
                 INSERT INTO principals ({id_col}, kind, display_name, sso_user, created_at)
                 VALUES (?, 'user', ?, ?, ?)
                 ON CONFLICT ({id_col}) DO UPDATE SET
-                    display_name = excluded.display_name,
+                    {locked_sql}
                     sso_user = excluded.sso_user
                 """,
                 (principal_id, display_name, sso_user, now),
@@ -1354,12 +1440,19 @@ def upsert_user_principal(
                 INSERT INTO principals ({id_col}, kind, display_name, created_at)
                 VALUES (?, 'user', ?, ?)
                 ON CONFLICT ({id_col}) DO UPDATE SET
-                    display_name = excluded.display_name
+                    {locked_sql.rstrip(',')}
                 """,
                 (principal_id, display_name, now),
             )
 
-    return {"principal_id": principal_id, "display_name": display_name, "sso_user": sso_user}
+        row = _fetchone(
+            conn,
+            f"SELECT {id_col} AS principal_id, display_name FROM principals WHERE {id_col} = ?",
+            (principal_id,),
+        )
+
+    effective_name = str(row["display_name"]) if row else display_name
+    return {"principal_id": principal_id, "display_name": effective_name, "sso_user": sso_user}
 
 
 def _list_principals(conn: Any) -> tuple[int, list[dict[str, Any]]]:
@@ -1488,6 +1581,11 @@ def get_library(library_id: str) -> dict[str, Any] | None:
     return _row_dict(row) if row else None
 
 
+def _legacy_libraries_is_mirror(conn: Any) -> bool:
+    """True when legacy_libraries is the old FK mirror table (library_id column), not a renamed v1 libraries table."""
+    return _table_exists(conn, "legacy_libraries") and _column_exists(conn, "legacy_libraries", "library_id")
+
+
 def _sync_legacy_library_if_needed(
     conn: Any,
     library_id: str,
@@ -1497,7 +1595,7 @@ def _sync_legacy_library_if_needed(
     visibility: str,
 ) -> None:
     """Keep legacy_libraries in sync on migrated Postgres (api_key_grants FK)."""
-    if not _table_exists(conn, "legacy_libraries"):
+    if not _legacy_libraries_is_mirror(conn):
         return
     from datetime import datetime, timezone
 
@@ -1536,6 +1634,7 @@ def _format_library_row(row: dict[str, Any]) -> dict[str, Any]:
         "visibility": row["visibility"],
         "kind": kind,
         "owner_principal_id": row.get("owner_principal_id"),
+        "write_buffer_hours": int(row.get("write_buffer_hours") if row.get("write_buffer_hours") is not None else 24),
         "is_personal": kind == "personal",
         "is_public_default": lib_id == settings.default_library_id,
     }
@@ -1556,7 +1655,7 @@ def _sync_legacy_library(
     now = datetime.now(timezone.utc).replace(microsecond=0).isoformat()
     is_public = visibility == "public"
     with connect() as conn:
-        if not _table_exists(conn, "legacy_libraries"):
+        if not _legacy_libraries_is_mirror(conn):
             return
         if is_postgres():
             _execute(
@@ -1752,6 +1851,174 @@ def touch_api_key_last_used(key_id: str, when: str | None = None) -> None:
         pass
 
 
+def find_personal_library(owner_principal_id: str) -> dict[str, Any] | None:
+    with connect() as conn:
+        row = _fetchone(
+            conn,
+            """
+            SELECT id, name, visibility, kind, owner_principal_id
+            FROM libraries
+            WHERE kind = 'personal' AND owner_principal_id = ?
+            ORDER BY id
+            LIMIT 1
+            """,
+            (owner_principal_id,),
+        )
+    return _format_library_row(_row_dict(row)) if row else None
+
+
+def count_active_api_keys(principal_id: str) -> int:
+    with connect() as conn:
+        if not _table_exists(conn, "api_keys"):
+            return 0
+        row = _fetchone(
+            conn,
+            "SELECT COUNT(*) AS c FROM api_keys WHERE principal_id = ? AND revoked_at IS NULL",
+            (principal_id,),
+        )
+    return int(row["c"]) if row else 0
+
+
+def list_api_keys_for_principal(principal_id: str) -> list[dict[str, Any]]:
+    with connect() as conn:
+        if not _table_exists(conn, "api_keys"):
+            return []
+        rows = _fetchall(
+            conn,
+            """
+            SELECT key_id, key_prefix, principal_id, label, created_at, created_by, last_used_at, expires_at, revoked_at, key_ciphertext
+            FROM api_keys
+            WHERE principal_id = ? AND revoked_at IS NULL
+            ORDER BY created_at DESC
+            """,
+            (principal_id,),
+        )
+    out: list[dict[str, Any]] = []
+    lib_names = {lib["library_id"]: lib["name"] for lib in list_libraries()}
+    for row in rows:
+        item = _row_dict(row)
+        grants = get_api_key_grants(str(item["key_id"]))
+        item["grants"] = [
+            {
+                "library_id": g["library_id"],
+                "library_name": lib_names.get(g["library_id"], g["library_id"]),
+                "role": g["role"],
+            }
+            for g in grants
+        ]
+        out.append(item)
+    return out
+
+
+def revoke_api_key(key_id: str, *, principal_id: str) -> bool:
+    """Soft-revoke legacy/admin keys. Self-service UI uses delete_api_key instead."""
+    from datetime import datetime, timezone
+
+    now = datetime.now(timezone.utc).replace(microsecond=0).isoformat()
+    with connect() as conn:
+        if not _table_exists(conn, "api_keys"):
+            return False
+        cur = _execute(
+            conn,
+            """
+            UPDATE api_keys
+            SET revoked_at = ?
+            WHERE key_id = ? AND principal_id = ? AND revoked_at IS NULL
+            """,
+            (now, key_id, principal_id),
+        )
+    return bool(getattr(cur, "rowcount", 0))
+
+
+def get_api_key_for_principal(key_id: str, *, principal_id: str) -> dict[str, Any] | None:
+    with connect() as conn:
+        if not _table_exists(conn, "api_keys"):
+            return None
+        row = _fetchone(
+            conn,
+            """
+            SELECT key_id, key_prefix, principal_id, label, created_at, created_by, last_used_at, expires_at, revoked_at, key_ciphertext
+            FROM api_keys
+            WHERE key_id = ? AND principal_id = ? AND revoked_at IS NULL
+            """,
+            (key_id, principal_id),
+        )
+    if not row:
+        return None
+    item = _row_dict(row)
+    grants = get_api_key_grants(str(item["key_id"]))
+    lib_names = {lib["library_id"]: lib["name"] for lib in list_libraries()}
+    item["grants"] = [
+        {
+            "library_id": g["library_id"],
+            "library_name": lib_names.get(g["library_id"], g["library_id"]),
+            "role": g["role"],
+        }
+        for g in grants
+    ]
+    return item
+
+
+def update_api_key_label(key_id: str, *, principal_id: str, label: str) -> dict[str, Any] | None:
+    with connect() as conn:
+        if not _table_exists(conn, "api_keys"):
+            return None
+        existing = _fetchone(
+            conn,
+            "SELECT key_id FROM api_keys WHERE key_id = ? AND principal_id = ? AND revoked_at IS NULL",
+            (key_id, principal_id),
+        )
+        if not existing:
+            return None
+        _execute(
+            conn,
+            "UPDATE api_keys SET label = ? WHERE key_id = ? AND principal_id = ?",
+            (label, key_id, principal_id),
+        )
+    return get_api_key_for_principal(key_id, principal_id=principal_id)
+
+
+def replace_api_key_grants(
+    key_id: str,
+    *,
+    principal_id: str,
+    grants: list[dict[str, str]],
+) -> dict[str, Any] | None:
+    if get_api_key_for_principal(key_id, principal_id=principal_id) is None:
+        return None
+    with connect() as conn:
+        if not _table_exists(conn, "api_key_grants"):
+            return None
+        _execute(conn, "DELETE FROM api_key_grants WHERE key_id = ?", (key_id,))
+        for grant in grants:
+            _execute(
+                conn,
+                "INSERT INTO api_key_grants (key_id, library_id, role) VALUES (?, ?, ?)",
+                (key_id, grant["library_id"], grant["role"]),
+            )
+    return get_api_key_for_principal(key_id, principal_id=principal_id)
+
+
+def delete_api_key(key_id: str, *, principal_id: str) -> bool:
+    with connect() as conn:
+        if not _table_exists(conn, "api_keys"):
+            return False
+        row = _fetchone(
+            conn,
+            "SELECT key_id FROM api_keys WHERE key_id = ? AND principal_id = ? AND revoked_at IS NULL",
+            (key_id, principal_id),
+        )
+        if not row:
+            return False
+        _execute(conn, "DELETE FROM api_key_grants WHERE key_id = ?", (key_id,))
+        cur = _execute(
+            conn,
+            "DELETE FROM api_keys WHERE key_id = ? AND principal_id = ?",
+            (key_id, principal_id),
+        )
+    return bool(getattr(cur, "rowcount", 0))
+
+
 def insert_api_key(
     *,
     key_id: str,
@@ -1761,6 +2028,8 @@ def insert_api_key(
     created_by: str | None = None,
     created_at: str | None = None,
     expires_at: str | None = None,
+    key_prefix: str | None = None,
+    key_ciphertext: str | None = None,
     grants: list[dict[str, str]] | None = None,
 ) -> dict[str, Any]:
     """Create an API key with grants. Primarily used by tests and key issuance."""
@@ -1771,10 +2040,10 @@ def insert_api_key(
         _execute(
             conn,
             """
-            INSERT INTO api_keys (key_id, key_hash, principal_id, label, created_at, created_by, expires_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO api_keys (key_id, key_hash, principal_id, label, created_at, created_by, expires_at, key_prefix, key_ciphertext)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
-            (key_id, key_hash, principal_id, label, now, created_by or principal_id, expires_at),
+            (key_id, key_hash, principal_id, label, now, created_by or principal_id, expires_at, key_prefix, key_ciphertext),
         )
         for grant in grants or []:
             _execute(
@@ -1892,9 +2161,12 @@ def list_write_audit_for_principal(
             conn,
             """
             SELECT w.id, w.record_id, w.library_id, w.principal_id, w.api_key_id,
-                   w.report_kind, w.confirmation, w.created_at, l.name AS library_name
+                   w.report_kind, w.confirmation, w.created_at, l.name AS library_name,
+                   k.key_prefix, r.problem, r.status AS record_status, r.publish_at
             FROM write_audit_log w
             LEFT JOIN libraries l ON l.id = w.library_id
+            LEFT JOIN api_keys k ON k.key_id = w.api_key_id
+            LEFT JOIN records r ON r.id = w.record_id
             WHERE w.principal_id = ?
             ORDER BY w.created_at DESC
             LIMIT ? OFFSET ?
@@ -1902,6 +2174,266 @@ def list_write_audit_for_principal(
             (principal_id, limit, offset),
         )
     return [_row_dict(r) for r in rows]
+
+
+def count_write_audit_for_principal(principal_id: str) -> int:
+    with connect() as conn:
+        row = _fetchone(
+            conn,
+            "SELECT COUNT(*) AS c FROM write_audit_log WHERE principal_id = ?",
+            (principal_id,),
+        )
+    return int(row["c"]) if row else 0
+
+
+def count_buffered_for_principal(principal_id: str) -> int:
+    with connect() as conn:
+        row = _fetchone(
+            conn,
+            """
+            SELECT COUNT(*) AS c FROM records
+            WHERE status = 'buffered' AND created_by = ?
+            """,
+            (principal_id,),
+        )
+    return int(row["c"]) if row else 0
+
+
+def get_library_write_buffer_hours(library_id: str) -> int:
+    lib = get_library(library_id)
+    if not lib:
+        return 24
+    try:
+        return max(0, int(lib.get("write_buffer_hours") if lib.get("write_buffer_hours") is not None else 24))
+    except (TypeError, ValueError):
+        return 24
+
+
+def set_library_write_buffer_hours(library_id: str, hours: int) -> None:
+    hours = max(0, min(hours, 168))
+    with connect() as conn:
+        _execute(conn, "UPDATE libraries SET write_buffer_hours = ? WHERE id = ?", (hours, library_id))
+
+
+def publish_buffered_record(record_id: str) -> dict[str, Any] | None:
+    record = get_record(record_id)
+    if not record or record.get("status") != "buffered":
+        return None
+    with connect() as conn:
+        _execute(
+            conn,
+            "UPDATE records SET status = ?, publish_at = NULL WHERE id = ? AND status = 'buffered'",
+            ("active", record_id),
+        )
+    sync_record_search_index(record_id)
+    return get_record(record_id)
+
+
+def update_buffered_record(
+    record_id: str,
+    *,
+    problem: str,
+    outcome: str,
+    result_summary: str,
+    payload: dict[str, Any],
+    publish_at: str | None,
+) -> dict[str, Any] | None:
+    record = get_record(record_id)
+    if not record or record.get("status") != "buffered":
+        return None
+    raw = json.dumps(payload)
+    with connect() as conn:
+        if is_postgres():
+            _execute(
+                conn,
+                """
+                UPDATE records
+                SET problem = ?, outcome = ?, result_summary = ?, payload_json = ?::jsonb, publish_at = ?
+                WHERE id = ? AND status = 'buffered'
+                """,
+                (problem, outcome, result_summary, raw, publish_at, record_id),
+            )
+        else:
+            _execute(
+                conn,
+                """
+                UPDATE records
+                SET problem = ?, outcome = ?, result_summary = ?, payload_json = ?, publish_at = ?
+                WHERE id = ? AND status = 'buffered'
+                """,
+                (problem, outcome, result_summary, raw, publish_at, record_id),
+            )
+    return get_record(record_id)
+
+
+def publish_due_buffered_records(*, limit: int = 500) -> int:
+    from datetime import datetime, timezone
+
+    now = datetime.now(timezone.utc).replace(microsecond=0).isoformat()
+    with connect() as conn:
+        rows = _fetchall(
+            conn,
+            """
+            SELECT id FROM records
+            WHERE status = 'buffered' AND publish_at IS NOT NULL AND publish_at <= ?
+            ORDER BY publish_at ASC
+            LIMIT ?
+            """,
+            (now, limit),
+        )
+    count = 0
+    for row in rows:
+        rid = str(row["id"])
+        if publish_buffered_record(rid):
+            record = get_record(rid)
+            payload = (record or {}).get("payload") or {}
+            based_on = payload.get("based_on_record_ids") if isinstance(payload, dict) else []
+            if isinstance(based_on, list) and based_on:
+                insert_record_relations(
+                    source_id=rid,
+                    based_on_record_ids=[str(x) for x in based_on],
+                    relation_type=payload.get("relation_type") if isinstance(payload, dict) else None,
+                )
+            count += 1
+    return count
+
+
+def search_author_buffered_records(
+    library_ids: set[str],
+    principal_id: str,
+    problem: str,
+    *,
+    limit: int = 10,
+) -> list[dict[str, Any]]:
+    if not library_ids or not problem.strip():
+        return []
+    placeholders = ",".join("?" for _ in library_ids)
+    op = "ILIKE" if is_postgres() else "LIKE"
+    pattern = f"%{problem.strip()[:200]}%"
+    with connect() as conn:
+        rows = _fetchall(
+            conn,
+            f"""
+            SELECT * FROM records
+            WHERE library_id IN ({placeholders})
+              AND status = 'buffered'
+              AND created_by = ?
+              AND (problem {op} ? OR result_summary {op} ?)
+            ORDER BY created_at DESC
+            LIMIT ?
+            """,
+            [*library_ids, principal_id, pattern, pattern, limit],
+        )
+    out: list[dict[str, Any]] = []
+    for row in rows:
+        item = _row_dict(row)
+        payload = item.pop("payload_json", None)
+        if isinstance(payload, str):
+            item["payload"] = json.loads(payload)
+        else:
+            item["payload"] = payload
+        out.append(item)
+    return out
+
+
+def list_feedback_for_principal(
+    principal_id: str,
+    *,
+    limit: int = 50,
+    offset: int = 0,
+) -> list[dict[str, Any]]:
+    with connect() as conn:
+        rows = _fetchall(
+            conn,
+            """
+            SELECT f.record_id, f.vote, f.updated_at,
+                   r.problem, r.library_id, r.status,
+                   l.name AS library_name
+            FROM record_feedback f
+            LEFT JOIN records r ON r.id = f.record_id
+            LEFT JOIN libraries l ON l.id = r.library_id
+            WHERE f.principal_id = ?
+            ORDER BY f.updated_at DESC
+            LIMIT ? OFFSET ?
+            """,
+            (principal_id, limit, offset),
+        )
+    return [_row_dict(r) for r in rows]
+
+
+def count_feedback_for_principal(principal_id: str) -> int:
+    with connect() as conn:
+        row = _fetchone(
+            conn,
+            "SELECT COUNT(*) AS c FROM record_feedback WHERE principal_id = ?",
+            (principal_id,),
+        )
+    return int(row["c"]) if row else 0
+
+
+def get_library_stats(library_id: str) -> dict[str, Any] | None:
+    lib = get_library(library_id)
+    if not lib:
+        return None
+    with connect() as conn:
+        case_row = _fetchone(conn, "SELECT COUNT(*) AS c FROM cases WHERE library_id = ?", (library_id,))
+        status_rows = _fetchall(
+            conn,
+            "SELECT status, COUNT(*) AS c FROM records WHERE library_id = ? GROUP BY status",
+            (library_id,),
+        )
+        if is_postgres():
+            outcome_rows = _fetchall(
+                conn,
+                """
+                SELECT outcome, COUNT(*) AS c FROM records
+                WHERE library_id = ? AND status = 'active'
+                GROUP BY outcome ORDER BY c DESC, outcome
+                """,
+                (library_id,),
+            )
+            task_rows = _fetchall(
+                conn,
+                """
+                SELECT COALESCE(payload_json->>'task_type', 'unknown') AS task_type, COUNT(*) AS c
+                FROM records WHERE library_id = ? AND status = 'active'
+                GROUP BY 1 ORDER BY c DESC, task_type
+                """,
+                (library_id,),
+            )
+        else:
+            outcome_rows = _fetchall(
+                conn,
+                """
+                SELECT outcome, COUNT(*) AS c FROM records
+                WHERE library_id = ? AND status = 'active'
+                GROUP BY outcome ORDER BY c DESC, outcome
+                """,
+                (library_id,),
+            )
+            task_rows = _fetchall(
+                conn,
+                """
+                SELECT COALESCE(json_extract(payload_json, '$.task_type'), 'unknown') AS task_type,
+                       COUNT(*) AS c
+                FROM records WHERE library_id = ? AND status = 'active'
+                GROUP BY 1 ORDER BY c DESC, task_type
+                """,
+                (library_id,),
+            )
+        org_row = _fetchone(conn, "SELECT name FROM organizations WHERE id = ?", (lib.get("org_id"),))
+    by_status = {str(r["status"]): int(r["c"]) for r in status_rows}
+    return {
+        **lib,
+        "org_name": org_row["name"] if org_row else str(lib.get("org_id") or ""),
+        "cases": int(case_row["c"]) if case_row else 0,
+        "records": {
+            "total": sum(by_status.values()),
+            "by_status": by_status,
+        },
+        "by_outcome": [{"outcome": str(r["outcome"]), "count": int(r["c"])} for r in outcome_rows],
+        "by_task_type": [{"task_type": str(r["task_type"]), "count": int(r["c"])} for r in task_rows],
+    }
 
 
 def get_record_deletion(record_id: str) -> dict[str, Any] | None:

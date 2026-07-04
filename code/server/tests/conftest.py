@@ -6,12 +6,14 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import pytest
 
 from app.core.config import settings
+from app.storage import db
 from app.storage.db import initialize_database
 
 
 @pytest.fixture(scope="session", autouse=True)
 def _db() -> None:
     initialize_database()
+    db.set_library_write_buffer_hours(settings.default_library_id, 0)
 
 
 @pytest.fixture(autouse=True)

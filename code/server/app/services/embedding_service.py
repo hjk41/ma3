@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import threading
 from typing import TYPE_CHECKING, Any
 
@@ -7,6 +8,8 @@ from app.core.config import settings
 
 if TYPE_CHECKING:
     import numpy as np
+
+logger = logging.getLogger(__name__)
 
 _model = None
 _model_lock = threading.Lock()
@@ -24,13 +27,18 @@ def _get_model():
     return _model
 
 
-def warm_up_model() -> bool:
+def warm_up_model(*, required: bool = False) -> bool:
     if settings.disable_embeddings:
+        if required:
+            raise RuntimeError("MA3_DISABLE_EMBEDDINGS is set; cannot warm up embedding model")
         return False
     try:
         _get_model()
         return True
     except Exception:
+        logger.exception("embedding model warm-up failed model=%s", settings.embedding_model)
+        if required:
+            raise
         return False
 
 

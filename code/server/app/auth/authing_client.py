@@ -105,6 +105,10 @@ def fetch_userinfo(access_token: str) -> dict[str, Any]:
     return body
 
 
+def invalidate_userinfo_cache(access_token: str) -> None:
+    _userinfo_cache.pop(access_token, None)
+
+
 def build_logout_url(*, post_logout_redirect: str) -> str:
     discovery = _discovery()
     end_session = discovery.get("end_session_endpoint") or f"{_issuer()}/session/end"

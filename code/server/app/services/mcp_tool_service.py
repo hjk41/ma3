@@ -20,6 +20,8 @@ from app.models.mcp_payloads import (
     Ma3ListDraftsPayload,
     Ma3ListMyWritesPayload,
     Ma3LocateByIdPayload,
+    Ma3PatchRecordPayload,
+    Ma3PublishRecordPayload,
     Ma3ReportPayload,
     Ma3RestoreRecordPayload,
     Ma3ReviewRecordPayload,
@@ -27,6 +29,12 @@ from app.models.mcp_payloads import (
     Ma3WhoamiPayload,
     PAYLOAD_BY_TOOL,
     tool_input_schema,
+)
+from app.services.buffer_service import (
+    buffer_response_fields,
+    patch_buffered_record_for_owner,
+    publish_record_for_owner,
+    resolve_report_status,
 )
 from app.services.mcp_server_info import attach_server_block, extract_client_report
 from app.services.client_bundle import ClientReport
@@ -55,6 +63,8 @@ _TOOL_ORDER = (
     "ma3_report",
     "ma3_list_my_writes",
     "ma3_delete_record",
+    "ma3_publish_record",
+    "ma3_patch_record",
     "ma3_restore_record",
     "ma3_validate",
     "ma3_doctor",
@@ -69,6 +79,8 @@ _TOOL_DESCRIPTIONS: dict[str, str] = {
     "ma3_report": "Write verified agent outcome; default status active. Required: problem, outcome, result_summary.",
     "ma3_list_my_writes": "List the caller's write audit history. Optional: limit, offset.",
     "ma3_delete_record": "Owner delete a record (hard by default; soft when library has deletion protection). Required: record_id.",
+    "ma3_publish_record": "Owner publish a buffered record early (status active). Required: record_id.",
+    "ma3_patch_record": "Owner edit a buffered record; resets publish_at. Required: record_id, problem, outcome, result_summary.",
     "ma3_restore_record": "Restore a trashed record in a deletion-protected library. Required: record_id.",
     "ma3_case": "Read one case timeline. Required: case_id.",
     "ma3_locate_by_id": "Fetch a single record (vk_...) or case (cs_...) by its id. Required: id.",
@@ -145,6 +157,7 @@ def _search_context(payload: Ma3ContextPayload) -> SearchContext:
 
 
 def _context_payload(auth: McpAuthContext, payload: Ma3ContextPayload, *, explain: bool) -> dict[str, Any]:
+    db.publish_due_buffered_records()
     lib_ids = auth.readable_library_ids
     limit = payload.max_cases * payload.max_records_per_case
     hits, rank_explain = db.search_records(
@@ -155,6 +168,16 @@ def _context_payload(auth: McpAuthContext, payload: Ma3ContextPayload, *, explai
         context=_search_context(payload),
     )
     principal_id = None if auth.principal.kind == "anonymous" else auth.principal.principal_id
+    if principal_id:
+        buffered_hits = db.search_author_buffered_records(
+            lib_ids, principal_id, payload.problem, limit=min(10, limit)
+        )
+        seen = {str(h.get("id")) for h in hits if h.get("id")}
+        for row in buffered_hits:
+            rid = str(row.get("id"))
+            if rid and rid not in seen:
+                hits.append(row)
+                seen.add(rid)
     hits = attach_feedback_to_records(hits, principal_id=principal_id)
     env_dict = payload.environment.model_dump(exclude_none=True) if payload.environment else None
     warnings: list[str] = [] if hits else ["no matching active records"]
@@ -217,6 +240,12 @@ def _record_visible(record: dict[str, Any], auth: McpAuthContext, caller_princip
     """
     lib = record.get("library_id")
     if lib not in auth.readable_library_ids:
+        return False
+    if record.get("status") == "buffered":
+        if auth.principal.is_admin_bypass:
+            return True
+        if caller_principal_id is not None and db.is_record_owner(str(record.get("id")), caller_principal_id):
+            return True
         return False
     if record.get("status") == "active":
         return True
@@ -442,17 +471,27 @@ def call_mcp_tool(name: str, arguments: dict[str, Any], auth: McpAuthContext) ->
         write_plan = resolve_report_write_plan(payload, auth)
         library_id = write_plan.library_id
         is_maintainer = auth.principal.is_admin_bypass or library_id in auth.maintainer_library_ids
-        status = "draft" if payload.visibility == "draft" else "active"
+        status, publish_at = resolve_report_status(
+            visibility=payload.visibility,
+            report_kind=write_plan.report_kind,
+            library_id=library_id,
+            is_maintainer=is_maintainer,
+            is_admin_bypass=auth.principal.is_admin_bypass,
+        )
         if payload.dry_run:
             structured = {
                 "persisted": False,
                 "dry_run": True,
                 "status": status,
+                "publish_at": publish_at,
                 "report_kind": write_plan.report_kind,
                 "confirmation": write_plan.confirmation,
                 "library_id": library_id,
+                "library_selection_reason": write_plan.selection_reason,
             }
+            structured.update(buffer_response_fields({"status": status, "publish_at": publish_at}))
             return _result(structured, client_report=client_report, summary="dry run")
+        db.publish_due_buffered_records()
         validate_report_write(payload, is_maintainer=is_maintainer)
         for ref_id in payload.based_on_record_ids:
             ref = db.get_record(ref_id)
@@ -502,7 +541,10 @@ def call_mcp_tool(name: str, arguments: dict[str, Any], auth: McpAuthContext) ->
                     "report_kind": audit["report_kind"] if audit else write_plan.report_kind,
                     "confirmation": audit["confirmation"] if audit else write_plan.confirmation,
                     "library_id": library_id,
+                    "library_selection_reason": write_plan.selection_reason,
                 }
+                if record:
+                    structured.update(buffer_response_fields(record))
                 return _result(structured, client_report=client_report, summary=f"record {existing['record_id']} replay")
         row = db.insert_record(
             library_id=library_id,
@@ -515,6 +557,7 @@ def call_mcp_tool(name: str, arguments: dict[str, Any], auth: McpAuthContext) ->
             idempotency_key=payload.idempotency_key,
             principal_id=auth.principal.principal_id,
             payload_hash=payload_hash,
+            publish_at=publish_at,
         )
         if status == "active" and not row.get("idempotent_replay"):
             db.insert_record_relations(
@@ -544,8 +587,11 @@ def call_mcp_tool(name: str, arguments: dict[str, Any], auth: McpAuthContext) ->
             "report_kind": write_plan.report_kind,
             "confirmation": write_plan.confirmation,
             "library_id": library_id,
+            "library_selection_reason": write_plan.selection_reason,
         }
-        return _result(structured, client_report=client_report, summary=f"record {row['record_id']} {status}")
+        record_row = db.get_record(row["record_id"]) or {}
+        structured.update(buffer_response_fields(record_row))
+        return _result(structured, client_report=client_report, summary=f"record {row['record_id']} {resp_status}")
 
     if name == "ma3_list_my_writes":
         assert isinstance(payload, Ma3ListMyWritesPayload)
@@ -563,6 +609,22 @@ def call_mcp_tool(name: str, arguments: dict[str, Any], auth: McpAuthContext) ->
         assert isinstance(payload, Ma3DeleteRecordPayload)
         structured = delete_record_for_owner(record_id=payload.record_id, auth=auth)
         return _result(structured, client_report=client_report, summary=f"deleted {payload.record_id}")
+
+    if name == "ma3_publish_record":
+        assert isinstance(payload, Ma3PublishRecordPayload)
+        structured = publish_record_for_owner(record_id=payload.record_id, auth=auth)
+        return _result(structured, client_report=client_report, summary=f"published {payload.record_id}")
+
+    if name == "ma3_patch_record":
+        assert isinstance(payload, Ma3PatchRecordPayload)
+        structured = patch_buffered_record_for_owner(
+            record_id=payload.record_id,
+            auth=auth,
+            problem=payload.problem,
+            outcome=payload.outcome,
+            result_summary=payload.result_summary,
+        )
+        return _result(structured, client_report=client_report, summary=f"patched {payload.record_id}")
 
     if name == "ma3_restore_record":
         assert isinstance(payload, Ma3RestoreRecordPayload)

@@ -92,6 +92,9 @@ class Settings:
     authing_app_id: str = field(default_factory=lambda: _env_str("MA3_AUTHING_APP_ID", ""))
     authing_app_secret: str = field(default_factory=lambda: _env_str("MA3_AUTHING_APP_SECRET", ""))
     authing_redirect_uri: str = field(default_factory=lambda: _env_str("MA3_AUTHING_REDIRECT_URI", ""))
+    authing_post_logout_redirect_uri: str = field(
+        default_factory=lambda: _env_str("MA3_AUTHING_POST_LOGOUT_REDIRECT_URI", "")
+    )
     authing_account_url: str = field(default_factory=lambda: _env_str("MA3_AUTHING_ACCOUNT_URL", ""))
     auth_session_cookie: str = field(default_factory=lambda: _env_str("MA3_AUTH_SESSION_COOKIE", "ma3_session"))
     auth_oauth_state_cookie: str = field(default_factory=lambda: _env_str("MA3_AUTH_OAUTH_STATE_COOKIE", "ma3_oauth_state"))
@@ -102,6 +105,13 @@ class Settings:
 
     default_org_id: str = "org_default"
     default_library_id: str = "lib_default"
+    max_keys_per_principal: int = field(
+        default_factory=lambda: int(os.environ.get("MA3_MAX_KEYS_PER_PRINCIPAL", "10"))
+    )
+    paid_principal_ids: tuple[str, ...] = field(default_factory=lambda: tuple())
+    api_key_encryption_secret: str = field(
+        default_factory=lambda: _env_str("MA3_API_KEY_ENCRYPTION_SECRET", "")
+    )
 
     started_at: str = field(
         default_factory=lambda: datetime.now(timezone.utc).replace(microsecond=0).isoformat()
@@ -129,6 +139,16 @@ class Settings:
                 "maintainer_api_keys",
                 tuple(item.strip() for item in raw_maintainers.split(",") if item.strip()),
             )
+        raw_paid = os.environ.get("MA3_PAID_PRINCIPAL_IDS", "")
+        if raw_paid.strip():
+            object.__setattr__(
+                self,
+                "paid_principal_ids",
+                tuple(item.strip() for item in raw_paid.split(",") if item.strip()),
+            )
+        ma3_hf_home = os.environ.get("MA3_HF_HOME", "").strip()
+        if ma3_hf_home and not os.environ.get("HF_HOME", "").strip():
+            os.environ["HF_HOME"] = ma3_hf_home
         validate_ranking_config(self)
 
     @property
@@ -146,6 +166,12 @@ class Settings:
             return self.authing_redirect_uri
         base = (self.public_base_url or "http://127.0.0.1:8000").rstrip("/")
         return f"{base}/auth/callback"
+
+    def resolve_authing_post_logout_redirect_uri(self) -> str:
+        if self.authing_post_logout_redirect_uri:
+            return self.authing_post_logout_redirect_uri
+        base = (self.public_base_url or "http://127.0.0.1:8000").rstrip("/")
+        return f"{base}/ui/observatory/"
 
     def resolve_authing_account_url(self) -> str:
         if self.authing_account_url:

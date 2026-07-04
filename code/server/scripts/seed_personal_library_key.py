@@ -26,6 +26,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from app.core.config import settings  # noqa: E402
+from app.services.api_key_encryption import encrypt_stored_key  # noqa: E402
 from app.services.api_key_service import hash_key  # noqa: E402
 from app.storage import db  # noqa: E402
 
@@ -78,6 +79,8 @@ def main() -> int:
         db.insert_api_key(
             key_id=key_id,
             key_hash=hash_key(plaintext),
+            key_prefix=plaintext[:12],
+            key_ciphertext=encrypt_stored_key(plaintext),
             principal_id=args.principal_id,
             label=args.key_label,
             grants=[

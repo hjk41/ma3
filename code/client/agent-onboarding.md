@@ -216,11 +216,17 @@ mcp_servers:
 
 ---
 
-## API Key
+## API Key（自助获取）
 
-- **`ma3_context`**：匿名或 reader key 即可
-- **`ma3_report`**：需要 writer key（LAN dev：`ma3dev`）
-- 生产环境向管理员索取
+1. 浏览器打开 `http://<ma3-host>:8000/ui/keys/`，用 Authing 注册/登录
+2. 首次登录自动获得个人库；填 label 点「创建」
+3. **立即复制**明文 key（只显示一次），填入你的 MCP 配置 `X-API-Key`
+4. 默认授权：你的个人库 writer + Community Library writer
+   - `ma3_report` 不带 `library_id` → 写入你的个人库
+   - 写社区库 → 显式 `library_id: "lib_default"`
+- LAN dev 实例仍可用 `ma3dev`（`MA3_DEV_AUTH=1` break-glass）
+- key 丢失/泄漏：回 `/ui/keys/` 撤销并重建
+- Authing 未配置的生产实例：联系管理员或使用 `seed_personal_library_key.py` 兜底
 
 ---
 
@@ -251,4 +257,4 @@ curl -sf -H "X-API-Key: ma3dev" -H "Content-Type: application/json" \
 ## 给用户的简短说明
 
 > 打开 `http://<ma3-host>:8000/client/agent-onboarding.md`，让 agent 按文档配置 MCP 和策略；
-> 提供 ma3 地址和 API key 即可。无需 clone 仓库，无需安装 CLI。
+> 在 `/ui/keys/` 自助创建 API key，或（dev）使用 `ma3dev` 即可。无需 clone 仓库，无需安装 CLI。
