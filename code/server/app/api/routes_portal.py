@@ -18,8 +18,10 @@ from app.api.ui_theme import (
     badge,
     esc,
     render_breadcrumb,
+    render_list_footer,
     render_page,
     render_pagination,
+    render_sort_link,
     render_stat_cards,
     render_subnav,
     render_table,
@@ -28,6 +30,7 @@ from app.auth.session import SessionUser
 from app.core.config import settings
 from app.services.feedback_service import apply_record_feedback, resolve_ui_feedback_principal
 from app.services.buffer_service import can_read_record, is_library_settings_editor
+from app.services.onboarding_service import ensure_personal_library
 from app.services.portal_service import can_read_library, entitled_library_ids, list_entitled_libraries
 from app.services.principal_service import complete_display_name_setup, display_name_setup_required
 from app.services.record_read_service import format_record_for_read
@@ -35,16 +38,127 @@ from app.storage import db
 
 router = APIRouter(tags=["portal"])
 
-_PAGE_SIZE = 50
+_DEFAULT_PER_PAGE = 50
+_ALLOWED_PER_PAGE = (10, 25, 50, 100)
+_WRITES_SORT_COLUMNS = frozenset({"created_at", "record_status", "library_name", "report_kind"})
+_VOTES_SORT_COLUMNS = frozenset({"updated_at", "vote", "library_name"})
+_WRITES_STATUS_FILTERS = frozenset({"all", "active", "buffered", "deleted"})
+_VOTES_FILTERS = frozenset({"all", "up", "down"})
+
+
+def _normalize_per_page(per_page: int) -> int:
+    return per_page if per_page in _ALLOWED_PER_PAGE else _DEFAULT_PER_PAGE
+
+
+def _page_offset(page: int, per_page: int) -> tuple[int, int]:
+    page = max(1, page)
+    return page, (page - 1) * per_page
+
+
+def _writes_list_query(
+    *,
+    page: int,
+    per_page: int,
+    sort: str,
+    dir: str,
+    status: str,
+) -> dict[str, str]:
+    q: dict[str, str] = {}
+    if page > 1:
+        q["page"] = str(page)
+    if per_page != _DEFAULT_PER_PAGE:
+        q["per_page"] = str(per_page)
+    if sort != "created_at":
+        q["sort"] = sort
+    if dir != "desc":
+        q["dir"] = dir
+    if status != "all":
+        q["status"] = status
+    return q
+
+
+def _votes_list_query(
+    *,
+    page: int,
+    per_page: int,
+    sort: str,
+    dir: str,
+    vote: str,
+) -> dict[str, str]:
+    q: dict[str, str] = {}
+    if page > 1:
+        q["page"] = str(page)
+    if per_page != _DEFAULT_PER_PAGE:
+        q["per_page"] = str(per_page)
+    if sort != "updated_at":
+        q["sort"] = sort
+    if dir != "desc":
+        q["dir"] = dir
+    if vote != "all":
+        q["vote"] = vote
+    return q
+
+
+def _render_filter_pills(
+    *,
+    items: list[tuple[str, str, str | None]],
+    base_path: str,
+    query: dict[str, str],
+    param: str,
+) -> str:
+    from urllib.parse import urlencode
+
+    links: list[str] = []
+    for key, label, value in items:
+        params = dict(query)
+        params.pop("page", None)
+        if value is None:
+            params.pop(param, None)
+        else:
+            params[param] = value
+        qs = urlencode(params)
+        href = f"{esc(base_path)}?{esc(qs)}" if qs else esc(base_path)
+        active = query.get(param) == value or (value is None and param not in query)
+        cls = "active" if active else ""
+        links.append(f'<a class="{cls}" href="{href}">{esc(label)}</a>')
+    return f'<div class="filter-pills">{"".join(links)}</div>'
+
+
+def _publish_record_with_relations(record_id: str) -> None:
+    record = db.get_record(record_id)
+    if not record or record.get("status") != "buffered":
+        raise HTTPException(status_code=404, detail="record not found")
+    db.publish_buffered_record(record_id)
+    payload = record.get("payload") or {}
+    based_on = payload.get("based_on_record_ids") if isinstance(payload, dict) else []
+    if isinstance(based_on, list) and based_on:
+        db.insert_record_relations(
+            source_id=record_id,
+            based_on_record_ids=[str(x) for x in based_on],
+            relation_type=payload.get("relation_type") if isinstance(payload, dict) else None,
+        )
+
+
+def _delete_owned_record(record_id: str, *, principal_id: str) -> None:
+    record = db.get_record(record_id)
+    if not record:
+        raise HTTPException(status_code=404, detail="record not found")
+    if not db.is_record_owner(record_id, principal_id):
+        raise HTTPException(status_code=404, detail="record not found")
+    library_id = str(record["library_id"])
+    protected, _ret = db.library_deletion_protection(library_id)
+    if protected:
+        db.soft_delete_record(record_id)
+    else:
+        db.hard_delete_record(record_id, deleted_by=principal_id)
 
 
 def _base(request: Request) -> str:
     return str(request.base_url).rstrip("/")
 
 
-def _page_params(page: int) -> tuple[int, int]:
-    page = max(1, page)
-    return page, (page - 1) * _PAGE_SIZE
+def _page_params(page: int, per_page: int = _DEFAULT_PER_PAGE) -> tuple[int, int]:
+    return _page_offset(page, per_page)
 
 
 def _assert_same_origin(request: Request) -> None:
@@ -108,6 +222,7 @@ def portal_me(request: Request) -> Response:
         return auth
     user = auth
     base = _base(request)
+    ensure_personal_library(user.principal_id, user.display_name)
     db.publish_due_buffered_records()
     writes_count = db.count_write_audit_for_principal(user.principal_id)
     buffered_count = db.count_buffered_for_principal(user.principal_id)
@@ -164,11 +279,11 @@ def portal_me(request: Request) -> Response:
   {_render_profile_header(user)}
   {render_subnav(base, active="overview")}
   {render_stat_cards([
-      ("我的贡献", writes_count),
-      ("待发布", buffered_count),
-      ("可访问库", len(libs)),
-      ("我的投票", votes_count),
-      ("API Keys", keys_count),
+      ("记录", writes_count, f"{base}/ui/me/writes/"),
+      ("待发布", buffered_count, f"{base}/ui/me/writes/?status=buffered"),
+      ("可访问库", len(libs), f"{base}/ui/libraries/"),
+      ("投票", votes_count, f"{base}/ui/me/votes/"),
+      ("API Keys", keys_count, f"{base}/ui/keys/"),
   ])}
   <div class="card" style="margin-top:16px;">
     <div class="card-header">
@@ -201,20 +316,54 @@ def portal_me(request: Request) -> Response:
 
 
 @router.get("/ui/me/writes/", response_class=HTMLResponse)
-def portal_writes(request: Request, page: int = Query(1, ge=1)) -> Response:
+def portal_writes(
+    request: Request,
+    page: int = Query(1, ge=1),
+    per_page: int = Query(_DEFAULT_PER_PAGE, ge=1),
+    sort: str = Query("created_at"),
+    dir: str = Query("desc"),
+    status: str = Query("all"),
+) -> Response:
     auth = _require_user(request)
     if isinstance(auth, Response):
         return auth
     user = auth
     base = _base(request)
-    page_num, offset = _page_params(page)
-    total = db.count_write_audit_for_principal(user.principal_id)
-    total_pages = max(1, math.ceil(total / _PAGE_SIZE))
-    rows_data = db.list_write_audit_for_principal(user.principal_id, limit=_PAGE_SIZE, offset=offset)
+    list_path = f"{base}/ui/me/writes/"
+    per_page = _normalize_per_page(per_page)
+    sort = sort if sort in _WRITES_SORT_COLUMNS else "created_at"
+    dir = dir if dir in {"asc", "desc"} else "desc"
+    status_key = status if status in _WRITES_STATUS_FILTERS else "all"
+    status_filter = None if status_key == "all" else status_key
+    page_num, offset = _page_offset(page, per_page)
+    total = db.count_write_audit_for_principal(user.principal_id, status_filter=status_filter)
+    total_pages = max(1, math.ceil(total / per_page)) if total else 1
+    if page_num > total_pages:
+        page_num = total_pages
+        offset = (page_num - 1) * per_page
+    query = _writes_list_query(page=page_num, per_page=per_page, sort=sort, dir=dir, status=status_key)
+    rows_data = db.list_write_audit_for_principal(
+        user.principal_id,
+        limit=per_page,
+        offset=offset,
+        status_filter=status_filter,
+        sort_by=sort,
+        sort_dir=dir,
+    )
     table_rows = []
     for row in rows_data:
         rid = row.get("record_id")
         deleted = bool(rid and db.get_record_deletion(str(rid)))
+        is_owner_buffered = (
+            bool(rid)
+            and not deleted
+            and (row.get("record_status") or "active") == "buffered"
+            and db.is_record_owner(str(rid), user.principal_id)
+        )
+        if is_owner_buffered:
+            check_cell = f'<input type="checkbox" name="record_ids" value="{esc(rid)}" form="writes-batch-form"/>'
+        else:
+            check_cell = ""
         if deleted or not rid:
             rec_cell = esc(_problem_summary(row.get("problem"))) + " " + badge("已删除", "muted")
         else:
@@ -223,9 +372,15 @@ def portal_writes(request: Request, page: int = Query(1, ge=1)) -> Response:
                 f'{esc(_problem_summary(row.get("problem")))}</a>'
             )
         st = row.get("record_status") or "active"
-        st_cell = badge("待发布", "muted") if st == "buffered" else badge(st, "success" if st == "active" else "muted")
+        if deleted:
+            st_cell = badge("已删除", "muted")
+        elif st == "buffered":
+            st_cell = badge("待发布", "muted")
+        else:
+            st_cell = badge(st, "success" if st == "active" else "muted")
         table_rows.append(
             [
+                check_cell,
                 esc(row.get("created_at") or ""),
                 rec_cell,
                 st_cell,
@@ -234,19 +389,49 @@ def portal_writes(request: Request, page: int = Query(1, ge=1)) -> Response:
                 esc(row.get("key_prefix") or row.get("api_key_id") or "—"),
             ]
         )
+    sort_q = dict(query)
+    headers = [
+        "",
+        render_sort_link(label="时间", column="created_at", current_sort=sort, current_dir=dir, base_path=list_path, query=sort_q),
+        "记录",
+        render_sort_link(label="状态", column="record_status", current_sort=sort, current_dir=dir, base_path=list_path, query=sort_q),
+        render_sort_link(label="库", column="library_name", current_sort=sort, current_dir=dir, base_path=list_path, query=sort_q),
+        render_sort_link(label="类型", column="report_kind", current_sort=sort, current_dir=dir, base_path=list_path, query=sort_q),
+        "Key",
+    ]
+    filter_pills = _render_filter_pills(
+        items=[
+            ("all", "全部", None),
+            ("active", "已发布", "active"),
+            ("buffered", "待发布", "buffered"),
+            ("deleted", "已删除", "deleted"),
+        ],
+        base_path=list_path,
+        query=query,
+        param="status",
+    )
+    batch_bar = f"""
+  <form id="writes-batch-form" method="post" action="{esc(base)}/ui/me/writes/batch/">
+    <div class="batch-bar">
+      <span>批量操作</span>
+      <button type="submit" name="action" value="publish" class="btn primary">批量发布</button>
+      <button type="submit" name="action" value="delete" class="btn danger">批量删除</button>
+    </div>
+  </form>"""
     body = f"""
-  {render_subnav(base, active="writes")}
+  {filter_pills}
   <div class="card">
+    {batch_bar}
     <div class="card-body" style="padding:0;">
-      {render_table(["时间", "记录", "状态", "库", "类型", "Key"], table_rows, empty="暂无贡献")}
+      {render_table(headers, table_rows, empty="暂无记录")}
     </div>
   </div>
-  {render_pagination(page=page_num, total_pages=total_pages, base_path=f"{base}/ui/me/writes/")}"""
+  {render_list_footer(page=page_num, total_pages=total_pages, total_items=total, base_path=list_path, query=query, per_page=per_page, default_per_page=_DEFAULT_PER_PAGE)}"""
     return HTMLResponse(
         render_page(
-            title="我的贡献",
+            title="记录",
             base=base,
-            active_nav="me",
+            active_nav="records",
             subtitle="来自写审计日志；含 API key 写入记录。",
             user_line=ui_user_line(user),
             show_logout=True,
@@ -256,21 +441,69 @@ def portal_writes(request: Request, page: int = Query(1, ge=1)) -> Response:
     )
 
 
+@router.post("/ui/me/writes/batch/")
+async def portal_writes_batch(request: Request) -> Response:
+    _assert_same_origin(request)
+    user = resolve_ui_user(request)
+    if user is None:
+        return login_redirect(request)
+    form = await request.form()
+    action = str(form.get("action") or "").strip()
+    record_ids = [str(rid).strip() for rid in form.getlist("record_ids") if str(rid).strip()]
+    if action not in {"publish", "delete"} or not record_ids:
+        raise HTTPException(status_code=400, detail="invalid batch request")
+    for record_id in record_ids:
+        record = db.get_record(record_id)
+        if not record or not db.is_record_owner(record_id, user.principal_id):
+            continue
+        if record.get("status") != "buffered":
+            continue
+        if action == "publish":
+            _publish_record_with_relations(record_id)
+        else:
+            _delete_owned_record(record_id, principal_id=user.principal_id)
+    return RedirectResponse(f"{_base(request)}/ui/me/writes/", status_code=303)
+
+
 @router.get("/ui/me/votes/", response_class=HTMLResponse)
-def portal_votes(request: Request, page: int = Query(1, ge=1)) -> Response:
+def portal_votes(
+    request: Request,
+    page: int = Query(1, ge=1),
+    per_page: int = Query(_DEFAULT_PER_PAGE, ge=1),
+    sort: str = Query("updated_at"),
+    dir: str = Query("desc"),
+    vote: str = Query("all"),
+) -> Response:
     auth = _require_user(request)
     if isinstance(auth, Response):
         return auth
     user = auth
     base = _base(request)
-    page_num, offset = _page_params(page)
-    total = db.count_feedback_for_principal(user.principal_id)
-    total_pages = max(1, math.ceil(total / _PAGE_SIZE))
-    rows_data = db.list_feedback_for_principal(user.principal_id, limit=_PAGE_SIZE, offset=offset)
+    list_path = f"{base}/ui/me/votes/"
+    per_page = _normalize_per_page(per_page)
+    sort = sort if sort in _VOTES_SORT_COLUMNS else "updated_at"
+    dir = dir if dir in {"asc", "desc"} else "desc"
+    vote_key = vote if vote in _VOTES_FILTERS else "all"
+    vote_filter = None if vote_key == "all" else vote_key
+    page_num, offset = _page_offset(page, per_page)
+    total = db.count_feedback_for_principal(user.principal_id, vote_filter=vote_filter)
+    total_pages = max(1, math.ceil(total / per_page)) if total else 1
+    if page_num > total_pages:
+        page_num = total_pages
+        offset = (page_num - 1) * per_page
+    query = _votes_list_query(page=page_num, per_page=per_page, sort=sort, dir=dir, vote=vote_key)
+    rows_data = db.list_feedback_for_principal(
+        user.principal_id,
+        limit=per_page,
+        offset=offset,
+        vote_filter=vote_filter,
+        sort_by=sort,
+        sort_dir=dir,
+    )
     table_rows = []
     for row in rows_data:
         rid = row.get("record_id")
-        vote = "👍" if int(row.get("vote") or 0) > 0 else "👎"
+        vote_icon = "👍" if int(row.get("vote") or 0) > 0 else "👎"
         deleted = bool(rid and db.get_record_deletion(str(rid)))
         if deleted or not rid or row.get("status") != "active":
             rec_cell = esc(_problem_summary(row.get("problem"))) + " " + badge("不可用", "muted")
@@ -282,24 +515,41 @@ def portal_votes(request: Request, page: int = Query(1, ge=1)) -> Response:
         table_rows.append(
             [
                 esc(row.get("updated_at") or ""),
-                vote,
+                vote_icon,
                 rec_cell,
                 esc(row.get("library_name") or row.get("library_id") or ""),
             ]
         )
+    sort_q = dict(query)
+    headers = [
+        render_sort_link(label="时间", column="updated_at", current_sort=sort, current_dir=dir, base_path=list_path, query=sort_q),
+        render_sort_link(label="投票", column="vote", current_sort=sort, current_dir=dir, base_path=list_path, query=sort_q),
+        "记录",
+        render_sort_link(label="库", column="library_name", current_sort=sort, current_dir=dir, base_path=list_path, query=sort_q),
+    ]
+    filter_pills = _render_filter_pills(
+        items=[
+            ("all", "全部", None),
+            ("up", "👍 赞同", "up"),
+            ("down", "👎 反对", "down"),
+        ],
+        base_path=list_path,
+        query=query,
+        param="vote",
+    )
     body = f"""
-  {render_subnav(base, active="votes")}
+  {filter_pills}
   <div class="card">
     <div class="card-body" style="padding:0;">
-      {render_table(["时间", "投票", "记录", "库"], table_rows, empty="还没有投过票")}
+      {render_table(headers, table_rows, empty="还没有投过票")}
     </div>
   </div>
-  {render_pagination(page=page_num, total_pages=total_pages, base_path=f"{base}/ui/me/votes/")}"""
+  {render_list_footer(page=page_num, total_pages=total_pages, total_items=total, base_path=list_path, query=query, per_page=per_page, default_per_page=_DEFAULT_PER_PAGE)}"""
     return HTMLResponse(
         render_page(
-            title="我的投票",
+            title="投票",
             base=base,
-            active_nav="me",
+            active_nav="votes",
             subtitle="只读列表；改票请进入 record 详情页。",
             user_line=ui_user_line(user),
             show_logout=True,
@@ -449,7 +699,7 @@ def portal_libraries(request: Request) -> Response:
   </div>"""
     return HTMLResponse(
         render_page(
-            title="Libraries",
+            title="库",
             base=base,
             active_nav="libraries",
             subtitle="你有读权限的知识库；仅展示统计，不提供 record 枚举。",

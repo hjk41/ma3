@@ -45,6 +45,15 @@ def test_ensure_personal_library_reuses_seed_style_library():
     assert lib["library_id"] == "lib_personal_seed_style"
 
 
+def test_ensure_personal_library_syncs_stale_display_name():
+    ensure_personal_library("user:sync", "OldName")
+    lib = ensure_personal_library("user:sync", "NewName")
+    assert lib["name"] == "NewName 的个人库"
+    row = db.get_library(lib["library_id"])
+    assert row is not None
+    assert row["name"] == "NewName 的个人库"
+
+
 def test_create_personal_dev_key_grants_and_resolves():
     created = create_personal_dev_key("user:carol", "Carol", label="laptop")
     assert created["plaintext_key"].startswith("ma3k_")

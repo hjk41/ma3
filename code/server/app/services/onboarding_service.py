@@ -30,10 +30,13 @@ def is_paid_principal(principal_id: str) -> bool:
 
 def ensure_personal_library(principal_id: str, display_name: str) -> dict[str, Any]:
     """Idempotent: find by (kind=personal, owner) first; create deterministically otherwise."""
+    lib_name = f"{display_name} 的个人库"
     existing = db.find_personal_library(principal_id)
     if existing:
+        if existing.get("name") != lib_name:
+            db.set_library_name(str(existing["library_id"]), lib_name)
+            existing = db.find_personal_library(principal_id) or existing
         return existing
-    lib_name = f"{display_name} 的个人库"
     target_id = personal_library_id(principal_id)
     try:
         created = db.ensure_library(

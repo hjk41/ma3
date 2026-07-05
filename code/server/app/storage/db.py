@@ -2203,11 +2203,28 @@ def list_write_audit_for_principal(
     *,
     limit: int = 50,
     offset: int = 0,
+    status_filter: str | None = None,
+    sort_by: str = "created_at",
+    sort_dir: str = "desc",
 ) -> list[dict[str, Any]]:
+    order_col = {
+        "created_at": "w.created_at",
+        "record_status": "r.status",
+        "library_name": "l.name",
+        "report_kind": "w.report_kind",
+    }.get(sort_by, "w.created_at")
+    direction = "ASC" if sort_dir == "asc" else "DESC"
+    status_clause = ""
+    if status_filter == "deleted":
+        status_clause = " AND rd.record_id IS NOT NULL"
+    elif status_filter == "buffered":
+        status_clause = " AND rd.record_id IS NULL AND r.status = 'buffered'"
+    elif status_filter == "active":
+        status_clause = " AND rd.record_id IS NULL AND r.status = 'active'"
     with connect() as conn:
         rows = _fetchall(
             conn,
-            """
+            f"""
             SELECT w.id, w.record_id, w.library_id, w.principal_id, w.api_key_id,
                    w.report_kind, w.confirmation, w.created_at, l.name AS library_name,
                    k.key_prefix, r.problem, r.status AS record_status, r.publish_at
@@ -2215,8 +2232,10 @@ def list_write_audit_for_principal(
             LEFT JOIN libraries l ON l.id = w.library_id
             LEFT JOIN api_keys k ON k.key_id = w.api_key_id
             LEFT JOIN records r ON r.id = w.record_id
+            LEFT JOIN record_deletions rd ON rd.record_id = w.record_id
             WHERE w.principal_id = ?
-            ORDER BY w.created_at DESC
+            {status_clause}
+            ORDER BY {order_col} {direction}, w.created_at DESC
             LIMIT ? OFFSET ?
             """,
             (principal_id, limit, offset),
@@ -2224,11 +2243,28 @@ def list_write_audit_for_principal(
     return [_row_dict(r) for r in rows]
 
 
-def count_write_audit_for_principal(principal_id: str) -> int:
+def count_write_audit_for_principal(
+    principal_id: str,
+    *,
+    status_filter: str | None = None,
+) -> int:
+    status_clause = ""
+    if status_filter == "deleted":
+        status_clause = " AND rd.record_id IS NOT NULL"
+    elif status_filter == "buffered":
+        status_clause = " AND rd.record_id IS NULL AND r.status = 'buffered'"
+    elif status_filter == "active":
+        status_clause = " AND rd.record_id IS NULL AND r.status = 'active'"
     with connect() as conn:
         row = _fetchone(
             conn,
-            "SELECT COUNT(*) AS c FROM write_audit_log WHERE principal_id = ?",
+            f"""
+            SELECT COUNT(*) AS c FROM write_audit_log w
+            LEFT JOIN records r ON r.id = w.record_id
+            LEFT JOIN record_deletions rd ON rd.record_id = w.record_id
+            WHERE w.principal_id = ?
+            {status_clause}
+            """,
             (principal_id,),
         )
     return int(row["c"]) if row else 0
@@ -2389,11 +2425,25 @@ def list_feedback_for_principal(
     *,
     limit: int = 50,
     offset: int = 0,
+    vote_filter: str | None = None,
+    sort_by: str = "updated_at",
+    sort_dir: str = "desc",
 ) -> list[dict[str, Any]]:
+    order_col = {
+        "updated_at": "f.updated_at",
+        "vote": "f.vote",
+        "library_name": "l.name",
+    }.get(sort_by, "f.updated_at")
+    direction = "ASC" if sort_dir == "asc" else "DESC"
+    vote_clause = ""
+    if vote_filter == "up":
+        vote_clause = " AND f.vote > 0"
+    elif vote_filter == "down":
+        vote_clause = " AND f.vote < 0"
     with connect() as conn:
         rows = _fetchall(
             conn,
-            """
+            f"""
             SELECT f.record_id, f.vote, f.updated_at,
                    r.problem, r.library_id, r.status,
                    l.name AS library_name
@@ -2401,7 +2451,8 @@ def list_feedback_for_principal(
             LEFT JOIN records r ON r.id = f.record_id
             LEFT JOIN libraries l ON l.id = r.library_id
             WHERE f.principal_id = ?
-            ORDER BY f.updated_at DESC
+            {vote_clause}
+            ORDER BY {order_col} {direction}, f.updated_at DESC
             LIMIT ? OFFSET ?
             """,
             (principal_id, limit, offset),
@@ -2409,11 +2460,20 @@ def list_feedback_for_principal(
     return [_row_dict(r) for r in rows]
 
 
-def count_feedback_for_principal(principal_id: str) -> int:
+def count_feedback_for_principal(
+    principal_id: str,
+    *,
+    vote_filter: str | None = None,
+) -> int:
+    vote_clause = ""
+    if vote_filter == "up":
+        vote_clause = " AND vote > 0"
+    elif vote_filter == "down":
+        vote_clause = " AND vote < 0"
     with connect() as conn:
         row = _fetchone(
             conn,
-            "SELECT COUNT(*) AS c FROM record_feedback WHERE principal_id = ?",
+            f"SELECT COUNT(*) AS c FROM record_feedback WHERE principal_id = ?{vote_clause}",
             (principal_id,),
         )
     return int(row["c"]) if row else 0

@@ -4,7 +4,8 @@
 > **Ratified 决策**：[15-user-portal-decisions-for-owner.md](15-user-portal-decisions-for-owner.md)
 > **对象**：ma3 Web UI 登录后默认体验，替代当前「Observatory 即首页」的产品管理员视角  
 > **参照**：[ADR-011](../adr/011-kb-access-and-org-isolation.md)、[design/08](08-kb-access-and-org-isolation.md)、[design/10](10-write-audit-and-delete.md)、[design/14-api-key-lifecycle-layout-fable.md](14-api-key-lifecycle-layout-fable.md)  
-> **技术约束**：SSR HTML（`ui_theme.py` 的 `render_page` / `render_table` / `render_stat_cards`），无 SPA
+> **技术约束**：SSR HTML（`ui_theme.py` 的 `render_page` / `render_table` / `render_stat_cards`），无 SPA  
+> **后续增强（未实现）**：[21-user-portal-enhancements-backlog.md](21-user-portal-enhancements-backlog.md) → 统一方案 [22-user-portal-ui-unified-layout-fable.md](22-user-portal-ui-unified-layout-fable.md)
 
 ---
 

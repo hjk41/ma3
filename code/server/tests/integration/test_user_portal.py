@@ -4,40 +4,15 @@ from unittest.mock import patch
 
 import pytest
 
-from app.auth.session import SessionUser
 from app.core.config import settings
-from app.services.portal_service import validate_authing_admin_config
 from app.services.onboarding_service import ensure_personal_library
-from app.services.principal_service import complete_display_name_setup, ensure_user_principal
+from app.services.portal_service import validate_authing_admin_config
+from app.services.principal_service import ensure_user_principal
 from app.storage import db
 from tests.helpers.mcp_client import McpClient
 
 _EVIDENCE = [{"kind": "test", "summary": "user portal test"}]
 _ORIGIN = {"Origin": "http://testserver"}
-
-
-@pytest.fixture()
-def portal_user() -> SessionUser:
-    return SessionUser(
-        principal_id="user:portal-a",
-        sub="portal-a",
-        display_name="Portal A",
-        email=None,
-        phone=None,
-        is_admin=False,
-    )
-
-
-@pytest.fixture()
-def admin_user() -> SessionUser:
-    return SessionUser(
-        principal_id="user:portal-admin",
-        sub="portal-admin",
-        display_name="Portal Admin",
-        email=None,
-        phone=None,
-        is_admin=True,
-    )
 
 
 def _enable_authing(monkeypatch) -> None:
@@ -48,33 +23,17 @@ def _enable_authing(monkeypatch) -> None:
     monkeypatch.setattr(settings, "auth_admin_users", ["portal-admin"])
 
 
-def _patch_session(monkeypatch, user: SessionUser | None) -> None:
+def _patch_session(monkeypatch, user) -> None:
+    import app.api.routes_keys as routes_keys
     import app.api.ui_session as ui_session
     import app.auth.session as session_mod
+    import app.services.feedback_service as feedback_service
 
     resolver = lambda _req: user
     monkeypatch.setattr(session_mod, "resolve_session_user", resolver)
     monkeypatch.setattr(ui_session, "resolve_session_user", resolver)
-
-
-@pytest.fixture()
-def authing_portal_client(isolated_client, monkeypatch, portal_user):
-    _enable_authing(monkeypatch)
-    _patch_session(monkeypatch, portal_user)
-    db.upsert_user_principal(sso_user=portal_user.sub, display_name=portal_user.sub)
-    complete_display_name_setup(portal_user.principal_id, portal_user.display_name)
-    ensure_personal_library(portal_user.principal_id, portal_user.display_name)
-    return isolated_client
-
-
-@pytest.fixture()
-def authing_admin_client(isolated_client, monkeypatch, admin_user):
-    _enable_authing(monkeypatch)
-    _patch_session(monkeypatch, admin_user)
-    db.upsert_user_principal(sso_user=admin_user.sub, display_name=admin_user.sub)
-    complete_display_name_setup(admin_user.principal_id, admin_user.display_name)
-    ensure_personal_library(admin_user.principal_id, admin_user.display_name)
-    return isolated_client
+    monkeypatch.setattr(routes_keys, "resolve_session_user", resolver)
+    monkeypatch.setattr(feedback_service, "resolve_session_user", resolver)
 
 
 def test_root_redirects_to_me(isolated_client):
@@ -95,7 +54,8 @@ def test_me_requires_login_when_authing_enabled(isolated_client, monkeypatch):
 def test_me_overview_is_dashboard_without_account_chrome(authing_portal_client, portal_user):
     response = authing_portal_client.get("/ui/me/")
     assert response.status_code == 200
-    assert "我的贡献" in response.text
+    assert "stat-card-link" in response.text
+    assert "记录" in response.text
     assert portal_user.display_name in response.text
     assert "编辑显示名" not in response.text
     assert "Principal ID" not in response.text

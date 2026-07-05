@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import html
 from typing import Any, Iterable
+from urllib.parse import urlencode
 
 from app.core.config import settings
 
@@ -344,6 +345,36 @@ input[type=text]:focus, .copy-input:focus {
 .pagination a { color: var(--accent); text-decoration: none; }
 .pagination a:hover { text-decoration: underline; }
 .pagination .current { font-weight: 600; color: var(--text); }
+a.stat-card-link {
+  display: block; text-decoration: none; color: inherit;
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+a.stat-card-link:hover, a.stat-card-link:focus-visible {
+  border-color: var(--accent-muted, #0969da);
+  background: var(--canvas-subtle, #f6f8fa);
+}
+.filter-pills { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; }
+.filter-pills a {
+  display: inline-block; padding: 4px 12px; border-radius: 999px;
+  border: 1px solid var(--border); font-size: 13px; text-decoration: none; color: var(--text);
+}
+.filter-pills a.active { border-color: var(--accent, #0969da); background: #ddf4ff; font-weight: 600; }
+.batch-bar {
+  display: flex; gap: 8px; align-items: center; padding: 12px 16px;
+  border-bottom: 1px solid var(--border-muted); background: var(--canvas-subtle, #f6f8fa);
+}
+th.sortable a { color: inherit; text-decoration: none; font-weight: 600; }
+th.sortable a:hover { color: var(--accent, #0969da); }
+.list-footer {
+  display: flex; flex-wrap: wrap; gap: 12px; align-items: center;
+  justify-content: space-between; margin-top: 12px; font-size: 13px;
+}
+.list-footer .page-size a {
+  display: inline-block; padding: 2px 8px; margin: 0 2px; border-radius: 6px;
+  border: 1px solid var(--border); text-decoration: none; color: var(--text);
+}
+.list-footer .page-size a.active { border-color: var(--accent, #0969da); background: #ddf4ff; font-weight: 600; }
+.list-total { color: var(--text-muted); }
 .empty-cta { margin-top: 12px; }
 """
 
@@ -382,7 +413,9 @@ function ma3CopyExec(input) {
 def portal_nav_items(base: str, *, is_admin: bool) -> list[tuple[str, str, str, bool]]:
     items: list[tuple[str, str, str, bool]] = [
         ("me", "我的主页", f"{base}/ui/me/", False),
-        ("libraries", "Libraries", f"{base}/ui/libraries/", False),
+        ("libraries", "库", f"{base}/ui/libraries/", False),
+        ("records", "记录", f"{base}/ui/me/writes/", False),
+        ("votes", "投票", f"{base}/ui/me/votes/", False),
         ("keys", "API Keys", f"{base}/ui/keys/", False),
     ]
     if is_admin:
@@ -391,10 +424,9 @@ def portal_nav_items(base: str, *, is_admin: bool) -> list[tuple[str, str, str, 
 
 
 def render_subnav(base: str, *, active: str) -> str:
+    """Account-area tabs only; resource management lives in top nav (design/22)."""
     tabs = [
         ("overview", "概览", f"{base}/ui/me/"),
-        ("writes", "我的贡献", f"{base}/ui/me/writes/"),
-        ("votes", "我的投票", f"{base}/ui/me/votes/"),
         ("settings", "设置", f"{base}/ui/me/settings/"),
     ]
     links = "".join(
@@ -404,17 +436,89 @@ def render_subnav(base: str, *, active: str) -> str:
     return f'<nav class="subnav-links">{links}</nav>'
 
 
-def render_pagination(*, page: int, total_pages: int, base_path: str) -> str:
+def render_pagination(
+    *,
+    page: int,
+    total_pages: int,
+    base_path: str,
+    query: dict[str, str] | None = None,
+) -> str:
     if total_pages <= 1:
         return ""
-    prev_link = f'<a href="{esc(base_path)}?page={page - 1}">← 上一页</a>' if page > 1 else "<span>← 上一页</span>"
+
+    def _page_href(target_page: int) -> str:
+        params = dict(query or {})
+        if target_page > 1:
+            params["page"] = str(target_page)
+        else:
+            params.pop("page", None)
+        qs = urlencode(params)
+        return f"{esc(base_path)}?{esc(qs)}" if qs else esc(base_path)
+
+    prev_link = f'<a href="{_page_href(page - 1)}">← 上一页</a>' if page > 1 else "<span>← 上一页</span>"
     next_link = (
-        f'<a href="{esc(base_path)}?page={page + 1}">下一页 →</a>' if page < total_pages else "<span>下一页 →</span>"
+        f'<a href="{_page_href(page + 1)}">下一页 →</a>' if page < total_pages else "<span>下一页 →</span>"
     )
     return (
         f'<div class="pagination">{prev_link}'
         f'<span class="current">第 {page} / {total_pages} 页</span>{next_link}</div>'
     )
+
+
+def render_list_footer(
+    *,
+    page: int,
+    total_pages: int,
+    total_items: int,
+    base_path: str,
+    query: dict[str, str] | None = None,
+    page_sizes: tuple[int, ...] = (10, 25, 50, 100),
+    per_page: int = 50,
+    default_per_page: int = 50,
+) -> str:
+    base_query = dict(query or {})
+    size_links: list[str] = []
+    for size in page_sizes:
+        params = dict(base_query)
+        if size != default_per_page:
+            params["per_page"] = str(size)
+        else:
+            params.pop("per_page", None)
+        params.pop("page", None)
+        qs = urlencode(params)
+        href = f"{esc(base_path)}?{esc(qs)}" if qs else esc(base_path)
+        cls = "active" if size == per_page else ""
+        size_links.append(f'<a class="{cls}" href="{href}">{size}</a>')
+    size_bar = f'<span class="page-size">每页 {" · ".join(size_links)} 条</span>'
+    pagination = render_pagination(page=page, total_pages=total_pages, base_path=base_path, query=query)
+    return (
+        f'<div class="list-footer">'
+        f'<span class="list-total">共 {esc(total_items)} 条</span>'
+        f"{size_bar}"
+        f"{pagination}"
+        f"</div>"
+    )
+
+
+def render_sort_link(
+    *,
+    label: str,
+    column: str,
+    current_sort: str,
+    current_dir: str,
+    base_path: str,
+    query: dict[str, str],
+) -> str:
+    next_dir = "desc" if current_sort == column and current_dir == "asc" else "asc"
+    params = dict(query)
+    params["sort"] = column
+    params["dir"] = next_dir
+    params.pop("page", None)
+    arrow = ""
+    if current_sort == column:
+        arrow = " ↑" if current_dir == "asc" else " ↓"
+    href = f"{esc(base_path)}?{esc(urlencode(params))}"
+    return f'<a href="{href}">{esc(label)}{arrow}</a>'
 
 
 def render_breadcrumb(items: list[tuple[str, str | None]]) -> str:
@@ -533,11 +637,22 @@ def render_table(headers: list[str], rows: list[list[Any]], *, empty: str = "暂
     return f'<div class="table-wrap"><table class="data"><thead><tr>{head}</tr></thead><tbody>{"".join(body_rows)}</tbody></table></div>'
 
 
-def render_stat_cards(items: Iterable[tuple[str, Any]]) -> str:
-    cards = [
-        f'<div class="card stat-card"><div class="stat-value">{esc(value)}</div><div class="stat-label">{esc(label)}</div></div>'
-        for label, value in items
-    ]
+def render_stat_cards(items: Iterable[tuple[str, Any] | tuple[str, Any, str]]) -> str:
+    cards: list[str] = []
+    for item in items:
+        if len(item) == 3:
+            label, value, href = item  # type: ignore[misc]
+            cards.append(
+                f'<a class="card stat-card stat-card-link" href="{esc(href)}">'
+                f'<div class="stat-value">{esc(value)}</div>'
+                f'<div class="stat-label">{esc(label)}</div></a>'
+            )
+        else:
+            label, value = item  # type: ignore[misc]
+            cards.append(
+                f'<div class="card stat-card"><div class="stat-value">{esc(value)}</div>'
+                f'<div class="stat-label">{esc(label)}</div></div>'
+            )
     return f'<div class="grid stats">{"".join(cards)}</div>'
 
 
