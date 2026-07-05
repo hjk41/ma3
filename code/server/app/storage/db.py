@@ -289,6 +289,26 @@ def initialize_database() -> None:
             _execute(conn, "ALTER TABLE records ADD COLUMN publish_at TEXT")
         if not _column_exists(conn, "principals", "display_name_locked"):
             _execute(conn, "ALTER TABLE principals ADD COLUMN display_name_locked INTEGER NOT NULL DEFAULT 0")
+        if _column_exists(conn, "principals", "sso_user") and _column_exists(conn, "principals", "display_name_locked"):
+            _execute(
+                conn,
+                """
+                UPDATE principals SET display_name_locked = 1
+                WHERE kind = 'user'
+                  AND display_name_locked = 0
+                  AND sso_user IS NOT NULL
+                  AND display_name <> sso_user
+                  AND length(display_name) >= 2
+                """,
+            )
+        _execute(
+            conn,
+            """
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_principals_user_display_name
+            ON principals (lower(display_name))
+            WHERE kind = 'user'
+            """,
+        )
         if not _column_exists(conn, "record_relations", "source_deleted"):
             _execute(conn, "ALTER TABLE record_relations ADD COLUMN source_deleted INTEGER NOT NULL DEFAULT 0")
 
@@ -1345,6 +1365,34 @@ def get_user_principal(principal_id: str) -> dict[str, Any] | None:
             f"SELECT {id_col} AS principal_id, kind, display_name{locked_col}, created_at FROM principals WHERE {id_col} = ?",
             (principal_id,),
         )
+    return _row_dict(row) if row else None
+
+
+def user_display_name_is_locked(principal_id: str) -> bool:
+    row = get_user_principal(principal_id)
+    if not row:
+        return False
+    return bool(row.get("display_name_locked"))
+
+
+def find_user_by_display_name(
+    display_name: str,
+    *,
+    exclude_principal_id: str | None = None,
+) -> dict[str, Any] | None:
+    with connect() as conn:
+        if not _table_exists(conn, "principals"):
+            return None
+        id_col = _principal_id_column(conn)
+        sql = (
+            f"SELECT {id_col} AS principal_id, kind, display_name, created_at "
+            "FROM principals WHERE kind = 'user' AND lower(display_name) = lower(?)"
+        )
+        params: list[Any] = [display_name]
+        if exclude_principal_id:
+            sql += f" AND {id_col} <> ?"
+            params.append(exclude_principal_id)
+        row = _fetchone(conn, sql, tuple(params))
     return _row_dict(row) if row else None
 
 

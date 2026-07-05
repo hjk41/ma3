@@ -2,12 +2,18 @@ from __future__ import annotations
 
 import math
 from typing import Any
-from urllib.parse import urlparse
+from urllib.parse import quote, unquote, urlparse
 
 from fastapi import APIRouter, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
 
-from app.api.ui_session import login_redirect, require_authing_for_ui, resolve_ui_user, ui_user_line
+from app.api.ui_session import (
+    login_redirect,
+    require_authed_ui_user,
+    require_authing_for_ui,
+    resolve_ui_user,
+    ui_user_line,
+)
 from app.api.ui_theme import (
     badge,
     esc,
@@ -23,7 +29,7 @@ from app.core.config import settings
 from app.services.feedback_service import apply_record_feedback, resolve_ui_feedback_principal
 from app.services.buffer_service import can_read_record, is_library_settings_editor
 from app.services.portal_service import can_read_library, entitled_library_ids, list_entitled_libraries
-from app.services.principal_service import update_user_display_name
+from app.services.principal_service import complete_display_name_setup, display_name_setup_required
 from app.services.record_read_service import format_record_for_read
 from app.storage import db
 
@@ -60,31 +66,29 @@ def _assert_same_origin(request: Request) -> None:
     raise HTTPException(status_code=403, detail="origin or referer required")
 
 
-def _require_user(request: Request) -> SessionUser | Response:
-    require_authing_for_ui()
-    user = resolve_ui_user(request)
-    if user is None:
-        return login_redirect(request)
-    return user
+def _require_user(request: Request, *, require_setup: bool = True) -> SessionUser | Response:
+    return require_authed_ui_user(request, require_setup=require_setup)
 
 
-def _render_profile_header(user: SessionUser, base: str) -> str:
+def _render_profile_header(user: SessionUser) -> str:
+    """Avatar + display name only; account details live under /ui/me/settings/."""
     initial = (user.display_name or "?")[:1].upper()
-    pid = esc(user.principal_id)
     return f"""
   <div class="profile-header">
     <div class="profile-avatar">{esc(initial)}</div>
     <div class="profile-body">
       <h2 class="profile-name">{esc(user.display_name)}</h2>
-      <div class="profile-meta">
-        <a href="{esc(base)}/ui/me/settings/">编辑显示名</a>
-        · Principal ID
-        <div class="copy-row" style="margin-top:6px;">
-          <input class="copy-src" type="text" readonly value="{pid}"/>
-          <input class="copy-input" type="text" readonly value="{pid}" onclick="this.select();"/>
-          <button type="button" class="btn sm" onclick="ma3CopyFrom(this)">复制</button>
-        </div>
-      </div>
+    </div>
+  </div>"""
+
+
+def _render_principal_id_card(user: SessionUser) -> str:
+    return f"""
+  <div class="card">
+    <div class="card-header"><h2>Principal ID</h2></div>
+    <div class="card-body">
+      <p class="card-muted">ma3 内部身份标识，创建 API key 或排查权限时可能需要。显示名在注册时设定，之后不可修改。</p>
+      <code class="mono id-block">{esc(user.principal_id)}</code>
     </div>
   </div>"""
 
@@ -157,7 +161,7 @@ def portal_me(request: Request) -> Response:
     )
 
     body = f"""
-  {_render_profile_header(user, base)}
+  {_render_profile_header(user)}
   {render_subnav(base, active="overview")}
   {render_stat_cards([
       ("我的贡献", writes_count),
@@ -305,6 +309,76 @@ def portal_votes(request: Request, page: int = Query(1, ge=1)) -> Response:
     )
 
 
+@router.get("/ui/me/setup/", response_class=HTMLResponse)
+def portal_me_setup(request: Request, next: str = Query("/ui/me/")) -> Response:
+    auth = _require_user(request, require_setup=False)
+    if isinstance(auth, Response):
+        return auth
+    user = auth
+    if not display_name_setup_required(user.principal_id):
+        target = next if next.startswith("/") and not next.startswith("//") else "/ui/me/"
+        return RedirectResponse(target, status_code=302)
+    base = _base(request)
+    error = unquote(request.query_params.get("error") or "").strip()
+    alert = f'<div class="alert error" style="margin-bottom:16px;">{esc(error)}</div>' if error else ""
+    body = f"""
+  <div class="card">
+    <div class="card-header"><h2>设定显示名</h2></div>
+    <div class="card-body">
+      <p class="card-muted">欢迎加入 ma3。请选择一个<strong>显示名</strong>：它将出现在门户顶部、个人库名称等位置。</p>
+      <ul class="steps">
+        <li>显示名在 ma3 内<strong>全局唯一</strong>（不区分大小写）</li>
+        <li>设定后<strong>不可修改</strong>，请谨慎选择</li>
+      </ul>
+      {alert}
+      <form method="post" action="{esc(base)}/ui/me/setup/">
+        <input type="hidden" name="next" value="{esc(next)}"/>
+        <label>显示名（2–32 字符）</label>
+        <input name="display_name" type="text" maxlength="32" required autofocus
+               style="width:100%;max-width:420px;"/>
+        <button type="submit" class="btn primary" style="margin-top:12px;">确认并继续</button>
+      </form>
+    </div>
+  </div>"""
+    return HTMLResponse(
+        render_page(
+            title="设定显示名",
+            base=base,
+            active_nav="me",
+            subtitle="注册后一次性设定，之后不可更改。",
+            user_line=ui_user_line(user),
+            show_logout=True,
+            is_admin=user.is_admin,
+            body=body,
+        )
+    )
+
+
+@router.post("/ui/me/setup/")
+async def portal_me_setup_save(request: Request) -> Response:
+    _assert_same_origin(request)
+    auth = _require_user(request, require_setup=False)
+    if isinstance(auth, Response):
+        return auth
+    user = auth
+    if not display_name_setup_required(user.principal_id):
+        raise HTTPException(status_code=400, detail="显示名已设定，不可修改")
+    form = await request.form()
+    base = _base(request)
+    next_raw = str(form.get("next") or "/ui/me/")
+    next_path = next_raw if next_raw.startswith("/") and not next_raw.startswith("//") else "/ui/me/"
+    try:
+        complete_display_name_setup(user.principal_id, str(form.get("display_name") or ""))
+    except HTTPException as exc:
+        if exc.status_code == 400:
+            return RedirectResponse(
+                f"{base}/ui/me/setup/?next={quote(next_path, safe='')}&error={quote(str(exc.detail), safe='')}",
+                status_code=303,
+            )
+        raise
+    return RedirectResponse(next_path, status_code=303)
+
+
 @router.get("/ui/me/settings/", response_class=HTMLResponse)
 def portal_me_settings(request: Request) -> Response:
     auth = _require_user(request)
@@ -312,29 +386,23 @@ def portal_me_settings(request: Request) -> Response:
         return auth
     user = auth
     base = _base(request)
-    saved = request.query_params.get("saved") == "1"
-    alert = '<div class="alert success" style="margin-bottom:16px;">显示名已保存。</div>' if saved else ""
     body = f"""
-  {_render_profile_header(user, base)}
+  {_render_profile_header(user)}
   {render_subnav(base, active="settings")}
-  {alert}
   <div class="card">
     <div class="card-header"><h2>显示名</h2></div>
     <div class="card-body">
-      <p class="card-muted">用于门户顶部、个人库名称（「{esc(user.display_name)} 的个人库」）等。Principal ID 不变。</p>
-      <form method="post" action="{esc(base)}/ui/me/settings/">
-        <label>显示名（2–32 字符）</label>
-        <input name="display_name" type="text" maxlength="32" value="{esc(user.display_name)}" style="width:100%;max-width:420px;"/>
-        <button type="submit" class="btn primary" style="margin-top:12px;">保存</button>
-      </form>
+      <p class="card-muted">注册时设定，之后不可修改。用于门户顶部、个人库名称（「{esc(user.display_name)} 的个人库」）等。</p>
+      <p style="font-size:18px;font-weight:600;margin:8px 0 0;">{esc(user.display_name)}</p>
     </div>
-  </div>"""
+  </div>
+  {_render_principal_id_card(user)}"""
     return HTMLResponse(
         render_page(
             title="账户设置",
             base=base,
             active_nav="me",
-            subtitle="自定义在 ma3 中显示的名字",
+            subtitle="账户与身份信息",
             user_line=ui_user_line(user),
             show_logout=True,
             is_admin=user.is_admin,
@@ -346,14 +414,10 @@ def portal_me_settings(request: Request) -> Response:
 @router.post("/ui/me/settings/")
 async def portal_me_settings_save(request: Request) -> Response:
     _assert_same_origin(request)
-    auth = _require_user(request)
+    auth = _require_user(request, require_setup=False)
     if isinstance(auth, Response):
         return auth
-    user = auth
-    form = await request.form()
-    update_user_display_name(user.principal_id, str(form.get("display_name") or ""))
-    base = _base(request)
-    return RedirectResponse(f"{base}/ui/me/settings/?saved=1", status_code=303)
+    raise HTTPException(status_code=400, detail="显示名已设定，不可修改")
 
 
 @router.get("/ui/libraries/", response_class=HTMLResponse)

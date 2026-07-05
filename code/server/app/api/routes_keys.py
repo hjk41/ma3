@@ -8,6 +8,7 @@ from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
 from pydantic import BaseModel, Field
 
+from app.api.ui_session import redirect_if_setup_required
 from app.api.ui_theme import badge, esc, render_page, render_table
 from app.auth.session import SessionUser, resolve_session_user
 from app.core.config import settings
@@ -20,6 +21,7 @@ from app.services.onboarding_service import (
     normalize_api_key_grants,
     resolve_key_grants,
 )
+from app.services.principal_service import display_name_setup_required
 from app.storage import db
 
 logger = logging.getLogger(__name__)
@@ -84,11 +86,26 @@ def _require_session_user(request: Request) -> SessionUser:
     user = resolve_session_user(request)
     if user is None:
         raise HTTPException(status_code=401, detail="authentication required")
+    if display_name_setup_required(user.principal_id):
+        raise HTTPException(
+            status_code=403,
+            detail="complete display name setup at /ui/me/setup/ before managing API keys",
+        )
     return user
 
 
 def _redirect_login(request: Request) -> Response:
     return RedirectResponse(f"/auth/login?next={request.url.path}", status_code=302)
+
+
+def _require_ui_keys_user(request: Request) -> SessionUser | Response:
+    user = resolve_session_user(request)
+    if user is None:
+        return _redirect_login(request)
+    setup_redirect = redirect_if_setup_required(request, user)
+    if setup_redirect is not None:
+        return setup_redirect
+    return user
 
 
 def _enrich_keys_with_plaintext(keys: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -544,9 +561,9 @@ def ui_keys_detail(request: Request, key_id: str) -> Response:
     if not settings.authing_configured:
         base = str(request.base_url).rstrip("/")
         return HTMLResponse(_render_authing_disabled_page(base), status_code=503)
-    user = resolve_session_user(request)
-    if user is None:
-        return _redirect_login(request)
+    user = _require_ui_keys_user(request)
+    if isinstance(user, Response):
+        return user
     personal = ensure_personal_library(user.principal_id, user.display_name)
     row = db.get_api_key_for_principal(key_id, principal_id=user.principal_id)
     if row is None:
@@ -563,9 +580,9 @@ def ui_keys_list(request: Request) -> Response:
     if not settings.authing_configured:
         base = str(request.base_url).rstrip("/")
         return HTMLResponse(_render_authing_disabled_page(base), status_code=503)
-    user = resolve_session_user(request)
-    if user is None:
-        return _redirect_login(request)
+    user = _require_ui_keys_user(request)
+    if isinstance(user, Response):
+        return user
     personal = ensure_personal_library(user.principal_id, user.display_name)
     keys = _enrich_keys_with_plaintext(db.list_api_keys_for_principal(user.principal_id))
     base = str(request.base_url).rstrip("/")
@@ -578,9 +595,9 @@ async def ui_keys_create(request: Request) -> Response:
     if not settings.authing_configured:
         base = str(request.base_url).rstrip("/")
         return HTMLResponse(_render_authing_disabled_page(base), status_code=503)
-    user = resolve_session_user(request)
-    if user is None:
-        return _redirect_login(request)
+    user = _require_ui_keys_user(request)
+    if isinstance(user, Response):
+        return user
     form = await request.form()
     label = normalize_key_label(str(form.get("label", "")))
     personal = ensure_personal_library(user.principal_id, user.display_name)
@@ -608,9 +625,9 @@ async def ui_keys_edit(request: Request, key_id: str) -> Response:
     _assert_same_origin(request)
     if not settings.authing_configured:
         return RedirectResponse("/ui/keys/", status_code=303)
-    user = resolve_session_user(request)
-    if user is None:
-        return _redirect_login(request)
+    user = _require_ui_keys_user(request)
+    if isinstance(user, Response):
+        return user
     personal = ensure_personal_library(user.principal_id, user.display_name)
     base = str(request.base_url).rstrip("/")
     form = await request.form()
@@ -648,9 +665,9 @@ def ui_keys_delete(request: Request, key_id: str) -> Response:
     _assert_same_origin(request)
     if not settings.authing_configured:
         return RedirectResponse("/ui/keys/", status_code=303)
-    user = resolve_session_user(request)
-    if user is None:
-        return _redirect_login(request)
+    user = _require_ui_keys_user(request)
+    if isinstance(user, Response):
+        return user
     row = db.get_api_key_for_principal(key_id, principal_id=user.principal_id)
     if row is not None:
         db.delete_api_key(key_id, principal_id=user.principal_id)

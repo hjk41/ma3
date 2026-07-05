@@ -318,6 +318,11 @@ input[type=text]:focus, .copy-input:focus {
 }
 .profile-name { margin: 0 0 6px; font-size: 20px; font-weight: 600; }
 .profile-meta { color: var(--text-muted); font-size: 13px; }
+.id-block {
+  display: block; margin-top: 8px; padding: 10px 12px; font-size: 13px;
+  word-break: break-all; background: var(--surface-muted);
+  border: 1px solid var(--border-muted); border-radius: var(--radius);
+}
 .list-group {
   border: 1px solid var(--border-muted); border-radius: var(--radius-lg); overflow: hidden;
 }

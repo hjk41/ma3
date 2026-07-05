@@ -1,4 +1,4 @@
-"""Integration tests for user display name (设定用户名 / /ui/me/settings/)."""
+"""Integration tests for registration display name setup (/ui/me/setup/)."""
 from __future__ import annotations
 
 import secrets
@@ -10,13 +10,13 @@ from app.auth.session import SessionUser
 from app.core.config import settings
 from app.services.api_key_service import hash_key
 from app.services.onboarding_service import ensure_personal_library
-from app.services.principal_service import ensure_user_principal, update_user_display_name
+from app.services.principal_service import complete_display_name_setup, ensure_user_principal
 from app.storage import db
 from tests.helpers.mcp_client import McpClient
 
 _ORIGIN = {
     "Origin": "http://testserver",
-    "Referer": "http://testserver/ui/me/settings/",
+    "Referer": "http://testserver/ui/me/setup/",
 }
 
 
@@ -73,71 +73,92 @@ def _seed_api_key(principal_id: str) -> str:
 
 
 @pytest.fixture()
-def authing_settings_client(isolated_client, monkeypatch, display_name_user):
+def authing_setup_client(isolated_client, monkeypatch, display_name_user):
     _enable_authing(monkeypatch)
     db.upsert_user_principal(
         sso_user=display_name_user.sub,
-        display_name=display_name_user.display_name,
+        display_name=display_name_user.sub,
     )
-    ensure_personal_library(display_name_user.principal_id, display_name_user.display_name)
+    ensure_personal_library(display_name_user.principal_id, display_name_user.sub)
     _patch_session_from_db(monkeypatch, display_name_user)
     return isolated_client
 
 
-def test_set_display_name_via_portal_updates_db_mcp_and_personal_library(
-    authing_settings_client,
+def test_setup_display_name_updates_db_mcp_and_personal_library(
+    authing_setup_client,
     display_name_user,
 ):
-    """设定用户名：门户保存后 DB、个人库、MCP whoami、设置页一致。"""
-    client = authing_settings_client
+    client = authing_setup_client
     mcp = McpClient(client)
     api_key = _seed_api_key(display_name_user.principal_id)
 
     before = mcp.structured("ma3_whoami", api_key=api_key)
     assert before["caller"]["display_name"] == display_name_user.sub
-    personal_before = db.find_personal_library(display_name_user.principal_id)
-    assert personal_before["name"] == f"{display_name_user.sub} 的个人库"
 
     response = client.post(
-        "/ui/me/settings/",
-        data={"display_name": "小明"},
+        "/ui/me/setup/",
+        data={"display_name": "小明", "next": "/ui/me/"},
         headers=_ORIGIN,
         follow_redirects=False,
     )
     assert response.status_code == 303
-    assert response.headers["location"].endswith("/ui/me/settings/?saved=1")
+    assert response.headers["location"] == "/ui/me/"
 
     row = db.get_user_principal(display_name_user.principal_id)
     assert row["display_name"] == "小明"
+    assert row["display_name_locked"]
     personal = db.find_personal_library(display_name_user.principal_id)
     assert personal["name"] == "小明 的个人库"
 
     after = mcp.structured("ma3_whoami", api_key=api_key)
     assert after["caller"]["display_name"] == "小明"
-    personal_after = db.find_personal_library(display_name_user.principal_id)
-    assert personal_after["name"] == "小明 的个人库"
-
-    page = client.get("/ui/me/settings/")
-    assert "小明" in page.text
-    assert "显示名已保存" not in page.text
 
 
-def test_set_display_name_rejects_uuid_like_name(authing_settings_client, display_name_user):
-    client = authing_settings_client
+def test_setup_rejects_uuid_like_name(authing_setup_client, display_name_user):
+    client = authing_setup_client
     response = client.post(
-        "/ui/me/settings/",
-        data={"display_name": "6a45abec4d2ef946d80649f6"},
+        "/ui/me/setup/",
+        data={"display_name": "6a45abec4d2ef946d80649f6", "next": "/ui/me/"},
+        headers=_ORIGIN,
+        follow_redirects=False,
+    )
+    assert response.status_code == 303
+    assert "error=" in response.headers["location"]
+    row = db.get_user_principal(display_name_user.principal_id)
+    assert row["display_name"] == display_name_user.sub
+    assert not row.get("display_name_locked")
+
+
+def test_me_redirects_to_setup_until_display_name_locked(authing_setup_client):
+    response = authing_setup_client.get("/ui/me/", follow_redirects=False)
+    assert response.status_code == 302
+    assert response.headers["location"].startswith("/ui/me/setup/")
+
+
+def test_display_name_cannot_be_changed_after_setup(authing_setup_client, display_name_user):
+    complete_display_name_setup(display_name_user.principal_id, "锁定昵称")
+    response = authing_setup_client.post(
+        "/ui/me/setup/",
+        data={"display_name": "新名字", "next": "/ui/me/"},
         headers=_ORIGIN,
         follow_redirects=False,
     )
     assert response.status_code == 400
-    assert "internal id" in response.json()["detail"]
-    row = db.get_user_principal(display_name_user.principal_id)
-    assert row["display_name"] == display_name_user.sub
+    assert db.get_user_principal(display_name_user.principal_id)["display_name"] == "锁定昵称"
+
+
+def test_settings_post_rejects_display_name_change(authing_setup_client, display_name_user):
+    complete_display_name_setup(display_name_user.principal_id, "锁定昵称")
+    response = authing_setup_client.post(
+        "/ui/me/settings/",
+        data={"display_name": "新名字"},
+        headers={"Origin": "http://testserver", "Referer": "http://testserver/ui/me/settings/"},
+        follow_redirects=False,
+    )
+    assert response.status_code == 400
 
 
 def test_authing_resync_preserves_user_chosen_display_name(isolated_client, display_name_user):
-    """Authing 再次登录不应覆盖用户已锁定的显示名。"""
     ensure_user_principal(
         AuthingUser(
             sub=display_name_user.sub,
@@ -150,7 +171,7 @@ def test_authing_resync_preserves_user_chosen_display_name(isolated_client, disp
         )
     )
     ensure_personal_library(display_name_user.principal_id, display_name_user.sub)
-    update_user_display_name(display_name_user.principal_id, "锁定昵称")
+    complete_display_name_setup(display_name_user.principal_id, "锁定昵称")
 
     ensure_user_principal(
         AuthingUser(
@@ -167,3 +188,37 @@ def test_authing_resync_preserves_user_chosen_display_name(isolated_client, disp
     assert row["display_name"] == "锁定昵称"
     personal = db.find_personal_library(display_name_user.principal_id)
     assert personal["name"] == "锁定昵称 的个人库"
+
+
+def test_setup_rejects_duplicate_via_portal(isolated_client, monkeypatch):
+    user_a = SessionUser(
+        principal_id="user:dup-a",
+        sub="dup-a",
+        display_name="dup-a",
+        email=None,
+        phone=None,
+        is_admin=False,
+    )
+    user_b = SessionUser(
+        principal_id="user:dup-b",
+        sub="dup-b",
+        display_name="dup-b",
+        email=None,
+        phone=None,
+        is_admin=False,
+    )
+    _enable_authing(monkeypatch)
+    db.upsert_user_principal(sso_user=user_a.sub, display_name=user_a.sub)
+    db.upsert_user_principal(sso_user=user_b.sub, display_name=user_b.sub)
+    complete_display_name_setup(user_a.principal_id, "小明")
+    _patch_session_from_db(monkeypatch, user_b)
+
+    response = isolated_client.post(
+        "/ui/me/setup/",
+        data={"display_name": "小明", "next": "/ui/me/"},
+        headers=_ORIGIN,
+        follow_redirects=False,
+    )
+    assert response.status_code == 303
+    assert "error=" in response.headers["location"]
+    assert db.get_user_principal(user_b.principal_id)["display_name"] == "dup-b"

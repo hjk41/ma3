@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+from urllib.parse import quote
 
 import httpx
 from fastapi import APIRouter, HTTPException, Query, Request, Response
@@ -19,7 +20,7 @@ from app.auth.session import (
 )
 from app.core.config import settings
 from app.services.onboarding_service import ensure_personal_library
-from app.services.principal_service import ensure_user_principal
+from app.services.principal_service import display_name_setup_required, ensure_user_principal
 
 logger = logging.getLogger(__name__)
 
@@ -108,7 +109,7 @@ def auth_callback(
         user = authing_client.resolve_user(access_token)
         principal = ensure_user_principal(user)
         try:
-            ensure_personal_library(principal["principal_id"], user.display_name)
+            ensure_personal_library(principal["principal_id"], str(principal["display_name"]))
         except Exception:
             logger.exception(
                 "ensure_personal_library failed during auth callback for %s",
@@ -118,7 +119,12 @@ def auth_callback(
         logger.exception("authing user resolution failed")
         return _auth_error_page(next_path, f"用户信息解析失败：{exc}", status_code=502)
 
-    response = RedirectResponse(next_path, status_code=302)
+    if display_name_setup_required(principal["principal_id"]):
+        setup_next = next_path if not next_path.startswith("/ui/me/setup") else "/ui/me/"
+        redirect_target = f"/ui/me/setup/?next={quote(setup_next, safe='')}"
+    else:
+        redirect_target = next_path
+    response = RedirectResponse(redirect_target, status_code=302)
     set_session_cookie(response, request, access_token)
     response.delete_cookie(settings.auth_oauth_state_cookie, path="/")
     response.delete_cookie("ma3_oauth_next", path="/")

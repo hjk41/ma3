@@ -69,7 +69,8 @@ def test_auth_callback_sets_session_and_principal(authing_client: TestClient):
         response = authing_client.get("/auth/callback?code=abc&state=state123", follow_redirects=False)
 
     assert response.status_code == 302
-    assert response.headers["location"] == "/ui/observatory/"
+    assert response.headers["location"].startswith("/ui/me/setup/?next=")
+    assert "%2Fui%2Fobservatory%2F" in response.headers["location"]
     assert settings.auth_session_cookie in response.cookies
 
     authing_client.cookies.set(settings.auth_session_cookie, "atk_test")
@@ -78,7 +79,7 @@ def test_auth_callback_sets_session_and_principal(authing_client: TestClient):
     assert whoami.status_code == 200
     body = whoami.json()
     assert body["sub"] == "authing_test_user"
-    assert body["display_name"] == "测试用户"
+    assert body["display_name"] == "authing_test_user"
 
 
 def test_observatory_requires_login_when_authing_enabled(authing_client: TestClient):

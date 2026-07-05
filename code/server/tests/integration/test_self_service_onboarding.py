@@ -6,7 +6,7 @@ from app.auth.session import SessionUser
 from app.core.config import settings
 from app.services import api_key_service
 from app.services.onboarding_service import ensure_personal_library
-from app.services.principal_service import ensure_user_principal
+from app.services.principal_service import complete_display_name_setup, ensure_user_principal
 from app.storage import db
 from tests.helpers.mcp_client import McpClient
 
@@ -39,6 +39,9 @@ def authing_client(isolated_client, monkeypatch, session_user):
 
     monkeypatch.setattr(session_mod, "resolve_session_user", lambda _req: session_user)
     monkeypatch.setattr(routes_keys, "resolve_session_user", lambda _req: session_user)
+    db.upsert_user_principal(sso_user=session_user.sub, display_name=session_user.sub)
+    complete_display_name_setup(session_user.principal_id, session_user.display_name)
+    ensure_personal_library(session_user.principal_id, session_user.display_name)
     return isolated_client
 
 
@@ -187,6 +190,8 @@ def test_delete_key_owner_only(authing_client, session_user, monkeypatch):
         phone=None,
         is_admin=False,
     )
+    db.upsert_user_principal(sso_user=other.sub, display_name=other.sub)
+    complete_display_name_setup(other.principal_id, other.display_name)
     import app.api.routes_keys as routes_keys
 
     monkeypatch.setattr(routes_keys, "resolve_session_user", lambda _req: other)
