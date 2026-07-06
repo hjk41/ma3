@@ -123,10 +123,9 @@ def resolve_locale(request: Request) -> str:
 def locale_switch_url(request: Request, target_locale: str) -> str:
     parsed = urlparse(str(request.url))
     params = dict(parse_qsl(parsed.query, keep_blank_values=True))
-    if target_locale == DEFAULT_LOCALE:
-        params.pop("lang", None)
-    else:
-        params["lang"] = target_locale
+    # Always include lang so the switcher updates ma3_locale (dropping it for zh-CN
+    # would leave the old en-US cookie in effect).
+    params["lang"] = target_locale
     query = urlencode(params)
     return urlunparse(parsed._replace(query=query))
 

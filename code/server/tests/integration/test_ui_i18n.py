@@ -1,11 +1,6 @@
 from __future__ import annotations
 
-import json
-from pathlib import Path
-
 from app.api.ui_i18n import catalog
-
-_ORIGIN = {"Origin": "http://testserver"}
 
 
 def test_default_locale_is_zh_cn(authing_portal_client):
@@ -89,6 +84,23 @@ def test_keys_page_english(authing_portal_client):
     assert "Key management" in text
     assert "Create new key" in text
     assert "Personal library" in text
+
+
+def test_switcher_back_to_chinese_updates_cookie(authing_portal_client):
+    client = authing_portal_client
+    client.cookies.set("ma3_locale", "en-US")
+    en_page = client.get("/ui/me/")
+    assert en_page.status_code == 200
+    assert "Home" in en_page.text
+    assert "lang=zh-CN" in en_page.text
+    zh_page = client.get("/ui/me/?lang=zh-CN")
+    assert zh_page.status_code == 200
+    assert '<html lang="zh-CN">' in zh_page.text
+    assert "我的主页" in zh_page.text
+    assert "ma3_locale=zh-CN" in zh_page.headers.get("set-cookie", "")
+    follow_up = client.get("/ui/me/")
+    assert follow_up.status_code == 200
+    assert "我的主页" in follow_up.text
 
 
 def test_catalog_completeness():
