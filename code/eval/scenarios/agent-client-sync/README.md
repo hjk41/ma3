@@ -43,4 +43,4 @@ cd code/eval/scenarios/agent-client-sync && bash run.sh
 |------|------|------|
 | `MA3_HOST_MA3_URL` | `http://host.docker.internal:8000` | runner 访问 host ma3 |
 | `MA3_RESTORE_VERSION` | `1.0.0` | 测试结束 restore 的 skill version |
-| `MA3_DIR` | `/home/hct/ma3_v1` | host ma3 路径（restart 脚本） |
+| `MA3_DIR` | `/home/hct/ma3_deploy` | host ma3 路径（restart 脚本） |

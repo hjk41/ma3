@@ -23,17 +23,17 @@
 | 文件 | 用途 |
 |------|------|
 | `/home/hct/ma3/ma3.env` | Postgres、Authing、HF 缓存路径 |
-| `/home/hct/ma3_v1/ma3.env` | v1 运行时（`HF_HOME`、`MA3_DEV_AUTH` 等） |
+| `/home/hct/ma3_deploy/ma3.env` | v1 运行时（`HF_HOME`、`MA3_DEV_AUTH` 等） |
 
 **重启时必须同时 source 两个文件：**
 
 ```bash
 set -a
 source /home/hct/ma3/ma3.env
-source /home/hct/ma3_v1/ma3.env
+source /home/hct/ma3_deploy/ma3.env
 set +a
 export MA3_SKILL_VERSION=1.5.1
-cd /home/hct/ma3_v1/code/server
+cd /home/hct/ma3_deploy/code/server
 # embedding 启用时：启动会先加载模型，healthz 可能 1–3 分钟才就绪
 nohup .venv/bin/python -m uvicorn app.main:app --host 0.0.0.0 --port 8000 --app-dir . \
   >> /tmp/ma3-v1-uvicorn.log 2>&1 &

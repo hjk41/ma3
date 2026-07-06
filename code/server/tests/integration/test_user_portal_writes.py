@@ -70,6 +70,9 @@ def test_writes_status_filter_buffered(authing_portal_client, portal_user, monke
     assert response.status_code == 200
     assert record_id in response.text
     assert "writes list buffered row" in response.text
+    assert '<th><a href="' in response.text
+    assert "sort=created_at" in response.text
+    assert "&lt;a href=" not in response.text
 
 
 def test_writes_batch_publish(authing_portal_client, portal_user, monkeypatch):
@@ -86,6 +89,50 @@ def test_writes_batch_publish(authing_portal_client, portal_user, monkeypatch):
     record = db.get_record(record_id)
     assert record is not None
     assert record.get("status") == "active"
+
+
+def test_writes_batch_empty_selection_redirects_with_message(authing_portal_client):
+    response = authing_portal_client.post(
+        "/ui/me/writes/batch/",
+        data={"action": "publish", "status": "buffered"},
+        headers=_ORIGIN,
+        follow_redirects=False,
+    )
+    assert response.status_code == 303
+    assert "error=" in response.headers["location"]
+    page = authing_portal_client.get(response.headers["location"])
+    assert page.status_code == 200
+    assert "请先选择至少一条记录" in page.text
+    assert "invalid batch request" not in page.text
+
+
+def test_writes_page_has_select_all_and_batch_script(authing_portal_client, portal_user, monkeypatch):
+    _create_buffered_record(authing_portal_client, portal_user, monkeypatch)
+    response = authing_portal_client.get("/ui/me/writes/?status=buffered")
+    assert response.status_code == 200
+    assert 'id="writes-select-all"' in response.text
+    assert "writes-batch-error" in response.text
+
+
+def test_writes_deleted_filter_shows_redacted_label(authing_portal_client, portal_user, monkeypatch):
+    record_id = _create_buffered_record(authing_portal_client, portal_user, monkeypatch)
+    publish = authing_portal_client.post(
+        "/ui/me/writes/batch/",
+        data={"action": "publish", "record_ids": record_id, "status": "buffered"},
+        headers=_ORIGIN,
+        follow_redirects=False,
+    )
+    assert publish.status_code == 303
+    delete = authing_portal_client.post(
+        f"/ui/records/{record_id}/delete",
+        headers=_ORIGIN,
+        follow_redirects=False,
+    )
+    assert delete.status_code in {303, 307}
+    response = authing_portal_client.get("/ui/me/writes/?status=deleted")
+    assert response.status_code == 200
+    assert "记录内容已完全删除，不可显示" in response.text
+    assert "writes list buffered row" not in response.text
 
 
 def test_stat_card_links_to_buffered_filter(authing_portal_client):

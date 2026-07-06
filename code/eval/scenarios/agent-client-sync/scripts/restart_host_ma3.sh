@@ -3,7 +3,7 @@
 set -euo pipefail
 
 VERSION="${1:?skill version required, e.g. 1.0.0}"
-MA3_DIR="${MA3_DIR:-/home/hct/ma3_v1}"
+MA3_DIR="${MA3_DIR:-/home/hct/ma3_deploy}"
 LEGACY_ENV="${LEGACY_ENV:-/home/hct/ma3/ma3.env}"
 PORT="${MA3_PORT:-8000}"
 SERVER="${MA3_DIR}/code/server"

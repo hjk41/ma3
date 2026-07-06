@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import math
 from typing import Any
-from urllib.parse import quote, unquote, urlparse
+from urllib.parse import quote, unquote, urlencode, urlparse
 
 from fastapi import APIRouter, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
@@ -44,6 +44,7 @@ _WRITES_SORT_COLUMNS = frozenset({"created_at", "record_status", "library_name",
 _VOTES_SORT_COLUMNS = frozenset({"updated_at", "vote", "library_name"})
 _WRITES_STATUS_FILTERS = frozenset({"all", "active", "buffered", "deleted"})
 _VOTES_FILTERS = frozenset({"all", "up", "down"})
+_DELETED_RECORD_LABEL = "记录内容已完全删除，不可显示"
 
 
 def _normalize_per_page(per_page: int) -> int:
@@ -75,6 +76,49 @@ def _writes_list_query(
     if status != "all":
         q["status"] = status
     return q
+
+
+def _writes_list_redirect(base: str, *, list_query: dict[str, str], error: str | None = None) -> RedirectResponse:
+    q = dict(list_query)
+    if error:
+        q["error"] = error
+    suffix = f"?{urlencode(q)}" if q else ""
+    return RedirectResponse(f"{base}/ui/me/writes/{suffix}", status_code=303)
+
+
+_WRITES_BATCH_JS = """
+<script>
+(function () {
+  var form = document.getElementById('writes-batch-form');
+  var master = document.getElementById('writes-select-all');
+  if (master) {
+    master.addEventListener('change', function () {
+      document.querySelectorAll('input[name="record_ids"][form="writes-batch-form"]').forEach(function (cb) {
+        cb.checked = master.checked;
+      });
+    });
+    document.querySelectorAll('input[name="record_ids"][form="writes-batch-form"]').forEach(function (cb) {
+      cb.addEventListener('change', function () {
+        var boxes = document.querySelectorAll('input[name="record_ids"][form="writes-batch-form"]');
+        var checked = document.querySelectorAll('input[name="record_ids"][form="writes-batch-form"]:checked');
+        master.checked = boxes.length > 0 && checked.length === boxes.length;
+        master.indeterminate = checked.length > 0 && checked.length < boxes.length;
+      });
+    });
+  }
+  if (form) {
+    form.addEventListener('submit', function (e) {
+      var checked = document.querySelectorAll('input[name="record_ids"][form="writes-batch-form"]:checked');
+      if (!checked.length) {
+        e.preventDefault();
+        var err = document.getElementById('writes-batch-error');
+        if (err) err.style.display = 'block';
+      }
+    });
+  }
+})();
+</script>
+"""
 
 
 def _votes_list_query(
@@ -128,15 +172,8 @@ def _publish_record_with_relations(record_id: str) -> None:
     record = db.get_record(record_id)
     if not record or record.get("status") != "buffered":
         raise HTTPException(status_code=404, detail="record not found")
-    db.publish_buffered_record(record_id)
-    payload = record.get("payload") or {}
-    based_on = payload.get("based_on_record_ids") if isinstance(payload, dict) else []
-    if isinstance(based_on, list) and based_on:
-        db.insert_record_relations(
-            source_id=record_id,
-            based_on_record_ids=[str(x) for x in based_on],
-            relation_type=payload.get("relation_type") if isinstance(payload, dict) else None,
-        )
+    db.publish_buffered_record(record_id, record=record)
+    db.apply_record_relations_from_payload(record_id, record.get("payload") or {})
 
 
 def _delete_owned_record(record_id: str, *, principal_id: str) -> None:
@@ -249,7 +286,7 @@ def portal_me(request: Request) -> Response:
     list_items = []
     for row in recent:
         rid = row.get("record_id")
-        if not rid or db.get_record_deletion(str(rid)):
+        if not rid or row.get("is_deleted"):
             list_items.append(
                 '<div class="list-item">'
                 f'<div class="list-item-title">{esc(_problem_summary(row.get("problem")))}</div>'
@@ -342,6 +379,7 @@ def portal_writes(
         page_num = total_pages
         offset = (page_num - 1) * per_page
     query = _writes_list_query(page=page_num, per_page=per_page, sort=sort, dir=dir, status=status_key)
+    error_msg = unquote(request.query_params.get("error") or "").strip()
     rows_data = db.list_write_audit_for_principal(
         user.principal_id,
         limit=per_page,
@@ -353,19 +391,18 @@ def portal_writes(
     table_rows = []
     for row in rows_data:
         rid = row.get("record_id")
-        deleted = bool(rid and db.get_record_deletion(str(rid)))
+        deleted = bool(row.get("is_deleted"))
         is_owner_buffered = (
             bool(rid)
             and not deleted
             and (row.get("record_status") or "active") == "buffered"
-            and db.is_record_owner(str(rid), user.principal_id)
         )
         if is_owner_buffered:
             check_cell = f'<input type="checkbox" name="record_ids" value="{esc(rid)}" form="writes-batch-form"/>'
         else:
             check_cell = ""
         if deleted or not rid:
-            rec_cell = esc(_problem_summary(row.get("problem"))) + " " + badge("已删除", "muted")
+            rec_cell = f'<span class="card-muted">{esc(_DELETED_RECORD_LABEL)}</span>'
         else:
             rec_cell = (
                 f'<a class="key-link" href="{esc(base)}/ui/records/{esc(rid)}/">'
@@ -390,8 +427,14 @@ def portal_writes(
             ]
         )
     sort_q = dict(query)
+    has_selectable = any(row[0] for row in table_rows)
+    select_all_cell = (
+        '<input type="checkbox" id="writes-select-all" title="全选本页" aria-label="全选本页"/>'
+        if has_selectable
+        else ""
+    )
     headers = [
-        "",
+        select_all_cell,
         render_sort_link(label="时间", column="created_at", current_sort=sort, current_dir=dir, base_path=list_path, query=sort_q),
         "记录",
         render_sort_link(label="状态", column="record_status", current_sort=sort, current_dir=dir, base_path=list_path, query=sort_q),
@@ -412,13 +455,25 @@ def portal_writes(
     )
     batch_bar = f"""
   <form id="writes-batch-form" method="post" action="{esc(base)}/ui/me/writes/batch/">
+    <input type="hidden" name="status" value="{esc(status_key)}"/>
+    <input type="hidden" name="sort" value="{esc(sort)}"/>
+    <input type="hidden" name="dir" value="{esc(dir)}"/>
+    <input type="hidden" name="page" value="{page_num}"/>
+    <input type="hidden" name="per_page" value="{per_page}"/>
+    <div id="writes-batch-error" class="alert warning" style="display:none;margin:0;border-radius:0;border-left:none;border-right:none;">
+      请先选择至少一条记录
+    </div>
     <div class="batch-bar">
       <span>批量操作</span>
       <button type="submit" name="action" value="publish" class="btn primary">批量发布</button>
       <button type="submit" name="action" value="delete" class="btn danger">批量删除</button>
     </div>
   </form>"""
+    alert_html = (
+        f'<div class="alert warning" style="margin-bottom:12px;">{esc(error_msg)}</div>' if error_msg else ""
+    )
     body = f"""
+  {alert_html}
   {filter_pills}
   <div class="card">
     {batch_bar}
@@ -426,7 +481,8 @@ def portal_writes(
       {render_table(headers, table_rows, empty="暂无记录")}
     </div>
   </div>
-  {render_list_footer(page=page_num, total_pages=total_pages, total_items=total, base_path=list_path, query=query, per_page=per_page, default_per_page=_DEFAULT_PER_PAGE)}"""
+  {render_list_footer(page=page_num, total_pages=total_pages, total_items=total, base_path=list_path, query=query, per_page=per_page, default_per_page=_DEFAULT_PER_PAGE)}
+  {_WRITES_BATCH_JS}"""
     return HTMLResponse(
         render_page(
             title="记录",
@@ -450,19 +506,21 @@ async def portal_writes_batch(request: Request) -> Response:
     form = await request.form()
     action = str(form.get("action") or "").strip()
     record_ids = [str(rid).strip() for rid in form.getlist("record_ids") if str(rid).strip()]
+    base = _base(request)
+    list_query = _writes_list_query(
+        page=int(form.get("page") or 1),
+        per_page=int(form.get("per_page") or _DEFAULT_PER_PAGE),
+        sort=str(form.get("sort") or "created_at"),
+        dir=str(form.get("dir") or "desc"),
+        status=str(form.get("status") or "all"),
+    )
     if action not in {"publish", "delete"} or not record_ids:
-        raise HTTPException(status_code=400, detail="invalid batch request")
-    for record_id in record_ids:
-        record = db.get_record(record_id)
-        if not record or not db.is_record_owner(record_id, user.principal_id):
-            continue
-        if record.get("status") != "buffered":
-            continue
-        if action == "publish":
-            _publish_record_with_relations(record_id)
-        else:
-            _delete_owned_record(record_id, principal_id=user.principal_id)
-    return RedirectResponse(f"{_base(request)}/ui/me/writes/", status_code=303)
+        return _writes_list_redirect(base, list_query=list_query, error="请先选择至少一条记录")
+    if action == "publish":
+        db.publish_buffered_records_batch(record_ids, user.principal_id)
+    else:
+        db.delete_buffered_records_for_principal_batch(record_ids, user.principal_id)
+    return _writes_list_redirect(base, list_query=list_query)
 
 
 @router.get("/ui/me/votes/", response_class=HTMLResponse)

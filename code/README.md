@@ -5,7 +5,7 @@ Greenfield server per `../docs/PITCH.md` and ADR 001–008.
 ## Quick start
 
 ```bash
-cd /home/hct/ma3_v1/code/server
+cd /home/hct/ma3_deploy/code/server
 python3 -m venv .venv
 .venv/bin/pip install -r requirements.txt
 export MA3_DEV_AUTH=1

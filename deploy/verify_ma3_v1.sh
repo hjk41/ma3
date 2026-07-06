@@ -5,7 +5,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 SERVER_DIR="${SERVER_DIR:-${SCRIPT_DIR}/../code/server}"
-REMOTE_DIR="${REMOTE_DIR:-/home/hct/ma3_v1}"
+REMOTE_DIR="${REMOTE_DIR:-/home/hct/ma3_deploy}"
 
 export MA3_BASE_URL="${MA3_BASE_URL:-http://127.0.0.1:8000}"
 export MA3_API_KEY="${MA3_API_KEY:-ma3dev}"
@@ -98,6 +98,13 @@ echo "    records>=${MA3_EXPECT_MIN_RECORDS} cases>=${MA3_EXPECT_MIN_CASES} miho
 
 .venv/bin/pytest tests/integration/test_deploy_verification.py -v --tb=short -m "deploy or postgres" \
   -k "not test_deploy_database_migration_state"
+
+.venv/bin/pytest tests/integration/test_user_portal.py \
+  tests/integration/test_user_portal_nav.py \
+  tests/integration/test_user_portal_writes.py \
+  tests/integration/test_user_portal_votes.py \
+  tests/integration/test_portal_html_regression.py \
+  -q --tb=short
 
 if [[ "${MA3_BASE_URL}" == http://127.0.0.1:* && "${MA3_PUBLIC_BASE_URL:-}" == http://192.168.* ]]; then
   echo "==> SKIP test_ui_create_key_form_post (TestClient uses testserver; MA3_PUBLIC_BASE_URL=${MA3_PUBLIC_BASE_URL})"

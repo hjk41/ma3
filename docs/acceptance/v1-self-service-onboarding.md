@@ -4,7 +4,7 @@
 - **Date**: 2026-07-04 (03:39–03:50 UTC)
 - **Target**: 192.168.31.202, ma3 `http://127.0.0.1:8000`, `skill_bundle_version 1.5.1`, Postgres, Authing enabled (`features: [... "dev_auth", "authing"]`)
 - **Scope**: design/13 §14 criteria A1–A10, executed WITHOUT a brand-new Authing browser account. Browser signup steps were replaced by API-level simulation: `db.upsert_user_principal` + `onboarding_service.ensure_personal_library` + `create_personal_dev_key` executed in the server venv on 202 — the exact functions the Authing callback and `/ui/keys` endpoints call.
-- **Deploy tree note**: the running deployment root is `/home/hct/ma3_v1/` (code at `/home/hct/ma3_v1/code/server/`), not `/home/hct/ma3/` as literally written in §14 A10.
+- **Deploy tree note**: the running deployment root is `/home/hct/ma3_deploy/` (code at `/home/hct/ma3_deploy/code/server/`), not `/home/hct/ma3/` as literally written in §14 A10.
 
 ## Verdict
 
@@ -33,7 +33,7 @@
 | A7 | Revoke → MCP 401/-32001 | **PASS** | `db.revoke_api_key(key_13a556c894c1, principal_id=owner)` → True (second call → False, idempotent-safe). Immediate `ma3_whoami` with the revoked plaintext → JSON-RPC error `-32001 "Invalid credentials: the X-API-Key is unknown, revoked, or expired"`, `data.status_code=401`. Wrong-principal revoke of someone else's key → `False` (no effect; owner-only semantics confirmed). |
 | A8 | Quota: 11th key rejected at limit 10 | **PASS** | `settings.max_keys_per_principal=10`. Filled from 1→10 active; 11th → `HTTPException 400 "active key limit reached; revoke an old key first"`. After revoking one filler, creation succeeds again. All fillers revoked afterwards. |
 | A9 | Isolation: another account's key can't see the new personal lib | **PASS** | Second principal `user:accept-isolation-probe` + own key: `ma3_whoami` readable = `[lib_default, lib_personal_8bd65771f4b5]` only; `ma3_case cs_97fb2372199c` (principal 1's personal-lib case) → `-32601 case not found` (404, no existence leak); `ma3_context` search phrased to match the A5 probe returned the public A6 record (`vk_1d105a1d4ae4`, expected — it's in lib_default) but **not** the personal `vk_14de67faf957`. |
-| A10 | Seed script in deploy tree | **PASS** | `ls /home/hct/ma3_v1/code/server/scripts/` → `seed_personal_library_key.py` (plus `e2e_authing_ui.py`, `migrate_legacy_pg.py`). Admin fallback available on the deployed host without a source checkout. |
+| A10 | Seed script in deploy tree | **PASS** | `ls /home/hct/ma3_deploy/code/server/scripts/` → `seed_personal_library_key.py` (plus `e2e_authing_ui.py`, `migrate_legacy_pg.py`). Admin fallback available on the deployed host without a source checkout. |
 
 **A-tests spot-check (task item 3)**: on 202, `pytest tests/unit/test_onboarding_service.py tests/integration/test_self_service_onboarding.py` → **11 passed** in 2.46s (covers the UI/session paths not automatable here: 302/401 without session, plaintext-once, list-without-plaintext, 503 when Authing unconfigured).
 
@@ -53,7 +53,7 @@
 1. **A1 browser residual**: real Authing signup → callback → `ensure_personal_library` hook not exercised end-to-end. The callback hook code path is covered by integration test simulation and this run verified every function it calls, but a one-time manual browser pass (new Authing account) is still recommended to close A1 fully. The `/ui/observatory/` "API Keys" nav link (design §6.4) also couldn't be checked — observatory now 302s to login without a session.
 2. **Orphan principal reference**: an unrelated actor created `user:accept-onboard-1783136524` at 03:42:05Z (key `key_600c1070a092` label `accept-live`, lib `lib_personal_d2510d1b9640`) during this run — it has an api_keys row and a personal library but **no `principals` row**, showing `create_personal_dev_key`/`ensure_personal_library` don't require (and no FK enforces) principal existence. Real UI/callback flows always create the principal first, so this is only reachable from script-level access, but a FK or an `ensure` inside the service would make it airtight. That key was not created by this test and was left untouched.
 3. **Test-data residue**: probe records `vk_14de67faf957` (private) and `vk_1d105a1d4ae4` (in the public Community Library, tagged `acceptance-probe`) were left as evidence; the lib_default one can be deleted via `ma3_delete_record` if community-library hygiene matters.
-4. **Doc path drift in §14 A10**: says `/home/hct/ma3/server/scripts/` but the deployment root on 202 is `/home/hct/ma3_v1/code/server/scripts/`. Worth fixing the design doc line.
+4. **Doc path drift in §14 A10**: says `/home/hct/ma3/server/scripts/` but the deployment root on 202 is `/home/hct/ma3_deploy/code/server/scripts/`. Worth fixing the design doc line.
 
 ## Operations log (condensed)
 

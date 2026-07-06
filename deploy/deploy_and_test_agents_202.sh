@@ -4,7 +4,7 @@ set -euo pipefail
 
 REMOTE_HOST="${REMOTE_HOST:-192.168.31.202}"
 REMOTE_USER="${REMOTE_USER:-hct}"
-REMOTE_DIR="${REMOTE_DIR:-/home/hct/ma3_v1}"
+REMOTE_DIR="${REMOTE_DIR:-/home/hct/ma3_deploy}"
 MA3_PORT="${MA3_PORT:-8000}"
 LOCAL_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 SSH="ssh -i ${HOME}/.ssh/id_rsa -o ConnectTimeout=30"
@@ -23,7 +23,7 @@ RSYNC_EXCLUDES=(
   --filter 'P data/'
 )
 
-echo "==> Sync ma3_v1 -> ${REMOTE_USER}@${REMOTE_HOST}:${REMOTE_DIR}"
+echo "==> Sync ma3 -> ${REMOTE_USER}@${REMOTE_HOST}:${REMOTE_DIR} (ma3_deploy)"
 rsync -avz -e "$RSYNC_SSH" --delete "${RSYNC_EXCLUDES[@]}" \
   "${LOCAL_DIR}/" "${REMOTE_USER}@${REMOTE_HOST}:${REMOTE_DIR}/"
 

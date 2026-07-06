@@ -29,7 +29,7 @@ ma3 的价值只有在**真实 Agent 无人值守**时才成立：Agent 能查�
 |----|------|
 | **执行主机** | **仅 192.168.31.202**（ma3 host + Docker + eval profiles） |
 | **ma3 服务端** | `http://127.0.0.1:8000`（202 本机 host ma3） |
-| **场景目录** | `/home/hct/ma3_v1/code/eval/scenarios/*` |
+| **场景目录** | `/home/hct/ma3_deploy/code/eval/scenarios/*` |
 | **Agent profiles** | `/home/hct/ma3-eval/profiles/{claude,codex,hermes}` |
 | **本机** | **不跑** Docker 场景；本机仅作开发/文档编辑。Codex 的 **LLM API** 可复用本机 `~/.codex/config.toml` 里的 `model_providers.*`（如 duckcoding）同步到 202 的 codex profile |
 
@@ -81,7 +81,7 @@ ma3 的价值只有在**真实 Agent 无人值守**时才成立：Agent 能查�
 ## 2. 必测场景（Release Gate T0–T5）
 
 **全部在 202 上执行**（见 §0.1）。默认载体 `mihomo-proxy`
-（`/home/hct/ma3_v1/code/eval/scenarios/mihomo-proxy`），需 Docker。
+（`/home/hct/ma3_deploy/code/eval/scenarios/mihomo-proxy`），需 Docker。
 
 | ID | 能力 | 通过判据（以 DB / verify 为准） |
 |----|------|-------------------------------|
@@ -157,7 +157,7 @@ rm -rf "$P"/.claude/projects/* "$P"/.claude/sessions/* "$P"/.claude/tasks/* \
 # 1) 记录 Agent 当前 skill 版本
 jq -r .skill_bundle_version "$P/.ma3/ma3-client.json"        # e.g. 1.2.0
 # 2) 在 202 上把服务端 skill 版本 +1（会触发 policy_refresh_required）
-bash /home/hct/ma3_v1/code/eval/scenarios/agent-client-sync/scripts/restart_host_ma3.sh <new_version>
+bash /home/hct/ma3_deploy/code/eval/scenarios/agent-client-sync/scripts/restart_host_ma3.sh <new_version>
 # 3) 让 Agent 按 policy 跑一次 ma3_context，检查 structuredContent.server 并自动 sync
 # 4) 断言
 jq -r .skill_bundle_version "$P/.ma3/ma3-client.json"        # 应 == <new_version>
@@ -168,7 +168,7 @@ grep -c ma3_feedback "$P/.claude/CLAUDE.md"                  # policy 内容已�
 ### 3.3 T2 — 用知识 + 点赞去重
 
 ```bash
-URL=$(grep -E '^MA3_DATABASE_URL=' /home/hct/ma3_v1/ma3.env | cut -d= -f2-)
+URL=$(grep -E '^MA3_DATABASE_URL=' /home/hct/ma3_deploy/ma3.env | cut -d= -f2-)
 # BEFORE 快照
 psql "$URL" -Atc "select count(*) from records";  \
 psql "$URL" -Atc "select count(*) from cases";    \
@@ -236,7 +236,7 @@ curl -s -X POST http://127.0.0.1:8000/mcp \
 ### 3.8 场景重置模板（mihomo）
 
 ```bash
-S=/home/hct/ma3_v1/code/eval/scenarios/mihomo-proxy
+S=/home/hct/ma3_deploy/code/eval/scenarios/mihomo-proxy
 cd "$S" && docker compose down -v --remove-orphans
 bash setup.sh                                   # 拷回 broken/config.yaml
 set -a; . /home/hct/ma3/eval/secrets/secrets.env 2>/dev/null; set +a

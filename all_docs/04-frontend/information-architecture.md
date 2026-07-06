@@ -1,7 +1,7 @@
 # 22 — 用户门户 UI 功能与布局
 
 > **状态**：**已交付**（2026-07-05）  
-> **验收**：[acceptance-criteria.md](../08-quality/acceptance-criteria.md)（`v1-user-portal` P13–P19 待迁入）
+> **验收**：[acceptance/v1-user-portal-ui.md](../08-quality/acceptance/v1-user-portal-ui.md)（R/W/V 系列 + pytest 门禁）
 > **权限基线**：[15-user-portal.md](portal-permissions.md)  
 > **视觉**：[15-user-portal-visual.md](visual-design-system.md)
 
@@ -148,9 +148,14 @@ v1.1 预留：`/ui/orgs/*`、`/ui/libraries/{id}/records/`、URL 美化 `/ui/rec
 
 **Filter pills**：全部 · 已发布 · 待发布 · 已删除
 
-**表格列**：□（仅 buffered+owner）| 时间 | 记录(link) | 状态 | 库 | 类型 | Key
+**表格列**：□（表头 **全选本页** `#writes-select-all`，仅 buffered+owner 行有 checkbox）| 时间 | 记录(link 或已删除占位) | 状态 | 库 | 类型 | Key
 
-**批量操作条**（有选中时）：批量发布 · 批量删除 → `POST /ui/me/writes/batch`
+**已删除行**：「记录」列固定文案 **记录内容已完全删除，不可显示**（`.card-muted`）；不展示 problem 原文。
+
+**批量操作条**：批量发布 · 批量删除 → `POST /ui/me/writes/batch`
+
+- 未选任何行：页内 warning「请先选择至少一条记录」或 303 回列表带 `error`；**不得**返回 JSON `{"detail":...}`
+- POST 保留当前 `status/sort/dir/page/per_page`（hidden fields）
 
 **list-footer**：共 N 条 · 每页 pill · 上一页/下一页
 
@@ -187,7 +192,7 @@ v1.1 预留：`/ui/orgs/*`、`/ui/libraries/{id}/records/`、URL 美化 `/ui/rec
 |------|----------------|------|
 | Stat 可点 | `a.stat-card-link` | `render_stat_cards((label, value, href))` |
 | Filter | `.filter-pills` | `render_filter_pills(items, base, query)` |
-| 排序表头 | `th.sortable` | `render_sort_link(...)` |
+| 排序表头 | `th` + `<a>` | `render_sort_link` → `render_table` **不**二次 esc 表头 HTML |
 | 列表底栏 | `.list-footer` | `render_list_footer(page, total, per_page, query)` |
 | 分页 | `.pagination` | 保留 sort/filter/per_page query |
 

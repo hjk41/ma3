@@ -626,13 +626,19 @@ def render_page(
 </html>"""
 
 
+def _render_table_cell(cell: Any) -> str:
+    if isinstance(cell, str) and cell.startswith("<"):
+        return cell
+    return esc(cell)
+
+
 def render_table(headers: list[str], rows: list[list[Any]], *, empty: str = "暂无数据") -> str:
     if not rows:
         return f'<div class="empty"><div class="empty-icon">—</div><div>{esc(empty)}</div></div>'
-    head = "".join(f"<th>{esc(h)}</th>" for h in headers)
+    head = "".join(f"<th>{_render_table_cell(h)}</th>" for h in headers)
     body_rows = []
     for row in rows:
-        cells = "".join(f"<td>{cell if isinstance(cell, str) and cell.startswith('<') else esc(cell)}</td>" for cell in row)
+        cells = "".join(f"<td>{_render_table_cell(cell)}</td>" for cell in row)
         body_rows.append(f"<tr>{cells}</tr>")
     return f'<div class="table-wrap"><table class="data"><thead><tr>{head}</tr></thead><tbody>{"".join(body_rows)}</tbody></table></div>'
 

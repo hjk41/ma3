@@ -2227,7 +2227,8 @@ def list_write_audit_for_principal(
             f"""
             SELECT w.id, w.record_id, w.library_id, w.principal_id, w.api_key_id,
                    w.report_kind, w.confirmation, w.created_at, l.name AS library_name,
-                   k.key_prefix, r.problem, r.status AS record_status, r.publish_at
+                   k.key_prefix, r.problem, r.status AS record_status, r.publish_at,
+                   (rd.record_id IS NOT NULL) AS is_deleted
             FROM write_audit_log w
             LEFT JOIN libraries l ON l.id = w.library_id
             LEFT JOIN api_keys k ON k.key_id = w.api_key_id
@@ -2299,8 +2300,100 @@ def set_library_write_buffer_hours(library_id: str, hours: int) -> None:
         _execute(conn, "UPDATE libraries SET write_buffer_hours = ? WHERE id = ?", (hours, library_id))
 
 
-def publish_buffered_record(record_id: str) -> dict[str, Any] | None:
-    record = get_record(record_id)
+def apply_record_relations_from_payload(record_id: str, payload: dict[str, Any]) -> None:
+    based_on = payload.get("based_on_record_ids") if isinstance(payload, dict) else []
+    if isinstance(based_on, list) and based_on:
+        insert_record_relations(
+            source_id=record_id,
+            based_on_record_ids=[str(x) for x in based_on],
+            relation_type=payload.get("relation_type") if isinstance(payload, dict) else None,
+        )
+
+
+def _record_from_row(row: Any) -> dict[str, Any]:
+    rec = _row_dict(row)
+    payload = rec.pop("payload_json", None)
+    if isinstance(payload, str):
+        rec["payload"] = json.loads(payload)
+    else:
+        rec["payload"] = payload if payload is not None else {}
+    return rec
+
+
+def fetch_buffered_records_for_principal(
+    record_ids: list[str],
+    principal_id: str,
+) -> list[dict[str, Any]]:
+    unique_ids = list(dict.fromkeys(str(rid) for rid in record_ids if rid))
+    if not unique_ids:
+        return []
+    placeholders = ",".join("?" for _ in unique_ids)
+    with connect() as conn:
+        rows = _fetchall(
+            conn,
+            f"""
+            SELECT r.*, l.deletion_protection, l.retention_days
+            FROM records r
+            INNER JOIN write_audit_log w ON w.record_id = r.id AND w.principal_id = ?
+            LEFT JOIN record_deletions rd ON rd.record_id = r.id
+            LEFT JOIN libraries l ON l.id = r.library_id
+            WHERE r.id IN ({placeholders})
+              AND r.status = 'buffered'
+              AND rd.record_id IS NULL
+            """,
+            (principal_id, *unique_ids),
+        )
+    out: list[dict[str, Any]] = []
+    for row in rows:
+        rec = _record_from_row(row)
+        rec["deletion_protection"] = bool(rec.pop("deletion_protection", False))
+        rec["retention_days"] = int(rec.pop("retention_days") or 30)
+        out.append(rec)
+    return out
+
+
+def publish_buffered_records_batch(record_ids: list[str], principal_id: str) -> int:
+    records = fetch_buffered_records_for_principal(record_ids, principal_id)
+    if not records:
+        return 0
+    ids = [str(record["id"]) for record in records]
+    placeholders = ",".join("?" for _ in ids)
+    with connect() as conn:
+        _execute(
+            conn,
+            f"""
+            UPDATE records SET status = ?, publish_at = NULL
+            WHERE id IN ({placeholders}) AND status = 'buffered'
+            """,
+            ("active", *ids),
+        )
+    for record in records:
+        rid = str(record["id"])
+        sync_record_search_index(rid)
+        apply_record_relations_from_payload(rid, record.get("payload") or {})
+    return len(records)
+
+
+def delete_buffered_records_for_principal_batch(record_ids: list[str], principal_id: str) -> int:
+    records = fetch_buffered_records_for_principal(record_ids, principal_id)
+    count = 0
+    for record in records:
+        rid = str(record["id"])
+        if record.get("deletion_protection"):
+            soft_delete_record(rid)
+        else:
+            hard_delete_record(rid, deleted_by=principal_id)
+        count += 1
+    return count
+
+
+def publish_buffered_record(
+    record_id: str,
+    *,
+    record: dict[str, Any] | None = None,
+) -> dict[str, Any] | None:
+    if record is None:
+        record = get_record(record_id)
     if not record or record.get("status") != "buffered":
         return None
     with connect() as conn:
@@ -2368,16 +2461,9 @@ def publish_due_buffered_records(*, limit: int = 500) -> int:
     count = 0
     for row in rows:
         rid = str(row["id"])
-        if publish_buffered_record(rid):
-            record = get_record(rid)
-            payload = (record or {}).get("payload") or {}
-            based_on = payload.get("based_on_record_ids") if isinstance(payload, dict) else []
-            if isinstance(based_on, list) and based_on:
-                insert_record_relations(
-                    source_id=rid,
-                    based_on_record_ids=[str(x) for x in based_on],
-                    relation_type=payload.get("relation_type") if isinstance(payload, dict) else None,
-                )
+        record = get_record(rid)
+        if publish_buffered_record(rid, record=record):
+            apply_record_relations_from_payload(rid, (record or {}).get("payload") or {})
             count += 1
     return count
 
