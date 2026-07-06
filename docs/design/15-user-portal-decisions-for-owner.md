@@ -13,7 +13,7 @@
 | 2 | `MA3_AUTH_ADMIN_USERS` 为空且 Authing 已启用 | **拒绝启动**（refuse boot） |
 | 3 | 库内容可见性（含公共库） | 有**读 entitlement**的用户 → **仅统计**（case/record 计数等）；**不可枚举、不可改**；**枚举 / 修改 / 导出**仅管理员（库级或产品级）；导出后续可收费 |
 | 4 | 未登录访客 | **仅公共库统计信息**；无 record 详情、无投票 |
-| 5 | `principal_id` | **v1 在 `/ui/me/` 展示**（可复制） |
+| 5 | `principal_id` | **v1 在 `/ui/me/settings/` 只读展示**（无复制） — 2026-07-05 owner 修订，废止「概览页展示+复制」 |
 
 ---
 
@@ -67,15 +67,13 @@ Deploy 清单（202 等）必须包含至少一个 admin 标识。
 
 ---
 
-## 决策 5 — principal_id v1 展示
+## 决策 5 — principal_id v1 展示（2026-07-05 修订）
 
-在 `/ui/me/` 概况区增加只读 KV：
+在 **`/ui/me/settings/`** 账户 card 中只读展示 Principal ID（`.id-block`，mono 字体，**无复制按钮**）。
 
-```text
-Principal ID   user:6a45abec4d2ef946d80649f6   [复制]
-```
-
-复用 `ma3CopyFrom` + `copy-src` 模式（design/14）。
+- **不在** `/ui/me/` 概览页展示 Principal ID
+- 需要复制的场景保留在 API Keys 页（design/14 `copy-row`）
+- 真源：[15-user-portal-me-profile-review-fable.md](15-user-portal-me-profile-review-fable.md)、[22-user-portal-ui-unified-layout-fable.md](22-user-portal-ui-unified-layout-fable.md) §3.2
 
 ---
 
@@ -95,7 +93,7 @@ Principal ID   user:6a45abec4d2ef946d80649f6   [复制]
 1. 启动校验 + doctor（决策 2）
 2. `render_page` 导航参数化 + login 默认 `next=/ui/me/`
 3. `list_entitled_libraries_for_principal` + `get_library_stats`
-4. `/ui/me/`（含 principal_id）+ writes + votes
+4. `/ui/me/` + writes + votes；Principal ID 在 settings（决策 5 修订）
 5. `/ui/libraries/` 列表 + 库详情（Stats-only 非 admin）
 6. `/ui/records/{id}` 迁移 + 匿名 public stats 页（决策 4）
 7. Observatory `is_admin` 门控 **403**（决策 1）

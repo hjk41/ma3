@@ -3,7 +3,8 @@
 > **状态**：统一设计稿（2026-07-05）  
 > **实现**：**已交付** — design/22 真源；P13–P19 见 [v1-user-portal acceptance](../acceptance/v1-user-portal.md)  
 > **评审**：[22-user-portal-ui-unified-discussion-gpt55.md](22-user-portal-ui-unified-discussion-gpt55.md)  
-> **真源**：已交付 [15](15-user-portal-fable.md) + [14-layout](14-api-key-lifecycle-layout-fable.md) + [17](17-display-name-registration.md) + [16](16-library-write-buffer-fable.md)；待交付 [18–20](21-user-portal-enhancements-backlog.md)
+> **真源**：已交付 [15](15-user-portal-fable.md) + [14-layout](14-api-key-lifecycle-layout-fable.md) + [17](17-display-name-registration.md) + [16](16-library-write-buffer-fable.md)；增强 [18–20](21-user-portal-enhancements-backlog.md) 已并入本文  
+> **决策索引**：[00-design-index-fable.md](00-design-index-fable.md)
 
 ---
 

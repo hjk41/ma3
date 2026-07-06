@@ -1,7 +1,7 @@
 # 00 — 愿景
 
-> **产品语义真源**：[`PITCH.md`](PITCH.md)  
-> 本文档为对内设计原则与成功标准，与 Pitch 保持一致。
+> **产品语义真源**：[`PITCH.md`](../pitch/PITCH.md)  
+> **设计索引**：[00-design-index-fable.md](00-design-index-fable.md)
 
 ## 一句话
 

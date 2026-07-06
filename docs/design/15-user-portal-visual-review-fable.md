@@ -1,5 +1,7 @@
 # Review — 15-user-portal-visual-sonnet5（fable）
 
+> **📚 历史评审** — 视觉 token 仍有效；IA 以 [22](22-user-portal-ui-unified-layout-fable.md) 为准
+
 > **Reviewer**: fable  
 > **Verdict**: **PASS-WITH-NITS**
 

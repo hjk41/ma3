@@ -42,7 +42,6 @@
 
 ## 下一步
 
-- [ ] 更新 `16-library-write-buffer-fable.md` → 定稿  
-- [ ] ADR-002 增补 buffer 例外或新 ADR-014  
-- [ ] 实现 + acceptance  
-- [ ] 公共库用户说明 record（决策 7）
+- [x] 更新 `16-library-write-buffer-fable.md` → 定稿  
+- [x] 实现 + acceptance（[v1-library-write-buffer](../acceptance/v1-library-write-buffer.md) PASS-WITH-NITS）  
+- [ ] 公共库用户说明 record（决策 7，内容运营）

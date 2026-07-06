@@ -1,16 +1,14 @@
 # 21 — 用户门户增强 backlog（owner 需求汇总 · fable）
 
-> **状态**：需求已定（2026-07-05）  
-> **实现**：**未开始** — owner 要求先写文档、后统一设计与实现  
+> **状态**：**已交付**（2026-07-05，design/22 + acceptance P13–P19 PASS-WITH-NITS）  
 > **统一方案（真源）**：[22-user-portal-ui-unified-layout-fable.md](22-user-portal-ui-unified-layout-fable.md)  
-> **双模型讨论**：[22-user-portal-ui-unified-discussion-gpt55.md](22-user-portal-ui-unified-discussion-gpt55.md)  
-> **分项**：[18-stat-links](18-user-portal-overview-stat-links.md) · [19-writes/votes 列表](19-user-portal-writes-list-enhancements.md) · [20-顶栏 IA](20-user-portal-nav-peer-sections.md)
+> **决策索引**：[00-design-index-fable.md](00-design-index-fable.md)
 
 ---
 
 ## 0. 一句话结论
 
-在 design/15 已交付的门户 v1 之上，owner 提出 **四类增强**：概览 stat 可点击、记录/投票列表可管理、分页可配置、**库/记录/投票/API Keys 同级顶栏**。本文档为 **单一 backlog 入口**；实现时按 18 → 19 → 20 顺序或合并 PR，**当前代码库尚未包含这些变更**。
+在 design/15 基线之上，owner 提出 **四类增强**（R1–R5），已并入 **design/22** 并完成实现。本文档保留为 **需求溯源索引**。
 
 ---
 
@@ -54,7 +52,7 @@ Owner 未强制顺序；若一次交付，**20 + 19 + 18 同批** 验收。
 
 ## 4. 验收索引
 
-见 [docs/acceptance/v1-user-portal.md](../acceptance/v1-user-portal.md) **P13–P19**（均为 **NOT IMPLEMENTED**）。
+见 [docs/acceptance/v1-user-portal.md](../acceptance/v1-user-portal.md) **P13–P19** — **PASS-WITH-NITS**（2026-07-05）。
 
 ---
 

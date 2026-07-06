@@ -1,5 +1,7 @@
 # Review — `/ui/me/` 概览页视觉（fable · owner 修订）
 
+> **✅ ratified** — 决策已并入 [00-design-index-fable.md](00-design-index-fable.md) §2.1 P6–P7、[22](22-user-portal-ui-unified-layout-fable.md) §3.1–3.2
+
 > **Reviewer**: fable  
 > **Date**: 2026-07-05  
 > **Scope**: `/ui/me/` 概览 vs `/ui/me/settings/` 账户信息分区  
@@ -63,9 +65,9 @@
 
 ## 验收清单
 
-- [ ] `/ui/me/` HTML 不含 `编辑显示名`、`Principal ID`、`ma3CopyFrom`
-- [ ] `/ui/me/settings/` 含只读显示名 + Principal ID 只读块（无编辑表单）
-- [ ] `tests/integration/test_display_name_registration.py` 7 项通过
+- [x] `/ui/me/` HTML 不含 `编辑显示名`、`Principal ID`、`ma3CopyFrom`
+- [x] `/ui/me/settings/` 含只读显示名 + Principal ID 只读块（无编辑表单）
+- [x] `tests/integration/test_display_name_registration.py` 通过
 
 ## 实现映射
 

@@ -1,5 +1,7 @@
 # 22 — 用户门户统一布局讨论（fable × GPT-5.5）
 
+> **📚 讨论记录**（2026-07-05）— 结论已并入 [22-user-portal-ui-unified-layout-fable.md](22-user-portal-ui-unified-layout-fable.md) 与 [00-design-index-fable.md](00-design-index-fable.md)
+
 > **日期**：2026-07-05  
 > **输入**：[22-user-portal-ui-unified-layout-fable.md](22-user-portal-ui-unified-layout-fable.md)、design/15–21  
 > **结论**：**ACCEPT-WITH-NITS** — 可作为下一版门户 UI 的实现真源

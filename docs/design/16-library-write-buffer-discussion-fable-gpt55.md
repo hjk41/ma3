@@ -1,5 +1,7 @@
 # Discussion — 16 Library Write Buffer（fable × GPT-5.5）
 
+> **📚 历史讨论**（2026-07-04）— ratified 决策见 [16-library-write-buffer-decisions-for-owner.md](16-library-write-buffer-decisions-for-owner.md)、[00-design-index-fable.md](00-design-index-fable.md) §2.2
+
 > **Date**: 2026-07-04  
 > **Inputs**: 产品负责人提案；[16-library-write-buffer-fable.md](16-library-write-buffer-fable.md)；[16-library-write-buffer-review-gpt55.md](16-library-write-buffer-review-gpt55.md)
 

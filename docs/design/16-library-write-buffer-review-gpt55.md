@@ -1,5 +1,7 @@
 # Review: 16 — Library Write Buffer
 
+> **📚 历史评审** — ratified 见 [16-library-write-buffer-decisions-for-owner.md](16-library-write-buffer-decisions-for-owner.md)
+
 > **Reviewer**: GPT-5.5  
 > **Date**: 2026-07-04  
 > **Doc reviewed**: [16-library-write-buffer-fable.md](16-library-write-buffer-fable.md)  

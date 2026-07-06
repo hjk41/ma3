@@ -1,5 +1,8 @@
 # 20 — 门户顶栏：库 / 记录 / 投票 / API Keys 同级目录（fable）
 
+> **状态**：**已并入 design/22**（§2.1–2.2）— 保留作需求溯源  
+> **真源**：[22-user-portal-ui-unified-layout-fable.md](22-user-portal-ui-unified-layout-fable.md)
+
 > **状态**：需求已定（2026-07-05，owner 提出）  
 > **实现**：**未开始** — 见 [21-user-portal-enhancements-backlog.md](21-user-portal-enhancements-backlog.md)  
 > **关联**：[15-user-portal-fable.md](15-user-portal-fable.md)、[19-user-portal-writes-list-enhancements.md](19-user-portal-writes-list-enhancements.md)

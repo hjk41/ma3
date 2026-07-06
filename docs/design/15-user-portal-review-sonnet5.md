@@ -1,5 +1,7 @@
 # Review — 15-user-portal-fable — sonnet-5
 
+> **📚 历史评审** — 实现真源见 [00-design-index-fable.md](00-design-index-fable.md)
+
 > Reviewer: sonnet-5  
 > Scope: [15-user-portal-fable.md](15-user-portal-fable.md) against ADR-005, ADR-011, design/08, live code as of 2026-07-04  
 > Method: claims cross-checked against `routes_ui.py`, `routes_keys.py`, `security.py`, `feedback_service.py`, `db.py`, `config.py`, `authing_client.py`

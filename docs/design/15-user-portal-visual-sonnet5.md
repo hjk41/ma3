@@ -1,8 +1,8 @@
 # 15 — 用户门户视觉设计（Sonnet-5 · GitHub 风格）
 
-> **状态**：设计稿（2026-07-04）  
+> **状态**：设计稿（2026-07-04）；**导航/subnav 以 [22](22-user-portal-ui-unified-layout-fable.md) 为准**  
 > **真源实现**：`code/server/app/api/ui_theme.py`（`MA3_CSS` + `render_page`）  
-> **产品 IA**：[15-user-portal-fable.md](15-user-portal-fable.md)
+> **产品 IA**：[22-user-portal-ui-unified-layout-fable.md](22-user-portal-ui-unified-layout-fable.md)（布局）；[15-user-portal-fable.md](15-user-portal-fable.md)（权限模型）
 
 参照 GitHub.com / GitHub Settings / Personal Access Tokens 的**浅色**界面：深色顶栏、白底内容区、6px 圆角、细边框表格、蓝色主按钮。
 
@@ -33,7 +33,7 @@
 
 ```
 ┌─ .topbar (#24292f) ─────────────────────────────────────────────┐
-│ [brand→/ui/me/]  .topnav  我的主页 | Libraries | API Keys | Observatory* │
+│ [brand→/ui/me/]  .topnav  我的主页 | 库 | 记录 | 投票 | API Keys | Observatory* │
 │                                    * .nav-admin 弱化色，仅 is_admin      │
 │                              .topbar-meta  用户名 · 账户 · 退出          │
 └────────────────────────────────────────────────────────────────┘
@@ -67,15 +67,14 @@
 └────────────────────────────────────────────────┘
 ```
 
-**v1 实现**：`/ui/me/` 用**单栏** + 页内 `.subnav-links`（横向 GitHub tabs 风格）链到 writes/votes，sidebar 留 v1.1。
+**v1 实现**：`/ui/me/` 用**单栏** + 页内 `.subnav-links`（**仅概览 | 设置**）；记录/投票由顶栏进入。sidebar 双栏留 v1.1。
 
-### 3.3 `.subnav-links`（GitHub repo tabs）
+### 3.3 `.subnav-links`（GitHub repo tabs，仅 `/ui/me/*`）
 
 ```html
 <nav class="subnav-links">
   <a class="active" href="...">概览</a>
-  <a href=".../writes/">我的贡献</a>
-  <a href=".../votes/">我的投票</a>
+  <a href=".../settings/">设置</a>
 </nav>
 ```
 
@@ -87,9 +86,9 @@ CSS：`border-bottom:1px solid var(--border-default)`；active 项 `border-botto
 
 | 组件 | Class | 说明 |
 |------|-------|------|
-| Profile 头 | `.profile-header` | 头像占位圆 + display_name + principal 行 |
-| Principal 复制 | `.profile-meta` + `.copy-row` + `.copy-src` | 同 keys 页 |
-| Stat 行 | `.grid.stats` + `.card.stat-card` | 已有 |
+| Profile 头 | `.profile-header` | 头像 + display_name（概览页无 Principal ID） |
+| Principal ID | `.id-block` | **仅 settings** 只读；无复制 |
+| Stat 可点 | `a.stat-card-link` | design/22；5 张 stat |
 | 列表项（活动流） | `.list-group` > `.list-item` | 左标题链接 + 右 meta 时间；hover `#f6f8fa` |
 | 表格 | `table.data` in `.table-wrap` | 已有 |
 | 空状态 | `.empty` + `.empty-icon` + `.empty-cta` | CTA 用 `.btn.primary` |
@@ -177,7 +176,9 @@ def portal_nav_items(base: str, *, is_admin: bool) -> list[tuple[str, str, str, 
     # (key, label, href, admin_only_muted)
     items = [
         ("me", "我的主页", f"{base}/ui/me/", False),
-        ("libraries", "Libraries", f"{base}/ui/libraries/", False),
+        ("libraries", "库", f"{base}/ui/libraries/", False),
+        ("records", "记录", f"{base}/ui/me/writes/", False),
+        ("votes", "投票", f"{base}/ui/me/votes/", False),
         ("keys", "API Keys", f"{base}/ui/keys/", False),
     ]
     if is_admin:

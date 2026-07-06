@@ -5,7 +5,8 @@
 > **对象**：ma3 Web UI 登录后默认体验，替代当前「Observatory 即首页」的产品管理员视角  
 > **参照**：[ADR-011](../adr/011-kb-access-and-org-isolation.md)、[design/08](08-kb-access-and-org-isolation.md)、[design/10](10-write-audit-and-delete.md)、[design/14-api-key-lifecycle-layout-fable.md](14-api-key-lifecycle-layout-fable.md)  
 > **技术约束**：SSR HTML（`ui_theme.py` 的 `render_page` / `render_table` / `render_stat_cards`），无 SPA  
-> **后续增强（未实现）**：[21-user-portal-enhancements-backlog.md](21-user-portal-enhancements-backlog.md) → 统一方案 [22-user-portal-ui-unified-layout-fable.md](22-user-portal-ui-unified-layout-fable.md)
+> **IA / 布局真源（已交付）**：[22-user-portal-ui-unified-layout-fable.md](22-user-portal-ui-unified-layout-fable.md) — 顶栏、subnav、列表壳、stat 链接以 22 为准；本文 §3.1/§7 早期线框已 supersede  
+> **决策索引**：[00-design-index-fable.md](00-design-index-fable.md)
 
 ---
 
@@ -97,17 +98,17 @@
 ### 3.1 `/ui/me/` — 个人主页 ★
 
 ```
-┌ topbar: [ma3◆] 我的主页 Libraries API Keys        用户名 · 账户 · 退出 ┐
+┌ topbar: [ma3◆] 我的主页 | 库 | 记录 | 投票 | API Keys    显示名 · 账户 · 退出 ┐
 │                                                  (admin 多一项 Observatory) │
+├ subnav（仅 /ui/me/*）: 概览 | 设置 ────────────────────────────────────────┤
 ├────────────────────────────────────────────────────────────────────────┤
 │ 我的主页                                                                │
-│ 你好，{display_name}。这里是你在 ma3 的贡献与权限概览。                    │
-│ Principal ID  user:abc…                              [复制]  ← v1 必展示   │
+│ .profile-header: 头像 + 显示名（无 Principal ID — 见 settings）           │
 │                                                                        │
-│ ┌────────┐ ┌────────┐ ┌────────┐ ┌────────┐                            │
-│ │   12   │ │    3   │ │    8   │ │    2   │      ← render_stat_cards   │
-│ │ 我的贡献│ │ 可访问库│ │ 我的投票│ │ API Keys│                            │
-│ └────────┘ └────────┘ └────────┘ └────────┘                            │
+│ ┌────────┐ ┌────────┐ ┌────────┐ ┌────────┐ ┌────────┐                 │
+│ │   12   │ │    2   │ │    3   │ │    8   │ │    2   │  ← 可点 stat    │
+│ │  记录  │ │ 待发布 │ │可访问库│ │  投票  │ │API Keys│                 │
+│ └────────┘ └────────┘ └────────┘ └────────┘ └────────┘                 │
 │                                                                        │
 │ ┌─ 我的库权限 ──────────────────────────────── [查看全部 →] ─┐           │
 │ │ 库名              可见性    我的权限        角色           │           │
@@ -126,13 +127,13 @@
 
 **空状态**（新用户）：贡献 / 投票为 0 时，`.empty` + 引导「创建 API key → 查看 onboarding」。
 
-### 3.2 `/ui/me/writes/` — 我的贡献
+### 3.2 `/ui/me/writes/` — 记录
 
-数据源：`list_write_audit_for_principal`（已存在）。
+**顶栏**「记录」active；**无** account subnav。列表规格见 [design/22 §3.4](22-user-portal-ui-unified-layout-fable.md)。
 
-列：`时间 | 记录(problem 摘要) | 库 | 类型(report_kind) | Key(prefix)`。记录链到 `/ui/records/{id}`；已删 record 显示「已删除」badge。
+数据源：`list_write_audit_for_principal`。列含 sort/filter/batch（buffered）；详情链 `/ui/records/{id}`。
 
-### 3.3 `/ui/me/votes/` — 我的投票
+### 3.3 `/ui/me/votes/` — 投票
 
 数据源：**新** `list_feedback_for_principal`。
 
@@ -222,7 +223,7 @@ Authing 登录 → 建 principal + personal library → 302 `/ui/me/` → 空状
 
 | 项 | 依赖 |
 |----|------|
-| `/ui/me/` + principal_id + writes + votes | 同上 |
+| `/ui/me/` + writes + votes；Principal ID 在 settings | 同上 |
 | `/ui/libraries/` + Stats-only 详情 + 匿名 public Stats | `get_library_stats` |
 | 启动拒绝空 admin 白名单 | `config.py` / lifespan |
 | Observatory 403 + `/ui/records/{id}` 迁移 | `SessionUser.is_admin` |
@@ -238,11 +239,11 @@ Authing 登录 → 建 principal + personal library → 302 `/ui/me/` → 空状
 
 ## 7. 导航与布局规则
 
-1. **导航**（参数化 `render_page`）：
-   - 普通用户 v1：`我的主页 | Libraries | API Keys`
-   - 普通用户 v1.1：加 `Orgs`
-   - 产品管理员：末尾加 `Observatory`（弱化色）
-2. logo → `/ui/me/`；列表页统一 card+table；分页 `?page=N` 每页 50。
+1. **导航**（参数化 `render_page`，**以 design/22 为准**）：
+   - 顶栏：`我的主页 | 库 | 记录 | 投票 | API Keys`（+ admin `Observatory`）
+   - 账户 subnav（仅 `/ui/me/*`）：`概览 | 设置`
+   - v1.1 顶栏可加 `Orgs`
+2. logo → `/ui/me/`；列表页标准壳：filter → table → list-footer；`page` + `per_page` 10/25/50/100。
 3. 破坏性动作：行内 form + confirm（同 design/14）。
 4. **CSS 预算**：目标 0 新组件；复用现有 class。
 
@@ -285,4 +286,4 @@ Authing 登录 → 建 principal + personal library → 302 `/ui/me/` → 空状
 
 ## 10. 产品决策（ratified）
 
-见 [15-user-portal-decisions-for-owner.md](15-user-portal-decisions-for-owner.md)。要点：**Observatory 403**、**空 admin 拒绝启动**、**Stats≠Enumerate**、**匿名仅 public Stats**、**v1 展示 principal_id**。
+见 [15-user-portal-decisions-for-owner.md](15-user-portal-decisions-for-owner.md)、[00-design-index-fable.md](00-design-index-fable.md)。要点：**Observatory 403**、**空 admin 拒绝启动**、**Stats≠Enumerate**、**匿名仅 public Stats**、**Principal ID 仅 settings 只读**。

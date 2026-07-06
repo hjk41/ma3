@@ -1,5 +1,7 @@
 # Review: 15 — User Portal
 
+> **📚 历史评审**（2026-07-04）— 实现真源见 [00-design-index-fable.md](00-design-index-fable.md)、[22-user-portal-ui-unified-layout-fable.md](22-user-portal-ui-unified-layout-fable.md)
+
 > Reviewer: GPT-5.5  
 > Scope: [15-user-portal-fable.md](15-user-portal-fable.md) against ADR-005, ADR-011, design/08, live code (`routes_ui.py`, `routes_keys.py`, `db.py`)
 

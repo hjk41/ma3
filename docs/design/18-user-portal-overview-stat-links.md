@@ -1,5 +1,8 @@
 # 18 — 概览页 Stat Cards 可点击跳转（fable）
 
+> **状态**：**已并入 design/22**（§3.1）— 保留作需求溯源  
+> **真源**：[22-user-portal-ui-unified-layout-fable.md](22-user-portal-ui-unified-layout-fable.md)
+
 > **状态**：需求已定（2026-07-05，owner 提出）  
 > **实现**：**未开始** — 见 [21-user-portal-enhancements-backlog.md](21-user-portal-enhancements-backlog.md)  
 > **关联**：[15-user-portal-fable.md](15-user-portal-fable.md) §3.1、[16-library-write-buffer-fable.md](16-library-write-buffer-fable.md) §5、[20-user-portal-nav-peer-sections.md](20-user-portal-nav-peer-sections.md)

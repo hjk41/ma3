@@ -1,5 +1,7 @@
 # Review: 14 — API Key Lifecycle Management
 
+> **📚 历史评审** — 真源 [14-api-key-lifecycle.md](14-api-key-lifecycle.md)、布局 [14-api-key-lifecycle-layout-fable.md](14-api-key-lifecycle-layout-fable.md)
+
 > **Reviewer**: fable
 > **Date**: 2026-07-04
 > **Doc reviewed**: `docs/design/14-api-key-lifecycle.md`
