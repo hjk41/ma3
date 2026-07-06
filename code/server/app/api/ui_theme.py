@@ -93,7 +93,7 @@ code, .mono {
   margin: 0 auto;
   padding: 0 24px;
 }
-.topbar-inner {
+.topbar-row {
   display: flex;
   align-items: center;
   gap: 16px;
@@ -613,7 +613,7 @@ def render_page(
     user_meta = f"<span>{esc(user_line)}</span>" if user_line else ""
     brand_link = brand_href or f"{base}/ui/me/"
     switcher = render_locale_switcher(request, locale) if request is not None else ""
-    meta_bits = [switcher, user_meta, account, logout] if show_logout else ([switcher, login_link] if show_minimal_header else [switcher, user_meta])
+    meta_bits = [user_meta, account, logout, switcher] if show_logout else ([login_link, switcher] if show_minimal_header else [user_meta, switcher])
     meta_html = "".join(bit for bit in meta_bits if bit)
     header_block = "" if show_minimal_header else f"""
     <div class="page-header">
@@ -634,12 +634,14 @@ def render_page(
 <body>
   <header class="topbar">
     <div class="topbar-inner">
+      <div class="page-narrow topbar-row">
       <a class="brand" href="{esc(brand_link)}" aria-label="{esc(tr(locale, "shell.brand_aria"))}">
         {MA3_BRAND_SVG}
       </a>
       <nav class="topnav">{nav_html}</nav>
       <div class="topbar-meta">
         {meta_html}
+      </div>
       </div>
     </div>
   </header>
