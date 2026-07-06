@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import logging
 from typing import Any
 from urllib.parse import urlparse
@@ -9,6 +10,7 @@ from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Resp
 from pydantic import BaseModel, Field
 
 from app.api.ui_session import redirect_if_setup_required
+from app.api.ui_i18n import html_response, tr, ui_locale
 from app.api.ui_theme import badge, esc, render_page, render_table
 from app.auth.session import SessionUser, resolve_session_user
 from app.core.config import settings
@@ -117,12 +119,12 @@ def _enrich_keys_with_plaintext(keys: list[dict[str, Any]]) -> list[dict[str, An
     return enriched
 
 
-def _render_copy_row(plaintext: str, *, primary: bool = False) -> str:
+def _render_copy_row(plaintext: str, *, primary: bool = False, locale: str = "zh-CN") -> str:
     btn_class = "btn primary" if primary else "btn"
     return (
         f'<div class="copy-row">'
         f'<input class="copy-input" type="text" readonly value="{esc(plaintext)}" onclick="this.select();" />'
-        f'<button type="button" class="{btn_class}" onclick="ma3CopyFrom(this)">复制</button>'
+        f'<button type="button" class="{btn_class}" onclick="ma3CopyFrom(this)">{esc(tr(locale, "common.copy"))}</button>'
         f"</div>"
     )
 
@@ -158,12 +160,12 @@ def _public_key_payload(key: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def _grant_summary(grants: list[dict[str, Any]]) -> str:
+def _grant_summary(grants: list[dict[str, Any]], *, locale: str = "zh-CN") -> str:
     parts: list[str] = []
     for grant in grants:
         name = grant.get("library_name") or grant.get("library_id")
         role = grant.get("role", "")
-        role_label = {"reader": "只读", "writer": "读写"}.get(str(role), str(role))
+        role_label = tr(locale, f"role.{role}") if str(role) in {"reader", "writer", "none"} else str(role)
         parts.append(f"{name} ({role_label})")
     return ", ".join(parts) if parts else "—"
 
@@ -174,30 +176,31 @@ def _render_grant_picker(
     is_paid: bool,
     personal_role: str = "writer",
     community_role: str = "writer",
+    locale: str = "zh-CN",
 ) -> str:
-    community_name = "Community Library（公共知识库）"
+    community_name = tr(locale, "keys.grant.community_name")
     personal_name = esc(personal_lib.get("name") or personal_lib["library_id"])
     free_hint = ""
     community_select = ""
     if is_paid:
         community_select = (
             f'<select name="grant_community">'
-            f'{_role_options(community_role)}'
+            f'{_role_options(community_role, locale=locale)}'
             f"</select>"
         )
     else:
-        free_hint = '<div class="grant-hint">免费账户：公共知识库写权限不可取消（贡献社区知识所需）</div>'
+        free_hint = f'<div class="grant-hint">{esc(tr(locale, "keys.grant.free_hint"))}</div>'
         community_select = (
-            '<select name="grant_community" disabled>'
-            '<option value="writer" selected>读写</option>'
-            "</select>"
+            f'<select name="grant_community" disabled>'
+            f'<option value="writer" selected>{esc(tr(locale, "role.writer"))}</option>'
+            f"</select>"
             '<input type="hidden" name="grant_community" value="writer"/>'
         )
     return f"""
         {free_hint}
         <div class="grant-picker">
           <table>
-            <thead><tr><th>知识库</th><th>权限</th></tr></thead>
+            <thead><tr><th>{esc(tr(locale, "keys.grant.library_header"))}</th><th>{esc(tr(locale, "keys.grant.permission_header"))}</th></tr></thead>
             <tbody>
               <tr>
                 <td>{esc(community_name)}</td>
@@ -205,15 +208,15 @@ def _render_grant_picker(
               </tr>
               <tr>
                 <td>{personal_name}<br/><code>{esc(personal_lib["library_id"])}</code></td>
-                <td><select name="grant_personal">{_role_options(personal_role)}</select></td>
+                <td><select name="grant_personal">{_role_options(personal_role, locale=locale)}</select></td>
               </tr>
             </tbody>
           </table>
         </div>"""
 
 
-def _role_options(selected: str) -> str:
-    labels = {"none": "无", "reader": "只读", "writer": "读写"}
+def _role_options(selected: str, *, locale: str = "zh-CN") -> str:
+    labels = {"none": tr(locale, "role.none"), "reader": tr(locale, "role.reader"), "writer": tr(locale, "role.writer")}
     return "".join(
         f'<option value="{esc(value)}"{" selected" if value == selected else ""}>{esc(label)}</option>'
         for value, label in labels.items()
@@ -250,19 +253,20 @@ def _resolve_grants_payload(
     )
 
 
-def _render_list_actions_cell(base: str, key: dict[str, Any]) -> str:
+def _render_list_actions_cell(base: str, key: dict[str, Any], *, locale: str = "zh-CN") -> str:
     key_id = esc(key["key_id"])
     plaintext = key.get("plaintext_key")
     copy_part = ""
     if plaintext:
         copy_part = (
             f'<input class="copy-src" type="text" readonly value="{esc(plaintext)}" tabindex="-1" aria-hidden="true"/>'
-            f'<button type="button" class="btn sm" onclick="ma3CopyFrom(this)">复制</button>'
+            f'<button type="button" class="btn sm" onclick="ma3CopyFrom(this)">{esc(tr(locale, "common.copy"))}</button>'
         )
+    delete_confirm = tr(locale, "keys.delete_confirm")
     delete_part = (
         f'<form method="post" action="{esc(base)}/ui/keys/{key_id}/delete" '
-        f'onsubmit="return confirm(\'删除后 key 立即失效，无法恢复。确定？\')">'
-        f'<button type="submit" class="btn sm danger">删除</button></form>'
+        f'onsubmit="return confirm({json.dumps(delete_confirm)})">'
+        f'<button type="submit" class="btn sm danger">{esc(tr(locale, "common.delete"))}</button></form>'
     )
     return f'<div class="cell-actions">{copy_part}{delete_part}</div>'
 
@@ -274,6 +278,8 @@ def _render_keys_page(
     keys: list[dict[str, Any]],
     *,
     error: str | None = None,
+    locale: str = "zh-CN",
+    request: Request | None = None,
 ) -> str:
     personal_line = "—"
     if personal_lib:
@@ -290,50 +296,55 @@ def _render_keys_page(
             [
                 _render_key_list_name_cell(base, key),
                 f'<code>{esc(prefix)}…</code>',
-                esc(_grant_summary(key.get("grants", []))),
+                esc(_grant_summary(key.get("grants", []), locale=locale)),
                 esc(last_used),
-                _render_list_actions_cell(base, key),
+                _render_list_actions_cell(base, key, locale=locale),
             ]
         )
     err_html = f'<div class="alert error">{esc(error)}</div>' if error else ""
     is_paid = is_paid_principal(user.principal_id)
     grant_picker = ""
     if personal_lib:
-        grant_picker = _render_grant_picker(personal_lib=personal_lib, is_paid=is_paid)
-    empty_keys = '暂无 API key<br/><span class="grant-hint">创建第一把 key 后，把它填入 agent MCP 配置的 X-API-Key。</span>'
+        grant_picker = _render_grant_picker(personal_lib=personal_lib, is_paid=is_paid, locale=locale)
+    empty_keys = (
+        f'{esc(tr(locale, "keys.empty"))}<br/>'
+        f'<span class="grant-hint">{esc(tr(locale, "keys.empty_hint"))}</span>'
+    )
     body = f"""
   {err_html}
   <div class="split">
     <div class="card">
-      <div class="card-header"><h2>Key 管理</h2></div>
+      <div class="card-header"><h2>{esc(tr(locale, "keys.management"))}</h2></div>
       <div class="card-body">
         <div style="padding:0 0 16px;">
-          {render_table(["Name", "Prefix", "Grants", "Last used", ""], table_rows, empty=empty_keys)}
+          {render_table([tr(locale, "keys.table.name"), tr(locale, "keys.table.prefix"), tr(locale, "keys.table.grants"), tr(locale, "keys.table.last_used"), ""], table_rows, empty=empty_keys, locale=locale)}
         </div>
         <form method="post" action="{esc(base)}/ui/keys/create">
           <div class="key-create-row">
-            <span class="key-create-label">Label</span>
+            <span class="key-create-label">{esc(tr(locale, "keys.label"))}</span>
             <input class="key-create-input" type="text" name="label" value="my-laptop-agent" maxlength="120"/>
-            <button type="submit" class="btn primary">创建新 key</button>
+            <button type="submit" class="btn primary">{esc(tr(locale, "keys.create_new"))}</button>
           </div>
           {grant_picker}
         </form>
       </div>
     </div>
     <div class="card">
-      <div class="card-header"><h2>个人库</h2></div>
+      <div class="card-header"><h2>{esc(tr(locale, "keys.personal_library"))}</h2></div>
       <div class="card-body">{personal_line}</div>
     </div>
   </div>"""
     return render_page(
-        title="API Keys",
+        title=tr(locale, "keys.title"),
         base=base,
         active_nav="keys",
-        subtitle="管理 MCP 调用用的 API key；点击名称进入详情页修改权限。",
+        subtitle=tr(locale, "keys.subtitle"),
         user_line=f"{user.display_name}",
         show_logout=True,
         is_admin=user.is_admin,
         body=body,
+        locale=locale,
+        request=request,
     )
 
 
@@ -348,6 +359,8 @@ def _render_key_detail_page(
     label_override: str | None = None,
     personal_role_override: str | None = None,
     community_role_override: str | None = None,
+    locale: str = "zh-CN",
+    request: Request | None = None,
 ) -> str:
     key_id = esc(key["key_id"])
     display_label = esc(label_override if label_override is not None else (key.get("label") or key["key_id"]))
@@ -362,55 +375,57 @@ def _render_key_detail_page(
         is_paid=is_paid,
         personal_role=personal_role,
         community_role=community_role,
+        locale=locale,
     )
     plaintext = key.get("plaintext_key")
     if plaintext:
-        key_block = _render_copy_row(plaintext, primary=True)
+        key_block = _render_copy_row(plaintext, primary=True, locale=locale)
     else:
         prefix = esc(key.get("key_prefix") or key["key_id"])
         key_block = (
             f'<code>{prefix}…</code>'
-            f'<div class="grant-hint">旧 key 无存储副本；如需复制完整 key，请创建新 key 后删除旧 key</div>'
+            f'<div class="grant-hint">{esc(tr(locale, "keys.old_key_hint"))}</div>'
         )
     err_html = f'<div class="alert error">{esc(error)}</div>' if error else ""
-    saved_html = '<div class="alert info">已保存</div>' if saved else ""
+    saved_html = f'<div class="alert info">{esc(tr(locale, "keys.saved"))}</div>' if saved else ""
     last_used = esc(key.get("last_used_at") or "—")
     created = esc(key.get("created_at", ""))
+    delete_confirm = json.dumps(tr(locale, "keys.delete_confirm"))
     body = f"""
-  <div class="breadcrumb"><a href="{esc(base)}/ui/keys/">API Keys</a> / {display_label}</div>
+  <div class="breadcrumb"><a href="{esc(base)}/ui/keys/">{esc(tr(locale, "keys.title"))}</a> / {display_label}</div>
   {err_html}
   {saved_html}
   <div class="card">
     <div class="card-header"><h2>{display_label}</h2></div>
     <div class="card-body key-detail-meta">
       <div class="key-detail-section">
-        <h3>Key</h3>
+        <h3>{esc(tr(locale, "keys.detail.key_section"))}</h3>
         {key_block}
       </div>
       <dl class="kv">
-        <dt>Prefix</dt><dd><code>{esc(key.get("key_prefix") or "—")}</code></dd>
-        <dt>Created</dt><dd>{created}</dd>
-        <dt>Last used</dt><dd>{last_used}</dd>
+        <dt>{esc(tr(locale, "keys.table.prefix"))}</dt><dd><code>{esc(key.get("key_prefix") or "—")}</code></dd>
+        <dt>{esc(tr(locale, "common.created_at"))}</dt><dd>{created}</dd>
+        <dt>{esc(tr(locale, "common.last_used_at"))}</dt><dd>{last_used}</dd>
       </dl>
       <form method="post" action="{esc(base)}/ui/keys/{key_id}/edit">
         <div class="key-detail-section">
-          <h3>Label</h3>
+          <h3>{esc(tr(locale, "keys.label"))}</h3>
           <input type="text" name="label" value="{display_label}" maxlength="120" style="max-width:360px;width:100%;"/>
         </div>
         <div class="key-detail-section">
-          <h3>知识库权限</h3>
+          <h3>{esc(tr(locale, "keys.grants"))}</h3>
           {grant_picker}
         </div>
         <div class="form-footer">
-          <a class="btn" href="{esc(base)}/ui/keys/">← 返回列表</a>
-          <button type="submit" class="btn primary">保存</button>
+          <a class="btn" href="{esc(base)}/ui/keys/">{esc(tr(locale, "keys.back_to_list"))}</a>
+          <button type="submit" class="btn primary">{esc(tr(locale, "common.save"))}</button>
         </div>
       </form>
       <div class="danger-zone">
-        <div class="zone-text">删除后此 key 立即失效，无法恢复。历史写入记录仍保留。</div>
+        <div class="zone-text">{esc(tr(locale, "keys.delete_help"))}</div>
         <form method="post" action="{esc(base)}/ui/keys/{key_id}/delete"
-              onsubmit="return confirm('删除后 key 立即失效，无法恢复。确定？')">
-          <button type="submit" class="btn danger">删除 key</button>
+              onsubmit="return confirm({delete_confirm})">
+          <button type="submit" class="btn danger">{esc(tr(locale, "keys.delete_key"))}</button>
         </form>
       </div>
     </div>
@@ -419,11 +434,13 @@ def _render_key_detail_page(
         title=key.get("label") or key["key_id"],
         base=base,
         active_nav="keys",
-        subtitle="查看 key、复制明文、修改知识库权限。",
+        subtitle=tr(locale, "keys.detail.subtitle"),
         user_line=user.display_name,
         show_logout=True,
         is_admin=user.is_admin,
         body=body,
+        locale=locale,
+        request=request,
     )
 
 
@@ -457,22 +474,22 @@ def _render_created_page(base: str, user: SessionUser, created: dict[str, Any]) 
     )
 
 
-def _render_authing_disabled_page(base: str) -> str:
-    body = """
+def _render_authing_disabled_page(base: str, *, locale: str = "zh-CN", request: Request | None = None) -> str:
+    body = f"""
   <div class="card">
     <div class="card-body">
-      <div class="alert warning">本实例未配置 Authing，自助注册/API key 管理不可用。</div>
-      <p class="card-muted">开发环境可使用 <code>MA3_DEV_AUTH=1</code> + <code>MA3_DEV_API_KEY</code>，
-      或由管理员运行 <code>seed_personal_library_key.py</code>。</p>
-      <p><a class="btn primary" href="{base}/ui/observatory/">前往 Observatory</a></p>
+      <div class="alert warning">{esc(tr(locale, "keys.authing_disabled.alert"))}</div>
+      <p><a class="btn primary" href="{esc(base)}/ui/observatory/">{esc(tr(locale, "keys.authing_disabled.observatory"))}</a></p>
     </div>
-  </div>""".replace("{base}", esc(base))
+  </div>"""
     return render_page(
-        title="API Keys",
+        title=tr(locale, "keys.authing_disabled.title"),
         base=base,
         active_nav="keys",
-        subtitle="自助注册未启用",
+        subtitle=tr(locale, "keys.authing_disabled.subtitle"),
         body=body,
+        locale=locale,
+        request=request,
     )
 
 
@@ -558,9 +575,10 @@ def api_delete_key(request: Request, key_id: str) -> JSONResponse:
 
 @router.get("/ui/keys/{key_id}", response_class=HTMLResponse)
 def ui_keys_detail(request: Request, key_id: str) -> Response:
+    locale, _t = ui_locale(request)
     if not settings.authing_configured:
         base = str(request.base_url).rstrip("/")
-        return HTMLResponse(_render_authing_disabled_page(base), status_code=503)
+        return html_response(request, _render_authing_disabled_page(base, locale=locale, request=request), status_code=503)
     user = _require_ui_keys_user(request)
     if isinstance(user, Response):
         return user
@@ -571,30 +589,32 @@ def ui_keys_detail(request: Request, key_id: str) -> Response:
     key = _enrich_keys_with_plaintext([row])[0]
     base = str(request.base_url).rstrip("/")
     saved = request.query_params.get("saved") == "1"
-    return HTMLResponse(_render_key_detail_page(base, user, personal, key, saved=saved))
+    return html_response(request, _render_key_detail_page(base, user, personal, key, saved=saved, locale=locale, request=request))
 
 
 @router.get("/ui/keys/", response_class=HTMLResponse)
 @router.get("/ui/keys", response_class=HTMLResponse)
 def ui_keys_list(request: Request) -> Response:
+    locale, _t = ui_locale(request)
     if not settings.authing_configured:
         base = str(request.base_url).rstrip("/")
-        return HTMLResponse(_render_authing_disabled_page(base), status_code=503)
+        return html_response(request, _render_authing_disabled_page(base, locale=locale, request=request), status_code=503)
     user = _require_ui_keys_user(request)
     if isinstance(user, Response):
         return user
     personal = ensure_personal_library(user.principal_id, user.display_name)
     keys = _enrich_keys_with_plaintext(db.list_api_keys_for_principal(user.principal_id))
     base = str(request.base_url).rstrip("/")
-    return HTMLResponse(_render_keys_page(base, user, personal, keys))
+    return html_response(request, _render_keys_page(base, user, personal, keys, locale=locale, request=request))
 
 
 @router.post("/ui/keys/create")
 async def ui_keys_create(request: Request) -> Response:
     _assert_same_origin(request)
+    locale, _t = ui_locale(request)
     if not settings.authing_configured:
         base = str(request.base_url).rstrip("/")
-        return HTMLResponse(_render_authing_disabled_page(base), status_code=503)
+        return html_response(request, _render_authing_disabled_page(base, locale=locale, request=request), status_code=503)
     user = _require_ui_keys_user(request)
     if isinstance(user, Response):
         return user
@@ -613,8 +633,9 @@ async def ui_keys_create(request: Request) -> Response:
     except HTTPException as exc:
         detail = exc.detail if isinstance(exc.detail, str) else str(exc.detail)
         keys = _enrich_keys_with_plaintext(db.list_api_keys_for_principal(user.principal_id))
-        return HTMLResponse(
-            _render_keys_page(base, user, personal, keys, error=detail),
+        return html_response(
+            request,
+            _render_keys_page(base, user, personal, keys, error=detail, locale=locale, request=request),
             status_code=exc.status_code,
         )
     return RedirectResponse(f"{base}/ui/keys/{created['key_id']}?saved=1", status_code=303)
@@ -623,6 +644,7 @@ async def ui_keys_create(request: Request) -> Response:
 @router.post("/ui/keys/{key_id}/edit")
 async def ui_keys_edit(request: Request, key_id: str) -> Response:
     _assert_same_origin(request)
+    locale, _t = ui_locale(request)
     if not settings.authing_configured:
         return RedirectResponse("/ui/keys/", status_code=303)
     user = _require_ui_keys_user(request)
@@ -644,7 +666,8 @@ async def ui_keys_edit(request: Request, key_id: str) -> Response:
     except HTTPException as exc:
         detail = exc.detail if isinstance(exc.detail, str) else str(exc.detail)
         key = _enrich_keys_with_plaintext([row])[0]
-        return HTMLResponse(
+        return html_response(
+            request,
             _render_key_detail_page(
                 base,
                 user,
@@ -654,6 +677,8 @@ async def ui_keys_edit(request: Request, key_id: str) -> Response:
                 label_override=label,
                 personal_role_override=personal_role,
                 community_role_override=community_role,
+                locale=locale,
+                request=request,
             ),
             status_code=exc.status_code,
         )

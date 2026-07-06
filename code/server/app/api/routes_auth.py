@@ -7,7 +7,8 @@ import httpx
 from fastapi import APIRouter, HTTPException, Query, Request, Response
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 
-from app.api.ui_theme import esc
+from app.api.ui_i18n import html_response, resolve_locale, tr, ui_locale
+from app.api.ui_theme import esc, render_page
 from app.auth import authing_client
 from app.auth.session import (
     clear_session_cookie,
@@ -38,15 +39,27 @@ def _normalize_next_path(next_path: str) -> str:
     return next_path
 
 
-def _auth_error_page(next_path: str, message: str, *, status_code: int = 400) -> HTMLResponse:
-    return HTMLResponse(
-        f"""<!DOCTYPE html>
-<html lang="zh-CN"><head><meta charset="utf-8"/><title>登录失败 · ma3</title></head>
-<body style="font-family:system-ui,sans-serif;margin:2rem;line-height:1.6;">
-  <h1>登录失败</h1>
-  <p>{esc(message)}</p>
-  <p><a href="/auth/login?next={esc(next_path)}">重新登录</a></p>
-</body></html>""",
+def _auth_error_page(request: Request, next_path: str, message: str, *, status_code: int = 400) -> HTMLResponse:
+    locale = resolve_locale(request)
+    body = f"""
+  <div class="card" style="margin-top:24px;">
+    <div class="card-body">
+      <h1>{esc(tr(locale, "auth.error.title"))}</h1>
+      <p>{esc(message)}</p>
+      <p><a class="btn primary" href="/auth/login?next={esc(next_path)}">{esc(tr(locale, "auth.error.retry"))}</a></p>
+    </div>
+  </div>"""
+    return html_response(
+        request,
+        render_page(
+            title=tr(locale, "auth.error.title"),
+            base=str(request.base_url).rstrip("/"),
+            active_nav="",
+            body=body,
+            show_minimal_header=True,
+            locale=locale,
+            request=request,
+        ),
         status_code=status_code,
     )
 
@@ -88,22 +101,22 @@ def auth_callback(
     next_path = pop_oauth_next(request)
     if error:
         logger.warning("authing callback error=%s", error)
-        return _auth_error_page(next_path, f"Authing 登录失败：{error}")
+        return _auth_error_page(request, next_path, f"Authing 登录失败：{error}")
     if not code:
-        return _auth_error_page(next_path, "缺少 authorization code")
+        return _auth_error_page(request, next_path, tr(resolve_locale(request), "auth.error.missing_code"))
     if not validate_oauth_state(request, state):
         logger.warning("authing callback invalid oauth state got=%s", state)
-        return _auth_error_page(next_path, "登录状态已过期，请重新登录")
+        return _auth_error_page(request, next_path, "登录状态已过期，请重新登录")
 
     try:
         tokens = authing_client.exchange_code(code)
     except httpx.HTTPError as exc:
         logger.exception("authing token exchange failed")
-        return _auth_error_page(next_path, f"Authing 令牌交换失败：{exc}", status_code=502)
+        return _auth_error_page(request, next_path, f"Authing 令牌交换失败：{exc}", status_code=502)
 
     access_token = tokens.get("access_token")
     if not access_token:
-        return _auth_error_page(next_path, "Authing 未返回 access_token", status_code=502)
+        return _auth_error_page(request, next_path, "Authing 未返回 access_token", status_code=502)
 
     try:
         user = authing_client.resolve_user(access_token)
@@ -117,7 +130,7 @@ def auth_callback(
             )
     except Exception as exc:
         logger.exception("authing user resolution failed")
-        return _auth_error_page(next_path, f"用户信息解析失败：{exc}", status_code=502)
+        return _auth_error_page(request, next_path, f"用户信息解析失败：{exc}", status_code=502)
 
     if display_name_setup_required(principal["principal_id"]):
         setup_next = next_path if not next_path.startswith("/ui/me/setup") else "/ui/me/"

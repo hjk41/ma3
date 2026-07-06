@@ -14,6 +14,7 @@ from app.api.ui_session import (
     resolve_ui_user,
     ui_user_line,
 )
+from app.api.ui_i18n import html_response, tr, ui_locale
 from app.api.ui_theme import (
     badge,
     esc,
@@ -44,7 +45,12 @@ _WRITES_SORT_COLUMNS = frozenset({"created_at", "record_status", "library_name",
 _VOTES_SORT_COLUMNS = frozenset({"updated_at", "vote", "library_name"})
 _WRITES_STATUS_FILTERS = frozenset({"all", "active", "buffered", "deleted"})
 _VOTES_FILTERS = frozenset({"all", "up", "down"})
-_DELETED_RECORD_LABEL = "记录内容已完全删除，不可显示"
+
+
+def _personal_library_label(display_name: str, *, locale: str) -> str:
+    if locale == "en-US":
+        return f"{display_name}'s personal library"
+    return f"{display_name} 的个人库"
 
 
 def _normalize_per_page(per_page: int) -> int:
@@ -233,12 +239,12 @@ def _render_profile_header(user: SessionUser) -> str:
   </div>"""
 
 
-def _render_principal_id_card(user: SessionUser) -> str:
+def _render_principal_id_card(user: SessionUser, *, locale: str) -> str:
     return f"""
   <div class="card">
-    <div class="card-header"><h2>Principal ID</h2></div>
+    <div class="card-header"><h2>{esc(tr(locale, "portal.settings.principal_title"))}</h2></div>
     <div class="card-body">
-      <p class="card-muted">ma3 内部身份标识，创建 API key 或排查权限时可能需要。显示名在注册时设定，之后不可修改。</p>
+      <p class="card-muted">{esc(tr(locale, "portal.settings.principal_help"))}</p>
       <code class="mono id-block">{esc(user.principal_id)}</code>
     </div>
   </div>"""
@@ -258,6 +264,7 @@ def portal_me(request: Request) -> Response:
     if isinstance(auth, Response):
         return auth
     user = auth
+    locale, t = ui_locale(request)
     base = _base(request)
     ensure_personal_library(user.principal_id, user.display_name)
     db.publish_due_buffered_records()
@@ -290,11 +297,14 @@ def portal_me(request: Request) -> Response:
             list_items.append(
                 '<div class="list-item">'
                 f'<div class="list-item-title">{esc(_problem_summary(row.get("problem")))}</div>'
-                f'<div class="list-item-meta">{esc(row.get("library_name") or "")} · 已删除</div></div>'
+                f'<div class="list-item-meta">{esc(row.get("library_name") or "")} · {esc(t("portal.me.deleted_suffix"))}</div></div>'
             )
             continue
         status_label = row.get("record_status") or "active"
-        meta_suffix = f" · {esc(status_label)}" if status_label == "buffered" else f" · {esc(row.get('created_at') or '')}"
+        if status_label == "buffered":
+            meta_suffix = f" · {esc(t('status.buffered'))}"
+        else:
+            meta_suffix = f" · {esc(row.get('created_at') or '')}"
         list_items.append(
             f'<a class="list-item" href="{esc(base)}/ui/records/{esc(rid)}/">'
             f'<div class="list-item-title">{esc(_problem_summary(row.get("problem")))}</div>'
@@ -306,49 +316,52 @@ def portal_me(request: Request) -> Response:
         if list_items
         else (
             '<div class="empty"><div class="empty-icon">⬡</div>'
-            "<div>还没有贡献。</div>"
-            f'<div class="empty-cta"><a class="btn primary" href="{esc(base)}/ui/keys/">创建 API key</a> '
-            f'<a class="btn" href="{esc(base)}/client/agent-onboarding.md">接入文档</a></div></div>'
+            f"<div>{esc(t('portal.me.no_contributions'))}</div>"
+            f'<div class="empty-cta"><a class="btn primary" href="{esc(base)}/ui/keys/">{esc(t("portal.me.create_key"))}</a> '
+            f'<a class="btn" href="{esc(base)}/client/agent-onboarding.md">{esc(t("portal.me.onboarding_docs"))}</a></div></div>'
         )
     )
 
     body = f"""
   {_render_profile_header(user)}
-  {render_subnav(base, active="overview")}
+  {render_subnav(base, active="overview", locale=locale)}
   {render_stat_cards([
-      ("记录", writes_count, f"{base}/ui/me/writes/"),
-      ("待发布", buffered_count, f"{base}/ui/me/writes/?status=buffered"),
-      ("可访问库", len(libs), f"{base}/ui/libraries/"),
-      ("投票", votes_count, f"{base}/ui/me/votes/"),
-      ("API Keys", keys_count, f"{base}/ui/keys/"),
+      (t("portal.me.stats.records"), writes_count, f"{base}/ui/me/writes/"),
+      (t("portal.me.stats.buffered"), buffered_count, f"{base}/ui/me/writes/?status=buffered"),
+      (t("portal.me.stats.libraries"), len(libs), f"{base}/ui/libraries/"),
+      (t("portal.me.stats.votes"), votes_count, f"{base}/ui/me/votes/"),
+      (t("portal.me.stats.keys"), keys_count, f"{base}/ui/keys/"),
   ])}
   <div class="card" style="margin-top:16px;">
     <div class="card-header">
-      <h2>我的库</h2>
-      <a class="btn subtle" href="{esc(base)}/ui/libraries/">查看全部 →</a>
+      <h2>{esc(t("portal.me.my_libraries"))}</h2>
+      <a class="btn subtle" href="{esc(base)}/ui/libraries/">{esc(t("portal.me.view_all"))}</a>
     </div>
     <div class="card-body" style="padding:0;">
-      {render_table(["库名", "可见性", "权限", "角色"], lib_rows, empty="暂无库")}
+      {render_table([t("portal.me.table.name"), t("portal.me.table.visibility"), t("portal.me.table.access"), t("portal.me.table.role")], lib_rows, empty=t("portal.me.empty_libraries"), locale=locale)}
     </div>
   </div>
   <div class="card" style="margin-top:16px;">
     <div class="card-header">
-      <h2>最近贡献</h2>
-      <a class="btn subtle" href="{esc(base)}/ui/me/writes/">查看全部 →</a>
+      <h2>{esc(t("portal.me.recent_contributions"))}</h2>
+      <a class="btn subtle" href="{esc(base)}/ui/me/writes/">{esc(t("portal.me.view_all"))}</a>
     </div>
     <div class="card-body">{recent_block}</div>
   </div>"""
-    return HTMLResponse(
+    return html_response(
+        request,
         render_page(
-            title="我的主页",
+            title=t("portal.me.title"),
             base=base,
             active_nav="me",
-            subtitle="你在 ma3 的贡献与权限概览。",
+            subtitle=t("portal.me.subtitle"),
             user_line=ui_user_line(user),
             show_logout=True,
             is_admin=user.is_admin,
             body=body,
-        )
+            locale=locale,
+            request=request,
+        ),
     )
 
 
@@ -365,6 +378,7 @@ def portal_writes(
     if isinstance(auth, Response):
         return auth
     user = auth
+    locale, t = ui_locale(request)
     base = _base(request)
     list_path = f"{base}/ui/me/writes/"
     per_page = _normalize_per_page(per_page)
@@ -402,7 +416,7 @@ def portal_writes(
         else:
             check_cell = ""
         if deleted or not rid:
-            rec_cell = f'<span class="card-muted">{esc(_DELETED_RECORD_LABEL)}</span>'
+            rec_cell = f'<span class="card-muted">{esc(t("portal.writes.deleted_record"))}</span>'
         else:
             rec_cell = (
                 f'<a class="key-link" href="{esc(base)}/ui/records/{esc(rid)}/">'
@@ -410,9 +424,9 @@ def portal_writes(
             )
         st = row.get("record_status") or "active"
         if deleted:
-            st_cell = badge("已删除", "muted")
+            st_cell = badge(t("status.deleted"), "muted")
         elif st == "buffered":
-            st_cell = badge("待发布", "muted")
+            st_cell = badge(t("status.buffered"), "muted")
         else:
             st_cell = badge(st, "success" if st == "active" else "muted")
         table_rows.append(
@@ -429,25 +443,25 @@ def portal_writes(
     sort_q = dict(query)
     has_selectable = any(row[0] for row in table_rows)
     select_all_cell = (
-        '<input type="checkbox" id="writes-select-all" title="全选本页" aria-label="全选本页"/>'
+        f'<input type="checkbox" id="writes-select-all" title="{esc(t("portal.writes.select_all_page"))}" aria-label="{esc(t("portal.writes.select_all_page"))}"/>'
         if has_selectable
         else ""
     )
     headers = [
         select_all_cell,
-        render_sort_link(label="时间", column="created_at", current_sort=sort, current_dir=dir, base_path=list_path, query=sort_q),
-        "记录",
-        render_sort_link(label="状态", column="record_status", current_sort=sort, current_dir=dir, base_path=list_path, query=sort_q),
-        render_sort_link(label="库", column="library_name", current_sort=sort, current_dir=dir, base_path=list_path, query=sort_q),
-        render_sort_link(label="类型", column="report_kind", current_sort=sort, current_dir=dir, base_path=list_path, query=sort_q),
-        "Key",
+        render_sort_link(label=t("portal.writes.table.time"), column="created_at", current_sort=sort, current_dir=dir, base_path=list_path, query=sort_q),
+        t("portal.writes.table.record"),
+        render_sort_link(label=t("portal.writes.table.status"), column="record_status", current_sort=sort, current_dir=dir, base_path=list_path, query=sort_q),
+        render_sort_link(label=t("portal.writes.table.library"), column="library_name", current_sort=sort, current_dir=dir, base_path=list_path, query=sort_q),
+        render_sort_link(label=t("portal.writes.table.kind"), column="report_kind", current_sort=sort, current_dir=dir, base_path=list_path, query=sort_q),
+        t("portal.writes.table.key"),
     ]
     filter_pills = _render_filter_pills(
         items=[
-            ("all", "全部", None),
-            ("active", "已发布", "active"),
-            ("buffered", "待发布", "buffered"),
-            ("deleted", "已删除", "deleted"),
+            ("all", t("portal.writes.filter.all"), None),
+            ("active", t("portal.writes.filter.active"), "active"),
+            ("buffered", t("portal.writes.filter.buffered"), "buffered"),
+            ("deleted", t("portal.writes.filter.deleted"), "deleted"),
         ],
         base_path=list_path,
         query=query,
@@ -461,12 +475,12 @@ def portal_writes(
     <input type="hidden" name="page" value="{page_num}"/>
     <input type="hidden" name="per_page" value="{per_page}"/>
     <div id="writes-batch-error" class="alert warning" style="display:none;margin:0;border-radius:0;border-left:none;border-right:none;">
-      请先选择至少一条记录
+      {esc(t("portal.writes.select_required"))}
     </div>
     <div class="batch-bar">
-      <span>批量操作</span>
-      <button type="submit" name="action" value="publish" class="btn primary">批量发布</button>
-      <button type="submit" name="action" value="delete" class="btn danger">批量删除</button>
+      <span>{esc(t("portal.writes.batch_label"))}</span>
+      <button type="submit" name="action" value="publish" class="btn primary">{esc(t("portal.writes.batch_publish"))}</button>
+      <button type="submit" name="action" value="delete" class="btn danger">{esc(t("portal.writes.batch_delete"))}</button>
     </div>
   </form>"""
     alert_html = (
@@ -478,22 +492,25 @@ def portal_writes(
   <div class="card">
     {batch_bar}
     <div class="card-body" style="padding:0;">
-      {render_table(headers, table_rows, empty="暂无记录")}
+      {render_table(headers, table_rows, empty=t("portal.writes.empty"), locale=locale)}
     </div>
   </div>
-  {render_list_footer(page=page_num, total_pages=total_pages, total_items=total, base_path=list_path, query=query, per_page=per_page, default_per_page=_DEFAULT_PER_PAGE)}
+  {render_list_footer(page=page_num, total_pages=total_pages, total_items=total, base_path=list_path, query=query, per_page=per_page, default_per_page=_DEFAULT_PER_PAGE, locale=locale)}
   {_WRITES_BATCH_JS}"""
-    return HTMLResponse(
+    return html_response(
+        request,
         render_page(
-            title="记录",
+            title=t("portal.writes.title"),
             base=base,
             active_nav="records",
-            subtitle="来自写审计日志；含 API key 写入记录。",
+            subtitle=t("portal.writes.subtitle"),
             user_line=ui_user_line(user),
             show_logout=True,
             is_admin=user.is_admin,
             body=body,
-        )
+            locale=locale,
+            request=request,
+        ),
     )
 
 
@@ -515,7 +532,8 @@ async def portal_writes_batch(request: Request) -> Response:
         status=str(form.get("status") or "all"),
     )
     if action not in {"publish", "delete"} or not record_ids:
-        return _writes_list_redirect(base, list_query=list_query, error="请先选择至少一条记录")
+        _, t = ui_locale(request)
+        return _writes_list_redirect(base, list_query=list_query, error=t("portal.writes.select_required"))
     if action == "publish":
         db.publish_buffered_records_batch(record_ids, user.principal_id)
     else:
@@ -536,6 +554,7 @@ def portal_votes(
     if isinstance(auth, Response):
         return auth
     user = auth
+    locale, t = ui_locale(request)
     base = _base(request)
     list_path = f"{base}/ui/me/votes/"
     per_page = _normalize_per_page(per_page)
@@ -564,7 +583,7 @@ def portal_votes(
         vote_icon = "👍" if int(row.get("vote") or 0) > 0 else "👎"
         deleted = bool(rid and db.get_record_deletion(str(rid)))
         if deleted or not rid or row.get("status") != "active":
-            rec_cell = esc(_problem_summary(row.get("problem"))) + " " + badge("不可用", "muted")
+            rec_cell = esc(_problem_summary(row.get("problem"))) + " " + badge(t("common.not_available"), "muted")
         else:
             rec_cell = (
                 f'<a class="key-link" href="{esc(base)}/ui/records/{esc(rid)}/">'
@@ -580,16 +599,16 @@ def portal_votes(
         )
     sort_q = dict(query)
     headers = [
-        render_sort_link(label="时间", column="updated_at", current_sort=sort, current_dir=dir, base_path=list_path, query=sort_q),
-        render_sort_link(label="投票", column="vote", current_sort=sort, current_dir=dir, base_path=list_path, query=sort_q),
-        "记录",
-        render_sort_link(label="库", column="library_name", current_sort=sort, current_dir=dir, base_path=list_path, query=sort_q),
+        render_sort_link(label=t("portal.votes.table.time"), column="updated_at", current_sort=sort, current_dir=dir, base_path=list_path, query=sort_q),
+        render_sort_link(label=t("portal.votes.table.vote"), column="vote", current_sort=sort, current_dir=dir, base_path=list_path, query=sort_q),
+        t("portal.votes.table.record"),
+        render_sort_link(label=t("portal.votes.table.library"), column="library_name", current_sort=sort, current_dir=dir, base_path=list_path, query=sort_q),
     ]
     filter_pills = _render_filter_pills(
         items=[
-            ("all", "全部", None),
-            ("up", "👍 赞同", "up"),
-            ("down", "👎 反对", "down"),
+            ("all", t("portal.votes.filter.all"), None),
+            ("up", t("portal.votes.filter.up"), "up"),
+            ("down", t("portal.votes.filter.down"), "down"),
         ],
         base_path=list_path,
         query=query,
@@ -599,21 +618,24 @@ def portal_votes(
   {filter_pills}
   <div class="card">
     <div class="card-body" style="padding:0;">
-      {render_table(headers, table_rows, empty="还没有投过票")}
+      {render_table(headers, table_rows, empty=t("portal.votes.empty"), locale=locale)}
     </div>
   </div>
-  {render_list_footer(page=page_num, total_pages=total_pages, total_items=total, base_path=list_path, query=query, per_page=per_page, default_per_page=_DEFAULT_PER_PAGE)}"""
-    return HTMLResponse(
+  {render_list_footer(page=page_num, total_pages=total_pages, total_items=total, base_path=list_path, query=query, per_page=per_page, default_per_page=_DEFAULT_PER_PAGE, locale=locale)}"""
+    return html_response(
+        request,
         render_page(
-            title="投票",
+            title=t("portal.votes.title"),
             base=base,
             active_nav="votes",
-            subtitle="只读列表；改票请进入 record 详情页。",
+            subtitle=t("portal.votes.subtitle"),
             user_line=ui_user_line(user),
             show_logout=True,
             is_admin=user.is_admin,
             body=body,
-        )
+            locale=locale,
+            request=request,
+        ),
     )
 
 
@@ -626,39 +648,43 @@ def portal_me_setup(request: Request, next: str = Query("/ui/me/")) -> Response:
     if not display_name_setup_required(user.principal_id):
         target = next if next.startswith("/") and not next.startswith("//") else "/ui/me/"
         return RedirectResponse(target, status_code=302)
+    locale, t = ui_locale(request)
     base = _base(request)
     error = unquote(request.query_params.get("error") or "").strip()
     alert = f'<div class="alert error" style="margin-bottom:16px;">{esc(error)}</div>' if error else ""
     body = f"""
   <div class="card">
-    <div class="card-header"><h2>设定显示名</h2></div>
+    <div class="card-header"><h2>{esc(t("portal.setup.card_title"))}</h2></div>
     <div class="card-body">
-      <p class="card-muted">欢迎加入 ma3。请选择一个<strong>显示名</strong>：它将出现在门户顶部、个人库名称等位置。</p>
+      <p class="card-muted">{esc(t("portal.setup.welcome"))}</p>
       <ul class="steps">
-        <li>显示名在 ma3 内<strong>全局唯一</strong>（不区分大小写）</li>
-        <li>设定后<strong>不可修改</strong>，请谨慎选择</li>
+        <li>{esc(t("portal.setup.unique"))}</li>
+        <li>{esc(t("portal.setup.immutable"))}</li>
       </ul>
       {alert}
       <form method="post" action="{esc(base)}/ui/me/setup/">
         <input type="hidden" name="next" value="{esc(next)}"/>
-        <label>显示名（2–32 字符）</label>
+        <label>{esc(t("portal.setup.input_label"))}</label>
         <input name="display_name" type="text" maxlength="32" required autofocus
                style="width:100%;max-width:420px;"/>
-        <button type="submit" class="btn primary" style="margin-top:12px;">确认并继续</button>
+        <button type="submit" class="btn primary" style="margin-top:12px;">{esc(t("portal.setup.submit"))}</button>
       </form>
     </div>
   </div>"""
-    return HTMLResponse(
+    return html_response(
+        request,
         render_page(
-            title="设定显示名",
+            title=t("portal.setup.title"),
             base=base,
             active_nav="me",
-            subtitle="注册后一次性设定，之后不可更改。",
+            subtitle=t("portal.setup.subtitle"),
             user_line=ui_user_line(user),
             show_logout=True,
             is_admin=user.is_admin,
             body=body,
-        )
+            locale=locale,
+            request=request,
+        ),
     )
 
 
@@ -693,29 +719,34 @@ def portal_me_settings(request: Request) -> Response:
     if isinstance(auth, Response):
         return auth
     user = auth
+    locale, t = ui_locale(request)
     base = _base(request)
+    personal_library_name = _personal_library_label(user.display_name, locale=locale)
     body = f"""
   {_render_profile_header(user)}
-  {render_subnav(base, active="settings")}
+  {render_subnav(base, active="settings", locale=locale)}
   <div class="card">
-    <div class="card-header"><h2>显示名</h2></div>
+    <div class="card-header"><h2>{esc(t("portal.settings.display_name"))}</h2></div>
     <div class="card-body">
-      <p class="card-muted">注册时设定，之后不可修改。用于门户顶部、个人库名称（「{esc(user.display_name)} 的个人库」）等。</p>
+      <p class="card-muted">{esc(t("portal.settings.display_name_help", personal_library_name=personal_library_name))}</p>
       <p style="font-size:18px;font-weight:600;margin:8px 0 0;">{esc(user.display_name)}</p>
     </div>
   </div>
-  {_render_principal_id_card(user)}"""
-    return HTMLResponse(
+  {_render_principal_id_card(user, locale=locale)}"""
+    return html_response(
+        request,
         render_page(
-            title="账户设置",
+            title=t("portal.settings.title"),
             base=base,
             active_nav="me",
-            subtitle="账户与身份信息",
+            subtitle=t("portal.settings.subtitle"),
             user_line=ui_user_line(user),
             show_logout=True,
             is_admin=user.is_admin,
             body=body,
-        )
+            locale=locale,
+            request=request,
+        ),
     )
 
 
