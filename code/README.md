@@ -1,6 +1,6 @@
 # ma3 v1 — 实现
 
-Greenfield server per `../docs/PITCH.md` and ADR 001–008.
+Greenfield server per [../docs/01-product/pitch.md](../docs/01-product/pitch.md) and ADR 001–008.
 
 ## Quick start
 

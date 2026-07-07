@@ -1,6 +1,6 @@
 """Portal SSR HTML invariants — hard gates against rendering regressions.
 
-See all_docs/08-quality/acceptance/v1-user-portal-ui.md (R series).
+See docs/08-quality/acceptance/v1-user-portal-ui.md (R series).
 """
 
 from __future__ import annotations

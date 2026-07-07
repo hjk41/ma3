@@ -4,7 +4,7 @@
 把本文 URL 交给各 agent，由 agent **自行**完成 MCP 连接和行为策略配置。
 
 **策略模板（必读）**：`GET /client/templates/ma3-agent-policy.mdc`  
-**设计文档**：`docs/adr/009-client-sync-scheme-b.md`、`docs/04-target-architecture-draft.md` §3  
+**设计文档**：[docs/02-architecture/decisions/009-client-sync-scheme-b.md](../../docs/02-architecture/decisions/009-client-sync-scheme-b.md)、[docs/02-architecture/system-overview.md](../../docs/02-architecture/system-overview.md) §3  
 **示例 ma3 地址**：`https://ma3.io`（按你们环境替换）
 
 > **ma3 v1（ADR-003）**：仅 **MCP + policy**。无 `install.sh`、无 `ma3_client.py`、无 CLI 插件。

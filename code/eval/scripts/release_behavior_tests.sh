@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Release-gate agent behavior tests (T0-T5) — see docs/testing/release-agent-behavior-tests.md
+# Release-gate agent behavior tests (T0-T5) — see docs/08-quality/testing/release-agent-behavior-tests.md
 # Runs ONE agent through the behavior scenarios on the 202 host.
 #
 # Usage:
