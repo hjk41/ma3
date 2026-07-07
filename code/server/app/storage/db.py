@@ -312,6 +312,50 @@ def initialize_database() -> None:
         if not _column_exists(conn, "record_relations", "source_deleted"):
             _execute(conn, "ALTER TABLE record_relations ADD COLUMN source_deleted INTEGER NOT NULL DEFAULT 0")
 
+        if not _column_exists(conn, "organizations", "kind"):
+            _execute(conn, "ALTER TABLE organizations ADD COLUMN kind TEXT NOT NULL DEFAULT 'custom'")
+        if not _column_exists(conn, "organizations", "owner_principal_id"):
+            _execute(conn, "ALTER TABLE organizations ADD COLUMN owner_principal_id TEXT")
+        if not _column_exists(conn, "organizations", "billing_account_id"):
+            _execute(conn, "ALTER TABLE organizations ADD COLUMN billing_account_id TEXT")
+
+        _execute(
+            conn,
+            """
+            CREATE TABLE IF NOT EXISTS org_members (
+              org_id TEXT NOT NULL,
+              principal_id TEXT NOT NULL,
+              role TEXT NOT NULL CHECK (role IN ('admin', 'member')),
+              seat_status TEXT NOT NULL DEFAULT 'active'
+                CHECK (seat_status IN ('active', 'pending', 'removed')),
+              joined_at TEXT NOT NULL,
+              PRIMARY KEY (org_id, principal_id)
+            )
+            """,
+        )
+        _execute(
+            conn,
+            "CREATE INDEX IF NOT EXISTS idx_org_members_principal ON org_members (principal_id, seat_status)",
+        )
+
+        _execute(
+            conn,
+            """
+            CREATE TABLE IF NOT EXISTS library_grants (
+              library_id TEXT NOT NULL,
+              principal_id TEXT NOT NULL,
+              role TEXT NOT NULL CHECK (role IN ('reader', 'writer', 'maintainer')),
+              created_at TEXT NOT NULL,
+              created_by TEXT,
+              PRIMARY KEY (library_id, principal_id)
+            )
+            """,
+        )
+        _execute(
+            conn,
+            "CREATE INDEX IF NOT EXISTS idx_library_grants_principal ON library_grants (principal_id)",
+        )
+
         _execute(
             conn,
             """
@@ -1301,6 +1345,39 @@ def count_records() -> int:
     return int(row["c"])
 
 
+def sum_library_record_content_bytes(library_id: str, *, exclude_record_id: str | None = None) -> int:
+    """Sum UTF-8 byte size of billable record content (active, buffered, draft)."""
+    status_placeholders = ",".join("?" for _ in _QUOTA_RECORD_STATUSES)
+    params: list[Any] = [library_id, *_QUOTA_RECORD_STATUSES]
+    exclude_clause = ""
+    if exclude_record_id:
+        exclude_clause = " AND id <> ?"
+        params.append(exclude_record_id)
+    if is_postgres():
+        sql = f"""
+            SELECT COALESCE(SUM(
+                octet_length(problem) + octet_length(outcome) + octet_length(result_summary)
+                + octet_length(payload_json::text)
+            ), 0) AS total
+            FROM records
+            WHERE library_id = ? AND status IN ({status_placeholders}){exclude_clause}
+        """
+    else:
+        sql = f"""
+            SELECT COALESCE(SUM(
+                length(problem) + length(outcome) + length(result_summary) + length(payload_json)
+            ), 0) AS total
+            FROM records
+            WHERE library_id = ? AND status IN ({status_placeholders}){exclude_clause}
+        """
+    with connect() as conn:
+        row = _fetchone(conn, sql, tuple(params))
+    return int(row["total"]) if row else 0
+
+
+_QUOTA_RECORD_STATUSES = ("active", "buffered", "draft")
+
+
 def _table_exists(conn: Any, table_name: str) -> bool:
     if is_postgres():
         row = _fetchone(
@@ -1678,6 +1755,7 @@ def _format_library_row(row: dict[str, Any]) -> dict[str, Any]:
     kind = str(row.get("kind") or "custom")
     return {
         "library_id": lib_id,
+        "org_id": row.get("org_id"),
         "name": row["name"],
         "visibility": row["visibility"],
         "kind": kind,
@@ -1729,6 +1807,472 @@ def _sync_legacy_library(
             )
 
 
+def count_personal_libraries(owner_principal_id: str) -> int:
+    with connect() as conn:
+        row = _fetchone(
+            conn,
+            """
+            SELECT COUNT(*) AS c FROM libraries
+            WHERE kind = 'personal' AND owner_principal_id = ?
+            """,
+            (owner_principal_id,),
+        )
+    return int(row["c"]) if row else 0
+
+
+def count_org_libraries(org_id: str) -> int:
+    """Libraries billed to an org (excludes platform Community Library)."""
+    with connect() as conn:
+        row = _fetchone(
+            conn,
+            """
+            SELECT COUNT(*) AS c FROM libraries
+            WHERE org_id = ? AND id <> ?
+            """,
+            (org_id, settings.default_library_id),
+        )
+    return int(row["c"]) if row else 0
+
+
+def search_users_by_display_name(query: str, *, limit: int = 10) -> list[dict[str, Any]]:
+    """Prefix and substring match on user display names; optional principal_id prefix."""
+    q = " ".join(str(query or "").strip().split())
+    if len(q) < 2:
+        return []
+    capped = max(1, min(int(limit), 50))
+    with connect() as conn:
+        if not _table_exists(conn, "principals"):
+            return []
+        id_col = _principal_id_column(conn)
+        like = f"%{q.lower()}%"
+        prefix = f"{q.lower()}%"
+        principal_prefix = q if q.startswith("user:") else None
+        if principal_prefix:
+            rows = _fetchall(
+                conn,
+                f"""
+                SELECT {id_col} AS principal_id, kind, display_name, created_at
+                FROM principals
+                WHERE kind = 'user'
+                  AND (
+                    lower(display_name) LIKE ?
+                    OR lower(display_name) LIKE ?
+                    OR {id_col} LIKE ?
+                  )
+                ORDER BY
+                  CASE WHEN lower(display_name) = lower(?) THEN 0
+                       WHEN lower(display_name) LIKE ? THEN 1
+                       WHEN {id_col} = ? THEN 2
+                       ELSE 3 END,
+                  display_name
+                LIMIT ?
+                """,
+                (
+                    prefix,
+                    like,
+                    f"{principal_prefix}%",
+                    q,
+                    prefix,
+                    principal_prefix,
+                    capped,
+                ),
+            )
+        else:
+            rows = _fetchall(
+                conn,
+                f"""
+                SELECT {id_col} AS principal_id, kind, display_name, created_at
+                FROM principals
+                WHERE kind = 'user'
+                  AND (
+                    lower(display_name) LIKE ?
+                    OR lower(display_name) LIKE ?
+                  )
+                ORDER BY
+                  CASE WHEN lower(display_name) = lower(?) THEN 0
+                       WHEN lower(display_name) LIKE ? THEN 1
+                       ELSE 2 END,
+                  display_name
+                LIMIT ?
+                """,
+                (prefix, like, q, prefix, capped),
+            )
+    return [_row_dict(row) for row in rows]
+
+
+def create_organization(
+    org_id: str,
+    *,
+    name: str,
+    kind: str = "custom",
+    owner_principal_id: str | None = None,
+    billing_account_id: str | None = None,
+) -> dict[str, Any]:
+    with connect() as conn:
+        _execute(
+            conn,
+            """
+            INSERT INTO organizations (id, name, kind, owner_principal_id, billing_account_id)
+            VALUES (?, ?, ?, ?, ?)
+            """,
+            (org_id, name, kind, owner_principal_id, billing_account_id),
+        )
+    org = get_organization(org_id)
+    assert org is not None
+    return org
+
+
+def get_organization(org_id: str) -> dict[str, Any] | None:
+    with connect() as conn:
+        if not _table_exists(conn, "organizations"):
+            return None
+        row = _fetchone(
+            conn,
+            """
+            SELECT id, name, kind, owner_principal_id, billing_account_id
+            FROM organizations
+            WHERE id = ?
+            """,
+            (org_id,),
+        )
+    return _row_dict(row) if row else None
+
+
+def list_orgs_for_principal(principal_id: str) -> list[dict[str, Any]]:
+    with connect() as conn:
+        if not _table_exists(conn, "org_members"):
+            return []
+        rows = _fetchall(
+            conn,
+            """
+            SELECT o.id, o.name, o.kind, o.owner_principal_id, o.billing_account_id,
+                   m.role, m.seat_status, m.joined_at
+            FROM org_members m
+            JOIN organizations o ON o.id = m.org_id
+            WHERE m.principal_id = ? AND m.seat_status = 'active'
+            ORDER BY o.name
+            """,
+            (principal_id,),
+        )
+    return [_row_dict(row) for row in rows]
+
+
+def get_org_member(org_id: str, principal_id: str) -> dict[str, Any] | None:
+    with connect() as conn:
+        if not _table_exists(conn, "org_members"):
+            return None
+        row = _fetchone(
+            conn,
+            """
+            SELECT org_id, principal_id, role, seat_status, joined_at
+            FROM org_members
+            WHERE org_id = ? AND principal_id = ?
+            """,
+            (org_id, principal_id),
+        )
+    return _row_dict(row) if row else None
+
+
+def list_org_members(org_id: str, *, include_removed: bool = False) -> list[dict[str, Any]]:
+    with connect() as conn:
+        if not _table_exists(conn, "org_members"):
+            return []
+        id_col = _principal_id_column(conn) if _table_exists(conn, "principals") else "principal_id"
+        sql = (
+            f"""
+            SELECT m.org_id, m.principal_id, m.role, m.seat_status, m.joined_at,
+                   p.display_name
+            FROM org_members m
+            LEFT JOIN principals p ON p.{id_col} = m.principal_id
+            WHERE m.org_id = ?
+            """
+        )
+        params: list[Any] = [org_id]
+        if not include_removed:
+            sql += " AND m.seat_status = 'active'"
+        sql += " ORDER BY m.role DESC, p.display_name, m.principal_id"
+        rows = _fetchall(conn, sql, tuple(params))
+    return [_row_dict(row) for row in rows]
+
+
+def count_active_org_admins(org_id: str) -> int:
+    with connect() as conn:
+        if not _table_exists(conn, "org_members"):
+            return 0
+        row = _fetchone(
+            conn,
+            """
+            SELECT COUNT(*) AS c FROM org_members
+            WHERE org_id = ? AND role = 'admin' AND seat_status = 'active'
+            """,
+            (org_id,),
+        )
+    return int(row["c"]) if row else 0
+
+
+def add_org_member(
+    *,
+    org_id: str,
+    principal_id: str,
+    role: str = "member",
+    joined_at: str | None = None,
+) -> dict[str, Any]:
+    from datetime import datetime, timezone
+
+    now = joined_at or datetime.now(timezone.utc).replace(microsecond=0).isoformat()
+    if is_postgres():
+        upsert = """
+            INSERT INTO org_members (org_id, principal_id, role, seat_status, joined_at)
+            VALUES (?, ?, ?, 'active', ?)
+            ON CONFLICT (org_id, principal_id) DO UPDATE SET
+              role = EXCLUDED.role,
+              seat_status = 'active'
+            """
+    else:
+        upsert = """
+            INSERT INTO org_members (org_id, principal_id, role, seat_status, joined_at)
+            VALUES (?, ?, ?, 'active', ?)
+            ON CONFLICT(org_id, principal_id) DO UPDATE SET
+              role = excluded.role,
+              seat_status = 'active'
+            """
+    with connect() as conn:
+        _execute(conn, upsert, (org_id, principal_id, role, now))
+    row = get_org_member(org_id, principal_id)
+    assert row is not None
+    return row
+
+
+def set_org_member_role(*, org_id: str, principal_id: str, role: str) -> dict[str, Any]:
+    with connect() as conn:
+        _execute(
+            conn,
+            """
+            UPDATE org_members SET role = ?
+            WHERE org_id = ? AND principal_id = ? AND seat_status = 'active'
+            """,
+            (role, org_id, principal_id),
+        )
+    row = get_org_member(org_id, principal_id)
+    assert row is not None
+    return row
+
+
+def mark_org_member_removed(*, org_id: str, principal_id: str) -> dict[str, Any] | None:
+    with connect() as conn:
+        _execute(
+            conn,
+            """
+            UPDATE org_members SET seat_status = 'removed'
+            WHERE org_id = ? AND principal_id = ?
+            """,
+            (org_id, principal_id),
+        )
+    return get_org_member(org_id, principal_id)
+
+
+def count_team_orgs_owned(owner_principal_id: str) -> int:
+    with connect() as conn:
+        if not _table_exists(conn, "organizations"):
+            return 0
+        row = _fetchone(
+            conn,
+            """
+            SELECT COUNT(*) AS c FROM organizations
+            WHERE kind = 'team' AND owner_principal_id = ?
+            """,
+            (owner_principal_id,),
+        )
+    return int(row["c"]) if row else 0
+
+
+def list_org_libraries(org_id: str) -> list[dict[str, Any]]:
+    with connect() as conn:
+        rows = _fetchall(
+            conn,
+            """
+            SELECT id, org_id, name, visibility, kind, owner_principal_id
+            FROM libraries
+            WHERE org_id = ? AND id <> ?
+            ORDER BY name, id
+            """,
+            (org_id, settings.default_library_id),
+        )
+    return [_format_library_row(_row_dict(r)) for r in rows]
+
+
+def count_active_org_members(org_id: str) -> int:
+    with connect() as conn:
+        if not _table_exists(conn, "org_members"):
+            return 0
+        row = _fetchone(
+            conn,
+            """
+            SELECT COUNT(*) AS c FROM org_members
+            WHERE org_id = ? AND seat_status = 'active'
+            """,
+            (org_id,),
+        )
+    return int(row["c"]) if row else 0
+
+
+def set_library_org_id(library_id: str, org_id: str) -> None:
+    with connect() as conn:
+        _execute(conn, "UPDATE libraries SET org_id = ? WHERE id = ?", (org_id, library_id))
+
+
+def list_library_grants(library_id: str) -> list[dict[str, Any]]:
+    with connect() as conn:
+        if not _table_exists(conn, "library_grants"):
+            return []
+        id_col = _principal_id_column(conn) if _table_exists(conn, "principals") else "principal_id"
+        rows = _fetchall(
+            conn,
+            f"""
+            SELECT g.library_id, g.principal_id, g.role, g.created_at, g.created_by,
+                   p.display_name
+            FROM library_grants g
+            LEFT JOIN principals p ON p.{id_col} = g.principal_id
+            WHERE g.library_id = ?
+            ORDER BY g.role DESC, p.display_name, g.principal_id
+            """,
+            (library_id,),
+        )
+    return [_row_dict(r) for r in rows]
+
+
+def list_library_grants_for_principal(principal_id: str) -> list[dict[str, Any]]:
+    with connect() as conn:
+        if not _table_exists(conn, "library_grants"):
+            return []
+        rows = _fetchall(
+            conn,
+            """
+            SELECT library_id, principal_id, role, created_at, created_by
+            FROM library_grants
+            WHERE principal_id = ?
+            """,
+            (principal_id,),
+        )
+    return [_row_dict(r) for r in rows]
+
+
+def get_library_grant(library_id: str, principal_id: str) -> dict[str, Any] | None:
+    with connect() as conn:
+        if not _table_exists(conn, "library_grants"):
+            return None
+        row = _fetchone(
+            conn,
+            """
+            SELECT library_id, principal_id, role, created_at, created_by
+            FROM library_grants
+            WHERE library_id = ? AND principal_id = ?
+            """,
+            (library_id, principal_id),
+        )
+    return _row_dict(row) if row else None
+
+
+def upsert_library_grant(
+    *,
+    library_id: str,
+    principal_id: str,
+    role: str,
+    created_by: str | None = None,
+) -> dict[str, Any]:
+    from datetime import datetime, timezone
+
+    now = datetime.now(timezone.utc).replace(microsecond=0).isoformat()
+    if is_postgres():
+        sql = """
+            INSERT INTO library_grants (library_id, principal_id, role, created_at, created_by)
+            VALUES (?, ?, ?, ?, ?)
+            ON CONFLICT (library_id, principal_id) DO UPDATE SET role = EXCLUDED.role
+            """
+    else:
+        sql = """
+            INSERT INTO library_grants (library_id, principal_id, role, created_at, created_by)
+            VALUES (?, ?, ?, ?, ?)
+            ON CONFLICT(library_id, principal_id) DO UPDATE SET role = excluded.role
+            """
+    with connect() as conn:
+        _execute(conn, sql, (library_id, principal_id, role, now, created_by))
+    row = get_library_grant(library_id, principal_id)
+    assert row is not None
+    return row
+
+
+def delete_library_grant(*, library_id: str, principal_id: str) -> None:
+    with connect() as conn:
+        if not _table_exists(conn, "library_grants"):
+            return
+        _execute(
+            conn,
+            "DELETE FROM library_grants WHERE library_id = ? AND principal_id = ?",
+            (library_id, principal_id),
+        )
+
+
+def count_records_for_library(
+    library_id: str,
+    *,
+    status: str | None = None,
+) -> int:
+    with connect() as conn:
+        if status:
+            row = _fetchone(
+                conn,
+                "SELECT COUNT(*) AS c FROM records WHERE library_id = ? AND status = ?",
+                (library_id, status),
+            )
+        else:
+            row = _fetchone(
+                conn,
+                "SELECT COUNT(*) AS c FROM records WHERE library_id = ?",
+                (library_id,),
+            )
+    return int(row["c"]) if row else 0
+
+
+def list_records_for_library(
+    library_id: str,
+    *,
+    status: str | None = None,
+    limit: int = 50,
+    offset: int = 0,
+) -> tuple[list[dict[str, Any]], int]:
+    capped = max(1, min(int(limit), 100))
+    offset = max(0, int(offset))
+    params: list[Any] = [library_id]
+    where = "WHERE library_id = ?"
+    if status and status != "all":
+        where += " AND status = ?"
+        params.append(status)
+    with connect() as conn:
+        count_row = _fetchone(conn, f"SELECT COUNT(*) AS c FROM records {where}", tuple(params))
+        rows = _fetchall(
+            conn,
+            f"""
+            SELECT id, library_id, case_id, status, problem, outcome, result_summary,
+                   created_by, created_at, publish_at
+            FROM records
+            {where}
+            ORDER BY created_at DESC, id DESC
+            LIMIT ? OFFSET ?
+            """,
+            tuple(params + [capped, offset]),
+        )
+    total = int(count_row["c"]) if count_row else 0
+    return [_row_dict(r) for r in rows], total
+
+
+def sum_org_storage_bytes(org_id: str) -> int:
+    total = 0
+    for lib in list_org_libraries(org_id):
+        total += sum_library_record_content_bytes(str(lib["library_id"]))
+    return total
+
+
 def create_library(
     library_id: str,
     *,
@@ -1738,7 +2282,15 @@ def create_library(
     kind: str = "custom",
     owner_principal_id: str | None = None,
 ) -> dict[str, Any]:
+    from app.services.library_quota_service import assert_library_creation_allowed
+
     org = org_id or settings.default_org_id
+    assert_library_creation_allowed(
+        library_id=library_id,
+        kind=kind,
+        org_id=org,
+        owner_principal_id=owner_principal_id,
+    )
     with connect() as conn:
         _execute(
             conn,

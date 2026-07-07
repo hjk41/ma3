@@ -92,6 +92,15 @@ CREATE TABLE plans (
 
 Team 的 `max_records_per_library` / `max_records_total` 均为 org **pooled**。
 
+**库数量配额（design/24，2026-07-06 ratified）** — 两层：
+
+| 层级 | personal org | team org |
+|------|--------------|----------|
+| Plan（用户可见） | Free **1** / Pro **5** | Team **10** |
+| 平台硬顶 | **100** | **1000** |
+
+环境变量：`MA3_PLAN_MAX_LIBRARIES_*`、`MA3_PLATFORM_MAX_LIBRARIES_PERSONAL_ORG`（100）、`MA3_PLATFORM_MAX_LIBRARIES_TEAM_ORG`（1000）。`lib_default` 不计入任何 org 库计数。Team org 拥有数硬顶 **100**（`MA3_PLATFORM_MAX_TEAM_ORGS_OWNED`）；加入 org 数软顶 **999**。
+
 ### 3.2 `billing_accounts`
 
 ```sql

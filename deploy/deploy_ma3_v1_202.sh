@@ -25,6 +25,7 @@ RSYNC_EXCLUDES=(
 )
 
 echo "==> Sync ma3 -> ${REMOTE_USER}@${REMOTE_HOST}:${REMOTE_DIR} (ma3_deploy)"
+DEPLOY_GIT_COMMIT="$(git -C "${LOCAL_DIR}" rev-parse --short HEAD 2>/dev/null || true)"
 rsync -avz -e "$RSYNC_SSH" --delete "${RSYNC_EXCLUDES[@]}" \
   "${LOCAL_DIR}/" "${REMOTE_USER}@${REMOTE_HOST}:${REMOTE_DIR}/"
 
@@ -34,6 +35,7 @@ set -euo pipefail
 LEGACY_DIR="${LEGACY_DIR}"
 REMOTE_DIR="${REMOTE_DIR}"
 PORT="${PORT}"
+DEPLOY_GIT_COMMIT="${DEPLOY_GIT_COMMIT:-}"
 
 set -a
 source "\${LEGACY_DIR}/ma3.env"
@@ -60,9 +62,12 @@ if [[ -d "\${LEGACY_DIR}/data/hf-cache" ]]; then
   ln -sfn "\${LEGACY_DIR}/data/hf-cache" "\${REMOTE_DIR}/data/hf-cache"
 fi
 
+AUTHING_CONFIGURED=0
+if [[ -n "\${MA3_AUTHING_APP_ID:-}" && -n "\${MA3_AUTHING_APP_SECRET:-}" ]]; then
+  AUTHING_CONFIGURED=1
+fi
+
 cat > "\${REMOTE_DIR}/ma3.env" <<ENV
-MA3_DEV_AUTH=1
-MA3_DEV_API_KEY=ma3dev
 MA3_PORT=\${PORT}
 MA3_DATABASE_URL=\${MA3_DATABASE_URL}
 MA3_INSTANCE_ID=ma3-v1-202
@@ -70,18 +75,26 @@ MA3_HF_HOME=\${LEGACY_DIR}/data/hf-cache
 HF_HOME=\${LEGACY_DIR}/data/hf-cache
 HF_HUB_OFFLINE=1
 ENV
+if [[ -n "\${DEPLOY_GIT_COMMIT}" ]]; then
+  echo "MA3_GIT_COMMIT=\${DEPLOY_GIT_COMMIT}" >> "\${REMOTE_DIR}/ma3.env"
+fi
 
-# Optional Authing (Observatory login) — set in \${LEGACY_DIR}/ma3.env or shell env before deploy
-if [[ -n "\${MA3_AUTHING_APP_ID:-}" && -n "\${MA3_AUTHING_APP_SECRET:-}" ]]; then
+if [[ "\${AUTHING_CONFIGURED}" -eq 1 ]]; then
   cat >> "\${REMOTE_DIR}/ma3.env" <<AUTHING
+MA3_DEV_AUTH=0
 MA3_AUTHING_ENABLED=\${MA3_AUTHING_ENABLED:-1}
 MA3_AUTHING_ISSUER=\${MA3_AUTHING_ISSUER}
 MA3_AUTHING_APP_ID=\${MA3_AUTHING_APP_ID}
 MA3_AUTHING_APP_SECRET=\${MA3_AUTHING_APP_SECRET}
-MA3_PUBLIC_BASE_URL=\${MA3_PUBLIC_BASE_URL:-http://127.0.0.1:\${PORT}}
+MA3_PUBLIC_BASE_URL=\${MA3_DEPLOY_PUBLIC_BASE_URL:-http://${REMOTE_HOST}:\${PORT}}
 MA3_AUTHING_REDIRECT_URI=\${MA3_AUTHING_REDIRECT_URI:-\${MA3_PUBLIC_BASE_URL:-http://127.0.0.1:\${PORT}}/auth/callback}
 MA3_AUTH_ADMIN_USERS=\${MA3_AUTH_ADMIN_USERS:?MA3_AUTH_ADMIN_USERS required when Authing is enabled}
 AUTHING
+else
+  cat >> "\${REMOTE_DIR}/ma3.env" <<DEV
+MA3_DEV_AUTH=1
+MA3_DEV_API_KEY=ma3dev
+DEV
 fi
 
 echo "==> Ensure pgvector extension (needs DB superuser; app role ma3user cannot CREATE EXTENSION)"

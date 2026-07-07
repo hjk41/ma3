@@ -1,12 +1,13 @@
 from __future__ import annotations
 
 import math
-from typing import Any
+from typing import Any, Callable
 from urllib.parse import quote, unquote, urlencode, urlparse
 
 from fastapi import APIRouter, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
 
+from app.core.security import assert_same_origin as _assert_same_origin
 from app.api.ui_session import (
     login_redirect,
     require_authed_ui_user,
@@ -24,6 +25,7 @@ from app.api.ui_theme import (
     render_pagination,
     render_sort_link,
     render_stat_cards,
+    render_storage_meter,
     render_subnav,
     render_table,
 )
@@ -31,8 +33,10 @@ from app.auth.session import SessionUser
 from app.core.config import settings
 from app.services.feedback_service import apply_record_feedback, resolve_ui_feedback_principal
 from app.services.buffer_service import can_read_record, is_library_settings_editor
-from app.services.onboarding_service import ensure_personal_library
+from app.services.onboarding_service import ensure_personal_library, ensure_personal_org
+from app.services.entitlement_service import can_maintain_library
 from app.services.portal_service import can_read_library, entitled_library_ids, list_entitled_libraries
+from app.services.storage_quota_service import format_storage_bytes, personal_library_quota_summary
 from app.services.principal_service import complete_display_name_setup, display_name_setup_required
 from app.services.record_read_service import format_record_for_read
 from app.storage import db
@@ -204,25 +208,6 @@ def _page_params(page: int, per_page: int = _DEFAULT_PER_PAGE) -> tuple[int, int
     return _page_offset(page, per_page)
 
 
-def _assert_same_origin(request: Request) -> None:
-    if request.method in {"GET", "HEAD", "OPTIONS"}:
-        return
-    expected = (settings.public_base_url or str(request.base_url)).rstrip("/")
-    origin = request.headers.get("origin")
-    if origin:
-        if origin.rstrip("/") != expected:
-            raise HTTPException(status_code=403, detail="cross-origin request rejected")
-        return
-    referer = request.headers.get("referer")
-    if referer:
-        ref = urlparse(referer)
-        exp = urlparse(expected if "://" in expected else f"http://{expected}")
-        if ref.netloc and exp.netloc and ref.netloc != exp.netloc:
-            raise HTTPException(status_code=403, detail="cross-origin request rejected")
-        return
-    raise HTTPException(status_code=403, detail="origin or referer required")
-
-
 def _require_user(request: Request, *, require_setup: bool = True) -> SessionUser | Response:
     return require_authed_ui_user(request, require_setup=require_setup)
 
@@ -257,6 +242,164 @@ def _problem_summary(problem: str | None, *, width: int = 60) -> str:
     return text[: width - 1] + "…"
 
 
+def _landing_primary_href(base: str) -> str:
+    if settings.authing_configured:
+        return f"{base}/auth/login?next={base}/ui/me/"
+    return f"{base}/ui/me/"
+
+
+def _render_public_landing(request: Request, *, locale: str, t: Callable[..., str]) -> str:
+    base = _base(request)
+    lib_id = settings.default_library_id
+    lib_stats = db.get_library_stats(lib_id) or {}
+    rec = lib_stats.get("records") or {}
+    by_status = rec.get("by_status") or {}
+    primary_href = _landing_primary_href(base)
+    primary_label = t("landing.hero.cta_primary_dev" if not settings.authing_configured else "landing.hero.cta_primary")
+    library_href = f"{base}/ui/libraries/{lib_id}/"
+    docs_href = f"{base}/client/agent-onboarding.md"
+    instance = settings.instance_id or "local"
+    version = settings.service_version
+
+    dev_alert = ""
+    if not settings.authing_configured:
+        dev_alert = f'<div class="alert info">{esc(t("landing.dev_alert"))}</div>'
+
+    workflow_steps = "".join(
+        f'<li><span class="landing-flow-step">{i}</span>'
+        f'<span class="landing-flow-text">{esc(t(f"landing.workflow.s{i}"))}</span></li>'
+        for i in range(1, 6)
+    )
+    feature_cards = "".join(
+        f'<div class="card landing-feature-card"><div class="card-body">'
+        f'<h3>{esc(t(f"landing.features.f{i}_title"))}</h3>'
+        f'<p>{esc(t(f"landing.features.f{i}_body"))}</p></div></div>'
+        for i in range(1, 4)
+    )
+    getstarted_step3 = (
+        f'{esc(t("landing.getstarted.s3_prefix"))}'
+        f'<a href="{esc(docs_href)}">{esc(t("landing.getstarted.s3_link"))}</a>'
+        f'{esc(t("landing.getstarted.s3_suffix"))}'
+    )
+    getstarted_steps = (
+        f"<li>{esc(t('landing.getstarted.s1'))}</li>"
+        f"<li>{esc(t('landing.getstarted.s2'))}</li>"
+        f"<li>{getstarted_step3}</li>"
+        f"<li>{esc(t('landing.getstarted.s4'))}</li>"
+    )
+
+    stat_cards = render_stat_cards(
+        [
+            (t("landing.status.cases"), lib_stats.get("cases", 0)),
+            (t("landing.status.records"), rec.get("total", 0)),
+            (t("landing.status.active"), by_status.get("active", 0)),
+            (t("landing.status.version"), version),
+        ]
+    )
+    status_meta = t(
+        "landing.status.meta",
+        instance=instance,
+        running=t("landing.status.running"),
+        version=version,
+    )
+
+    return f"""
+  <div class="landing-hero">
+    <h1 class="landing-hero-title">{esc(t("landing.hero.title"))}</h1>
+    <p class="landing-hero-lead">{esc(t("landing.hero.subtitle"))}</p>
+    <div class="landing-hero-actions">
+      <a class="btn primary" href="{esc(primary_href)}">{esc(primary_label)}</a>
+      <a class="btn" href="{library_href}">{esc(t("landing.hero.cta_library"))}</a>
+      <a class="btn subtle" href="{esc(docs_href)}">{esc(t("landing.hero.cta_docs"))}</a>
+    </div>
+  </div>
+  {dev_alert}
+  <section class="landing-section">
+    <h2 class="landing-section-title">{esc(t("landing.problem.title"))}</h2>
+    <ul class="landing-problem-list">
+      <li>{esc(t("landing.problem.b1"))}</li>
+      <li>{esc(t("landing.problem.b2"))}</li>
+      <li>{esc(t("landing.problem.b3"))}</li>
+    </ul>
+  </section>
+  <section class="landing-section">
+    <h2 class="landing-section-title">{esc(t("landing.product.title"))}</h2>
+    <div class="landing-compare-grid">
+      <div class="card"><div class="card-body">
+        <h3>{esc(t("landing.product.is_title"))}</h3>
+        <ul>
+          <li>{esc(t("landing.product.is_b1"))}</li>
+          <li>{esc(t("landing.product.is_b2"))}</li>
+          <li>{esc(t("landing.product.is_b3"))}</li>
+        </ul>
+      </div></div>
+      <div class="card"><div class="card-body">
+        <h3>{esc(t("landing.product.isnot_title"))}</h3>
+        <ul>
+          <li>{esc(t("landing.product.isnot_b1"))}</li>
+          <li>{esc(t("landing.product.isnot_b2"))}</li>
+          <li>{esc(t("landing.product.isnot_b3"))}</li>
+        </ul>
+      </div></div>
+    </div>
+  </section>
+  <section class="landing-section">
+    <h2 class="landing-section-title">{esc(t("landing.workflow.title"))}</h2>
+    <ol class="landing-flow">{workflow_steps}</ol>
+  </section>
+  <section class="landing-section">
+    <h2 class="landing-section-title">{esc(t("landing.features.title"))}</h2>
+    <div class="landing-feature-grid">{feature_cards}</div>
+  </section>
+  <section class="landing-section landing-status">
+    <h2 class="landing-section-title">{esc(t("landing.status.title"))}</h2>
+    {stat_cards}
+    <p class="landing-status-meta">{esc(status_meta)}</p>
+    <p style="margin-top:12px;"><a class="btn subtle" href="{library_href}">{esc(t("landing.status.view_library"))}</a></p>
+  </section>
+  <section class="landing-section landing-getstarted">
+    <h2 class="landing-section-title">{esc(t("landing.getstarted.title"))}</h2>
+    <ol class="landing-numbered-steps">{getstarted_steps}</ol>
+    <div class="landing-getstarted-cta">
+      <a class="btn primary" href="{esc(primary_href)}">{esc(primary_label)}</a>
+    </div>
+  </section>"""
+
+
+@router.get("/")
+@router.get("/ui")
+@router.get("/ui/")
+def portal_root(request: Request) -> Response:
+    user = resolve_ui_user(request)
+    target = "/ui/me/" if user is not None else "/ui/home/"
+    return RedirectResponse(target, status_code=302)
+
+
+@router.get("/ui/home", response_class=HTMLResponse)
+@router.get("/ui/home/", response_class=HTMLResponse)
+def portal_home(request: Request) -> Response:
+    user = resolve_ui_user(request)
+    if user is not None:
+        return RedirectResponse("/ui/me/", status_code=302)
+    locale, t = ui_locale(request)
+    base = _base(request)
+    body = _render_public_landing(request, locale=locale, t=t)
+    return html_response(
+        request,
+        render_page(
+            title=t("landing.meta.title"),
+            base=base,
+            active_nav="",
+            body=body,
+            show_minimal_header=True,
+            brand_href=f"{base}/ui/home/",
+            meta_description=t("landing.meta.description"),
+            locale=locale,
+            request=request,
+        ),
+    )
+
+
 @router.get("/ui/me", response_class=HTMLResponse)
 @router.get("/ui/me/", response_class=HTMLResponse)
 def portal_me(request: Request) -> Response:
@@ -266,12 +409,13 @@ def portal_me(request: Request) -> Response:
     user = auth
     locale, t = ui_locale(request)
     base = _base(request)
-    ensure_personal_library(user.principal_id, user.display_name)
+    ensure_personal_org(user.principal_id, user.display_name)
     db.publish_due_buffered_records()
     writes_count = db.count_write_audit_for_principal(user.principal_id)
     buffered_count = db.count_buffered_for_principal(user.principal_id)
     votes_count = db.count_feedback_for_principal(user.principal_id)
     libs = list_entitled_libraries(user.principal_id)
+    orgs_count = len(db.list_orgs_for_principal(user.principal_id))
     keys_count = len(db.list_api_keys_for_principal(user.principal_id))
     recent = db.list_write_audit_for_principal(user.principal_id, limit=5, offset=0)
 
@@ -329,6 +473,7 @@ def portal_me(request: Request) -> Response:
       (t("portal.me.stats.records"), writes_count, f"{base}/ui/me/writes/"),
       (t("portal.me.stats.buffered"), buffered_count, f"{base}/ui/me/writes/?status=buffered"),
       (t("portal.me.stats.libraries"), len(libs), f"{base}/ui/libraries/"),
+      (t("portal.me.stats.orgs"), orgs_count, f"{base}/ui/orgs/"),
       (t("portal.me.stats.votes"), votes_count, f"{base}/ui/me/votes/"),
       (t("portal.me.stats.keys"), keys_count, f"{base}/ui/keys/"),
   ])}
@@ -831,6 +976,8 @@ def _render_library_detail(
 
     access_block = ""
     settings_link = ""
+    admin_block = ""
+    storage_block = ""
     if user is not None:
         lib_entry = next((x for x in list_entitled_libraries(user.principal_id) if x["library_id"] == library_id), None)
         prefixes = ", ".join(lib_entry["key_prefixes"]) if lib_entry and lib_entry["key_prefixes"] else "—"
@@ -844,6 +991,27 @@ def _render_library_detail(
       </dl>
     </div>
   </div>"""
+        quota = personal_library_quota_summary(principal_id=user.principal_id, library_id=library_id)
+        if quota:
+            label = f'{format_storage_bytes(quota["used_bytes"])} / {format_storage_bytes(quota["limit_bytes"])}'
+            storage_block = f"""
+  <div class="card" style="margin-top:16px;">
+    <div class="card-header"><h2>存储</h2></div>
+    <div class="card-body">
+      {render_storage_meter(used_bytes=int(quota["used_bytes"]), limit_bytes=int(quota["limit_bytes"]), label=label)}
+      <p style="margin-top:8px;"><a class="btn subtle" href="{esc(base)}/ui/libraries/{esc(library_id)}/storage/">存储详情 →</a></p>
+    </div>
+  </div>"""
+        elif library_id != settings.default_library_id:
+            used = db.sum_library_record_content_bytes(library_id)
+            storage_block = f"""
+  <div class="card" style="margin-top:16px;">
+    <div class="card-header"><h2>存储</h2></div>
+    <div class="card-body">
+      {render_storage_meter(used_bytes=used, limit_bytes=None, label=f'已用 {format_storage_bytes(used)}（预览）')}
+      <p style="margin-top:8px;"><a class="btn subtle" href="{esc(base)}/ui/libraries/{esc(library_id)}/storage/">存储详情 →</a></p>
+    </div>
+  </div>"""
         if is_library_settings_editor(library_id, user.principal_id, is_admin=user.is_admin):
             hours = db.get_library_write_buffer_hours(library_id)
             settings_link = f"""
@@ -851,6 +1019,16 @@ def _render_library_detail(
     <a class="btn" href="{esc(base)}/ui/libraries/{esc(library_id)}/settings/">库设置</a>
     <span class="card-muted"> · 写入缓冲期 {esc(hours)}h</span>
   </p>"""
+        if can_maintain_library(user.principal_id, library_id):
+            admin_block = f"""
+  <div class="card" style="margin-top:16px;">
+    <div class="card-header"><h2>库管理</h2></div>
+    <div class="card-body actions">
+      <a class="btn" href="{esc(base)}/ui/libraries/{esc(library_id)}/records/">记录列表</a>
+      <a class="btn" href="{esc(base)}/ui/libraries/{esc(library_id)}/grants/">授权</a>
+      <a class="btn" href="{esc(base)}/ui/libraries/{esc(library_id)}/storage/">存储</a>
+    </div>
+  </div>"""
     else:
         access_block = f"""
   <div class="alert info" style="margin-top:16px;">
@@ -876,8 +1054,10 @@ def _render_library_detail(
     </div>
   </div>
   {access_block}
+  {storage_block}
+  {admin_block}
   {settings_link}
-  <p class="card-muted" style="margin-top:12px;">库内 record 列表仅管理员可枚举；此处仅展示聚合统计。</p>"""
+  <p class="card-muted" style="margin-top:12px;">库内 record 列表需库维护权限；普通读权限仅见聚合统计。</p>"""
     return HTMLResponse(
         render_page(
             title=stats.get("name") or library_id,
@@ -1084,6 +1264,17 @@ async def portal_record_edit(request: Request, record_id: str) -> Response:
     publish_at = compute_publish_at(buffer_hours=hours) if hours > 0 else None
     payload = dict(record.get("payload") or {})
     payload.update({"problem": problem, "outcome": outcome, "result_summary": result_summary})
+    from app.services.storage_quota_service import assert_personal_library_write_allowed
+
+    assert_personal_library_write_allowed(
+        library_id=library_id,
+        principal_id=user.principal_id,
+        problem=problem,
+        outcome=outcome,
+        result_summary=result_summary,
+        payload=payload,
+        exclude_record_id=record_id,
+    )
     db.update_buffered_record(
         record_id,
         problem=problem,

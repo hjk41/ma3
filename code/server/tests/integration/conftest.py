@@ -61,7 +61,7 @@ def admin_user() -> "SessionUser":
 
 @pytest.fixture()
 def authing_portal_client(isolated_client, monkeypatch, portal_user):
-    from app.services.onboarding_service import ensure_personal_library
+    from app.services.onboarding_service import ensure_personal_org
     from app.services.principal_service import complete_display_name_setup
     from app.storage import db
 
@@ -69,13 +69,13 @@ def authing_portal_client(isolated_client, monkeypatch, portal_user):
     _patch_session(monkeypatch, portal_user)
     db.upsert_user_principal(sso_user=portal_user.sub, display_name=portal_user.sub)
     complete_display_name_setup(portal_user.principal_id, portal_user.display_name)
-    ensure_personal_library(portal_user.principal_id, portal_user.display_name)
+    ensure_personal_org(portal_user.principal_id, portal_user.display_name)
     return isolated_client
 
 
 @pytest.fixture()
 def authing_admin_client(isolated_client, monkeypatch, admin_user):
-    from app.services.onboarding_service import ensure_personal_library
+    from app.services.onboarding_service import ensure_personal_org
     from app.services.principal_service import complete_display_name_setup
     from app.storage import db
 
@@ -83,7 +83,7 @@ def authing_admin_client(isolated_client, monkeypatch, admin_user):
     _patch_session(monkeypatch, admin_user)
     db.upsert_user_principal(sso_user=admin_user.sub, display_name=admin_user.sub)
     complete_display_name_setup(admin_user.principal_id, admin_user.display_name)
-    ensure_personal_library(admin_user.principal_id, admin_user.display_name)
+    ensure_personal_org(admin_user.principal_id, admin_user.display_name)
     return isolated_client
 
 
@@ -99,6 +99,7 @@ def isolated_client(tmp_path, monkeypatch):
     monkeypatch.setattr(settings, "dev_auth", True)
     monkeypatch.setattr(settings, "dev_api_key", "ma3dev")
     monkeypatch.setattr(settings, "disable_embeddings", True)
+    monkeypatch.setattr(settings, "public_base_url", "http://testserver")
     initialize_database()
     from app.storage import db as _db
 
@@ -112,7 +113,7 @@ def isolated_client(tmp_path, monkeypatch):
 
 @pytest.fixture(scope="session")
 def deploy_base_url() -> str:
-    return os.environ.get("MA3_BASE_URL", "http://192.168.31.202:8000").rstrip("/")
+    return os.environ.get("MA3_BASE_URL", "https://ma3.io").rstrip("/")
 
 
 @pytest.fixture(scope="session")

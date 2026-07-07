@@ -7,6 +7,7 @@ from typing import Any
 from fastapi import HTTPException
 
 from app.core.security import McpAuthContext
+from app.services.storage_quota_service import assert_personal_library_write_allowed
 from app.storage import db
 
 
@@ -119,6 +120,15 @@ def patch_buffered_record_for_owner(
     payload["problem"] = problem
     payload["outcome"] = outcome
     payload["result_summary"] = result_summary
+    assert_personal_library_write_allowed(
+        library_id=library_id,
+        principal_id=auth.principal.principal_id,
+        problem=problem,
+        outcome=outcome,
+        result_summary=result_summary,
+        payload=payload,
+        exclude_record_id=record_id,
+    )
     updated = db.update_buffered_record(
         record_id,
         problem=problem,
@@ -183,8 +193,6 @@ def can_read_record(
 def is_library_settings_editor(library_id: str, principal_id: str, *, is_admin: bool) -> bool:
     if is_admin:
         return True
-    lib = db.get_library(library_id)
-    if not lib:
-        return False
-    owner = lib.get("owner_principal_id")
-    return bool(owner and str(owner) == principal_id)
+    from app.services.entitlement_service import can_maintain_library
+
+    return can_maintain_library(principal_id, library_id)

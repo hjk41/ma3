@@ -114,9 +114,9 @@ def resolve_locale(request: Request) -> str:
     cookie_lang = normalize_locale(request.cookies.get(LOCALE_COOKIE))
     if cookie_lang:
         return cookie_lang
-    header_lang = parse_accept_language(request.headers.get("accept-language"))
-    if header_lang:
-        return header_lang
+    accept_lang = parse_accept_language(request.headers.get("accept-language"))
+    if accept_lang:
+        return accept_lang
     return DEFAULT_LOCALE
 
 
@@ -150,6 +150,8 @@ def maybe_set_locale_cookie(response: Response, request: Request, locale: str) -
         normalized = normalize_locale(request.query_params.get("lang"))
         if normalized:
             set_locale_cookie(response, normalized, request)
+    elif LOCALE_COOKIE not in request.cookies:
+        set_locale_cookie(response, locale, request)
 
 
 def get_translator(request: Request) -> Callable[..., str]:

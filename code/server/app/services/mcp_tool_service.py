@@ -42,6 +42,7 @@ from app.services.feedback_service import apply_record_feedback, attach_feedback
 from app.services.record_read_service import applicability_warnings, format_records_for_read, lineage_warnings
 from app.services.redaction_service import redact_payload
 from app.services.report_store_service import storage_payload, validate_report_write
+from app.services.storage_quota_service import assert_personal_library_write_allowed, personal_library_quota_summary
 from app.services.write_audit_service import (
     append_write_audit,
     delete_record_for_owner,
@@ -325,6 +326,19 @@ def call_mcp_tool(name: str, arguments: dict[str, Any], auth: McpAuthContext) ->
                 ),
             },
         }
+        if auth.principal.principal_id:
+            owned_personal = [
+                lib
+                for lib in writable
+                if lib.get("kind") == "personal" and lib.get("owner_principal_id") == auth.principal.principal_id
+            ]
+            if len(owned_personal) == 1:
+                quota = personal_library_quota_summary(
+                    principal_id=auth.principal.principal_id,
+                    library_id=str(owned_personal[0]["library_id"]),
+                )
+                if quota:
+                    structured["storage_quota"] = quota
         return _result(structured, client_report=client_report, summary=json.dumps(structured["caller"]))
 
     if name == "ma3_context":
@@ -479,6 +493,19 @@ def call_mcp_tool(name: str, arguments: dict[str, Any], auth: McpAuthContext) ->
             is_admin_bypass=auth.principal.is_admin_bypass,
         )
         if payload.dry_run:
+            dump = storage_payload(payload.model_dump(mode="json"))
+            dump["report_kind"] = write_plan.report_kind
+            dump["confirmation"] = write_plan.confirmation
+            if payload.redaction_mode == "auto":
+                dump = redact_payload(dump)
+            assert_personal_library_write_allowed(
+                library_id=library_id,
+                principal_id=auth.principal.principal_id,
+                problem=str(dump["problem"]),
+                outcome=str(dump["outcome"]),
+                result_summary=str(dump["result_summary"]),
+                payload=dump,
+            )
             structured = {
                 "persisted": False,
                 "dry_run": True,
@@ -504,6 +531,14 @@ def call_mcp_tool(name: str, arguments: dict[str, Any], auth: McpAuthContext) ->
         dump["confirmation"] = write_plan.confirmation
         if payload.redaction_mode == "auto":
             dump = redact_payload(dump)
+        assert_personal_library_write_allowed(
+            library_id=library_id,
+            principal_id=auth.principal.principal_id,
+            problem=str(dump["problem"]),
+            outcome=str(dump["outcome"]),
+            result_summary=str(dump["result_summary"]),
+            payload=dump,
+        )
         case_id = payload.case_id
         if payload.case_assignment_mode == "manual":
             case_id = None

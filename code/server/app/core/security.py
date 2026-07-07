@@ -3,10 +3,49 @@ from __future__ import annotations
 import secrets
 from dataclasses import dataclass
 from typing import Literal
+from urllib.parse import urlparse
+
+from fastapi import HTTPException, Request
 
 from app.core.config import settings
 
 CredentialSource = Literal["api_key_header", "bearer"]
+
+
+def allowed_ui_origins(request: Request) -> frozenset[str]:
+    """Origins accepted for browser form POSTs (public URL + actual request host)."""
+    origins = {str(request.base_url).rstrip("/")}
+    if settings.public_base_url:
+        origins.add(settings.public_base_url.rstrip("/"))
+    return frozenset(origins)
+
+
+def assert_same_origin(
+    request: Request,
+    *,
+    detail: str = "cross-origin request rejected",
+    missing_origin_detail: str = "origin or referer required",
+) -> None:
+    """Reject cross-origin state-changing UI requests (CSRF mitigation)."""
+    if request.method in {"GET", "HEAD", "OPTIONS"}:
+        return
+    allowed = allowed_ui_origins(request)
+    allowed_netlocs = frozenset(
+        urlparse(origin if "://" in origin else f"http://{origin}").netloc
+        for origin in allowed
+    )
+    origin = request.headers.get("origin")
+    if origin:
+        if origin.rstrip("/") not in allowed:
+            raise HTTPException(status_code=403, detail=detail)
+        return
+    referer = request.headers.get("referer")
+    if referer:
+        ref_netloc = urlparse(referer).netloc
+        if ref_netloc and ref_netloc not in allowed_netlocs:
+            raise HTTPException(status_code=403, detail=detail)
+        return
+    raise HTTPException(status_code=403, detail=missing_origin_detail)
 
 
 @dataclass(slots=True)

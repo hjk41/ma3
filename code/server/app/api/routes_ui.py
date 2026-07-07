@@ -59,13 +59,16 @@ def _render_observatory_page(
     outcome_rows = [[item["outcome"], item["count"]] for item in stats["knowledge"]["by_outcome"]]
     task_rows = [[item["task_type"], item["count"]] for item in stats["knowledge"]["by_task_type"]]
     user_rows = [[u["id"], u["kind"], u["display_name"], u["created_at"]] for u in stats["users"]["items"]]
-    meta_pills = " ".join(
-        [
-            f'<span class="pill">DB {esc("postgresql" if is_postgres() else "sqlite")}</span>',
-            f'<span class="pill">{esc(settings.instance_id or "local")}</span>',
-            f'<span class="pill">{esc(settings.git_commit or "dev")}</span>',
-        ]
-    )
+    pills = [
+        f'<span class="pill">DB {esc("postgresql" if is_postgres() else "sqlite")}</span>',
+        f'<span class="pill">{esc(settings.instance_id or "local")}</span>',
+    ]
+    if settings.git_commit:
+        short = settings.git_commit.strip()
+        if len(short) > 12:
+            short = short[:12]
+        pills.append(f'<span class="pill" title="{esc(settings.git_commit)}">{esc(short)}</span>')
+    meta_pills = " ".join(pills)
     actions = f'<a class="btn" href="{esc(base)}/ui/observatory/stats.json">stats.json</a>'
     body = f"""
   <div class="pill-list" style="margin-bottom:16px;">{meta_pills}</div>

@@ -108,7 +108,48 @@ class Settings:
     max_keys_per_principal: int = field(
         default_factory=lambda: int(os.environ.get("MA3_MAX_KEYS_PER_PRINCIPAL", "10"))
     )
+    max_record_bytes: int = field(
+        default_factory=lambda: int(os.environ.get("MA3_MAX_RECORD_BYTES", "102400"))
+    )
+    personal_library_quota_bytes_free: int = field(
+        default_factory=lambda: int(os.environ.get("MA3_PERSONAL_LIBRARY_QUOTA_BYTES_FREE", str(10 * 1024 * 1024)))
+    )
+    personal_library_quota_bytes_paid: int = field(
+        default_factory=lambda: int(
+            os.environ.get("MA3_PERSONAL_LIBRARY_QUOTA_BYTES_PAID", str(100 * 1024 * 1024))
+        )
+    )
+    principal_storage_tiers: dict[str, str] = field(default_factory=dict)
     paid_principal_ids: tuple[str, ...] = field(default_factory=lambda: tuple())
+    # Plan library counts (user-visible; design/09 + design/24)
+    plan_max_libraries_free: int = field(
+        default_factory=lambda: int(os.environ.get("MA3_PLAN_MAX_LIBRARIES_FREE", "1"))
+    )
+    plan_max_libraries_pro: int = field(
+        default_factory=lambda: int(os.environ.get("MA3_PLAN_MAX_LIBRARIES_PRO", "5"))
+    )
+    plan_max_libraries_team: int = field(
+        default_factory=lambda: int(os.environ.get("MA3_PLAN_MAX_LIBRARIES_TEAM", "10"))
+    )
+    # Platform hard caps (abuse rails; design/24)
+    platform_max_libraries_personal_org: int = field(
+        default_factory=lambda: int(os.environ.get("MA3_PLATFORM_MAX_LIBRARIES_PERSONAL_ORG", "100"))
+    )
+    platform_max_libraries_team_org: int = field(
+        default_factory=lambda: int(os.environ.get("MA3_PLATFORM_MAX_LIBRARIES_TEAM_ORG", "1000"))
+    )
+    platform_max_team_orgs_owned: int = field(
+        default_factory=lambda: int(os.environ.get("MA3_PLATFORM_MAX_TEAM_ORGS_OWNED", "100"))
+    )
+    plan_max_team_orgs_owned_free: int = field(
+        default_factory=lambda: int(os.environ.get("MA3_PLAN_MAX_TEAM_ORGS_OWNED_FREE", "0"))
+    )
+    plan_max_team_orgs_owned_pro: int = field(
+        default_factory=lambda: int(os.environ.get("MA3_PLAN_MAX_TEAM_ORGS_OWNED_PRO", "1"))
+    )
+    platform_max_org_memberships: int = field(
+        default_factory=lambda: int(os.environ.get("MA3_PLATFORM_MAX_ORG_MEMBERSHIPS", "999"))
+    )
     api_key_encryption_secret: str = field(
         default_factory=lambda: _env_str("MA3_API_KEY_ENCRYPTION_SECRET", "")
     )
@@ -145,6 +186,15 @@ class Settings:
                 self,
                 "paid_principal_ids",
                 tuple(item.strip() for item in raw_paid.split(",") if item.strip()),
+            )
+        raw_storage_tiers = os.environ.get("MA3_PRINCIPAL_STORAGE_TIERS", "")
+        if raw_storage_tiers.strip():
+            from app.services.storage_quota_service import parse_principal_storage_tier_env
+
+            object.__setattr__(
+                self,
+                "principal_storage_tiers",
+                parse_principal_storage_tier_env(raw_storage_tiers),
             )
         ma3_hf_home = os.environ.get("MA3_HF_HOME", "").strip()
         if ma3_hf_home and not os.environ.get("HF_HOME", "").strip():

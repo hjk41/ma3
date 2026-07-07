@@ -58,14 +58,50 @@ def test_query_overrides_cookie_to_zh_cn(authing_portal_client):
     assert "ma3_locale=zh-CN" in response.headers.get("set-cookie", "")
 
 
-def test_accept_language_fallback_english(authing_portal_client):
-    response = authing_portal_client.get(
+def test_first_visit_sets_zh_cn_cookie(authing_portal_client):
+    client = authing_portal_client
+    client.cookies.clear()
+    response = client.get("/ui/me/")
+    assert response.status_code == 200
+    assert "ma3_locale=zh-CN" in response.headers.get("set-cookie", "")
+
+
+def test_accept_language_used_when_no_manual_locale(authing_portal_client):
+    client = authing_portal_client
+    client.cookies.clear()
+    response = client.get(
         "/ui/me/",
         headers={"Accept-Language": "en-US,en;q=0.8,zh-CN;q=0.5"},
     )
     assert response.status_code == 200
     assert '<html lang="en-US">' in response.text
     assert "Home" in response.text
+    assert "ma3_locale=en-US" in response.headers.get("set-cookie", "")
+
+
+def test_accept_language_zh_when_no_manual_locale(authing_portal_client):
+    client = authing_portal_client
+    client.cookies.clear()
+    response = client.get(
+        "/ui/me/",
+        headers={"Accept-Language": "zh-CN,zh;q=0.9,en;q=0.5"},
+    )
+    assert response.status_code == 200
+    assert '<html lang="zh-CN">' in response.text
+    assert "我的主页" in response.text
+    assert "ma3_locale=zh-CN" in response.headers.get("set-cookie", "")
+
+
+def test_cookie_overrides_accept_language(authing_portal_client):
+    client = authing_portal_client
+    client.cookies.set("ma3_locale", "zh-CN")
+    response = client.get(
+        "/ui/me/",
+        headers={"Accept-Language": "en-US,en;q=0.9"},
+    )
+    assert response.status_code == 200
+    assert '<html lang="zh-CN">' in response.text
+    assert "我的主页" in response.text
 
 
 def test_unsupported_locale_falls_back_to_zh_cn(authing_portal_client):
@@ -108,8 +144,9 @@ def test_catalog_completeness():
     en = catalog("en-US")
     assert set(zh) == set(en)
     for key in zh:
-        assert isinstance(zh[key], str) and zh[key]
-        assert isinstance(en[key], str) and en[key]
+        assert isinstance(zh[key], str) and isinstance(en[key], str)
+        if not key.endswith("_suffix"):
+            assert zh[key] and en[key]
 
 
 def test_phase1_pages_have_no_missing_key_markers(authing_portal_client):

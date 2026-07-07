@@ -10,8 +10,8 @@
    - 授权模式：`authorization_code`
    - 返回类型：`code`
    - 回调 URL（示例）：
+     - `https://ma3.io/auth/callback`（生产）
      - `http://192.168.31.202:8000/auth/callback`（内网 staging）
-     - `https://ma3.yourdomain.com/auth/callback`（生产）
 4. **登录控制 → 注册/登录方式**：
    - 开启 **微信**（需微信开放平台网站应用 + 备案域名）
    - 开启 **手机号验证码**（配阿里云/腾讯云短信或 Authing 短信）
@@ -31,15 +31,18 @@ export MA3_AUTHING_APP_ID=your_app_id
 export MA3_AUTHING_APP_SECRET=your_app_secret
 
 # 对外 URL（用于拼回调；必须与 Authing 回调白名单一致）
-export MA3_PUBLIC_BASE_URL=http://192.168.31.202:8000
+export MA3_PUBLIC_BASE_URL=https://ma3.io
 
 # 可选：显式指定回调（默认 ${MA3_PUBLIC_BASE_URL}/auth/callback）
-# export MA3_AUTHING_REDIRECT_URI=http://192.168.31.202:8000/auth/callback
+# export MA3_AUTHING_REDIRECT_URI=https://ma3.io/auth/callback
 
 # 可选：Observatory 管理员（sub / 手机 / 邮箱，逗号分隔）
 export MA3_AUTH_ADMIN_USERS=13800138000,admin@example.com
 
-# MCP Agent 仍用 dev key（仅 LAN；公网请关闭）
+# 部署版本（Observatory 显示 git 短 hash；不设则不显示 commit pill）
+export MA3_GIT_COMMIT=$(git rev-parse --short HEAD)
+
+# MCP Agent 仍用 dev key（仅 LAN；公网 SaaS 必须关闭）
 # export MA3_DEV_AUTH=1
 # export MA3_DEV_API_KEY=...
 ```

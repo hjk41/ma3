@@ -6,7 +6,7 @@ import os
 import re
 import sys
 
-BASE_URL = os.environ.get("MA3_E2E_BASE_URL", "http://192.168.31.202:8000").rstrip("/")
+BASE_URL = os.environ.get("MA3_E2E_BASE_URL", "https://ma3.io").rstrip("/")
 TEST_USER = os.environ.get("AUTHING_TEST_USER", "")
 TEST_PASS = os.environ.get("AUTHING_TEST_PASS", "")
 TIMEOUT_MS = int(os.environ.get("MA3_E2E_TIMEOUT_MS", "60000"))

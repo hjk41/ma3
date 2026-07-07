@@ -36,13 +36,6 @@ def _patch_session(monkeypatch, user) -> None:
     monkeypatch.setattr(feedback_service, "resolve_session_user", resolver)
 
 
-def test_root_redirects_to_me(isolated_client):
-    for path in ("/", "/ui", "/ui/"):
-        response = isolated_client.get(path, follow_redirects=False)
-        assert response.status_code == 302
-        assert response.headers["location"] == "/ui/me/"
-
-
 def test_me_requires_login_when_authing_enabled(isolated_client, monkeypatch):
     _enable_authing(monkeypatch)
     _patch_session(monkeypatch, None)

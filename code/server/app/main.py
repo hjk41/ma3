@@ -7,6 +7,7 @@ from contextlib import asynccontextmanager, suppress
 from fastapi import FastAPI
 
 from app.api.routes_portal import router as portal_router
+from app.api.routes_org_portal import router as org_portal_router
 from app.api.routes_auth import router as auth_router
 from app.api.routes_client import router as client_router
 from app.api.routes_health import router as health_router
@@ -16,7 +17,6 @@ from app.api.routes_ui import router as ui_router
 from app.core.config import settings
 from app.services.portal_service import validate_authing_admin_config
 from app.storage.db import initialize_database
-from fastapi.responses import RedirectResponse
 
 logger = logging.getLogger(__name__)
 
@@ -39,6 +39,13 @@ async def _buffer_publish_loop() -> None:
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
     validate_authing_admin_config()
+    if settings.dev_auth and settings.authing_configured:
+        public = (settings.public_base_url or "").lower()
+        if public.startswith("https://") and "localhost" not in public and "127.0.0.1" not in public:
+            logger.warning(
+                "MA3_DEV_AUTH=1 with Authing on a public URL (%s) — disable dev_auth on SaaS (see deployment-authing.md)",
+                settings.public_base_url,
+            )
     initialize_database()
     from app.storage import db
 
@@ -74,14 +81,8 @@ app = FastAPI(
 app.include_router(health_router)
 app.include_router(auth_router)
 app.include_router(portal_router)
+app.include_router(org_portal_router)
 app.include_router(keys_router)
 app.include_router(mcp_router)
 app.include_router(client_router)
 app.include_router(ui_router)
-
-
-@app.get("/")
-@app.get("/ui")
-@app.get("/ui/")
-def root_redirect() -> RedirectResponse:
-    return RedirectResponse("/ui/me/", status_code=302)

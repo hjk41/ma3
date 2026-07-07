@@ -3,12 +3,11 @@ from __future__ import annotations
 import json
 import logging
 from typing import Any
-from urllib.parse import urlparse
-
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
 from pydantic import BaseModel, Field
 
+from app.core.security import assert_same_origin as _assert_same_origin
 from app.api.ui_session import redirect_if_setup_required
 from app.api.ui_i18n import html_response, tr, ui_locale
 from app.api.ui_theme import badge, esc, render_page, render_table
@@ -44,32 +43,6 @@ class CreateKeyBody(BaseModel):
 class UpdateKeyBody(BaseModel):
     label: str | None = Field(default=None, max_length=120)
     grants: list[KeyGrantBody] | None = None
-
-
-def _expected_origin(request: Request) -> str:
-    if settings.public_base_url:
-        return settings.public_base_url.rstrip("/")
-    return str(request.base_url).rstrip("/")
-
-
-def _assert_same_origin(request: Request) -> None:
-    """Reject cross-origin state-changing key requests (CSRF mitigation)."""
-    if request.method in {"GET", "HEAD", "OPTIONS"}:
-        return
-    expected = _expected_origin(request)
-    origin = request.headers.get("origin")
-    if origin:
-        if origin.rstrip("/") != expected:
-            raise HTTPException(status_code=403, detail="cross-origin request rejected")
-        return
-    referer = request.headers.get("referer")
-    if referer:
-        ref = urlparse(referer)
-        exp = urlparse(expected if "://" in expected else f"http://{expected}")
-        if ref.netloc and exp.netloc and ref.netloc != exp.netloc:
-            raise HTTPException(status_code=403, detail="cross-origin request rejected")
-        return
-    raise HTTPException(status_code=403, detail="origin or referer required for key management")
 
 
 def _require_authing_configured() -> None:

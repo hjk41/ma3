@@ -5,7 +5,7 @@
 
 **策略模板（必读）**：`GET /client/templates/ma3-agent-policy.mdc`  
 **设计文档**：`docs/adr/009-client-sync-scheme-b.md`、`docs/04-target-architecture-draft.md` §3  
-**示例 ma3 地址**：`http://192.168.31.202:8000`（按你们环境替换）
+**示例 ma3 地址**：`https://ma3.io`（按你们环境替换）
 
 > **ma3 v1（ADR-003）**：仅 **MCP + policy**。无 `install.sh`、无 `ma3_client.py`、无 CLI 插件。
 > 客户端升级 = 读 MCP `server` 块 → curl 拉取 `/client/*` → 覆盖本地规则 → 重启 agent。
@@ -21,12 +21,12 @@
 若用户要求接入 ma3，请按顺序完成 **你所在运行时** 对应的小节，然后验证 MCP 工具可见。
 
 1. 向用户确认或从上下文取得：
-   - `MA3_BASE_URL`（如 `http://192.168.31.202:8000`）
+   - `MA3_BASE_URL`（如 `https://ma3.io`）
    - `MA3_API_KEY`（writer 权限；LAN dev 实例常用 `ma3dev`，生产由管理员发放）
 2. **一次性 bootstrap**（agent 填 env，ma3 不维护各 runtime 预设）：
    ```bash
    mkdir -p ~/.ma3/bin ~/.ma3/lib
-   MA3_BASE_URL=http://192.168.31.202:8000
+   MA3_BASE_URL=https://ma3.io
    curl -fsSL "$MA3_BASE_URL/client/templates/ma3-client.env.example" -o ~/.ma3/ma3-client.env
    # 编辑 ~/.ma3/ma3-client.env：MA3_BASE_URL、策略安装路径注释等
    curl -fsSL "$MA3_BASE_URL/client/scripts/sync_ma3_client.py" -o ~/.ma3/bin/sync_ma3_client.py
@@ -128,7 +128,7 @@ MCP `initialize` 的 `serverInfo` 也含 `min_client_version` / `recommended_cli
 {
   "mcpServers": {
     "ma3": {
-      "url": "http://192.168.31.202:8000/mcp",
+      "url": "https://ma3.io/mcp",
       "headers": {
         "X-API-Key": "ma3dev"
       }
@@ -143,7 +143,7 @@ MCP `initialize` 的 `serverInfo` 也含 `min_client_version` / `recommended_cli
 
 ```bash
 mkdir -p ~/.cursor/rules
-curl -fsSL http://192.168.31.202:8000/client/templates/ma3-agent-policy.mdc \
+curl -fsSL https://ma3.io/client/templates/ma3-agent-policy.mdc \
   -o ~/.cursor/rules/ma3-agent-policy.mdc
 ```
 
@@ -156,7 +156,7 @@ curl -fsSL http://192.168.31.202:8000/client/templates/ma3-agent-policy.mdc \
 ```bash
 claude mcp remove ma3 2>/dev/null || true
 claude mcp add --scope user --transport http ma3 \
-  "http://192.168.31.202:8000/mcp" \
+  "https://ma3.io/mcp" \
   --header "X-API-Key: ma3dev"
 ```
 
@@ -173,7 +173,7 @@ claude mcp add --scope user --transport http ma3 \
   "mcpServers": {
     "ma3": {
       "type": "http",
-      "url": "http://192.168.31.202:8000/mcp",
+      "url": "https://ma3.io/mcp",
       "headers": { "X-API-Key": "ma3dev" },
       "disabled": false
     }
@@ -191,7 +191,7 @@ claude mcp add --scope user --transport http ma3 \
 
 ```toml
 [mcp_servers.ma3]
-url = "http://192.168.31.202:8000/mcp"
+url = "https://ma3.io/mcp"
 enabled = true
 
 [mcp_servers.ma3.http_headers]
@@ -207,7 +207,7 @@ X-API-Key = "ma3dev"
 ```yaml
 mcp_servers:
   ma3:
-    url: "http://192.168.31.202:8000/mcp"
+    url: "https://ma3.io/mcp"
     headers:
       X-API-Key: "ma3dev"
 ```
@@ -233,11 +233,11 @@ mcp_servers:
 ## 验证
 
 ```bash
-curl -sf http://192.168.31.202:8000/healthz
-curl -sf http://192.168.31.202:8000/client/manifest.json | jq .skill_bundle_version
+curl -sf https://ma3.io/healthz
+curl -sf https://ma3.io/client/manifest.json | jq .skill_bundle_version
 curl -sf -H "X-API-Key: ma3dev" -H "Content-Type: application/json" \
   -d '{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}' \
-  http://192.168.31.202:8000/mcp | jq '.result.tools[].name'
+  https://ma3.io/mcp | jq '.result.tools[].name'
 ```
 
 ---

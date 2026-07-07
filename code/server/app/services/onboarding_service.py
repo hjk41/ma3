@@ -16,6 +16,7 @@ from app.storage import db
 logger = logging.getLogger(__name__)
 
 PERSONAL_LIB_PREFIX = "lib_personal_"
+PERSONAL_ORG_PREFIX = "org_personal_"
 KEY_ROLES = frozenset({"reader", "writer"})
 GrantRoleChoice = Literal["none", "reader", "writer"]
 
@@ -24,17 +25,52 @@ def personal_library_id(principal_id: str) -> str:
     return PERSONAL_LIB_PREFIX + hashlib.sha256(principal_id.encode("utf-8")).hexdigest()[:12]
 
 
+def personal_org_id(principal_id: str) -> str:
+    return PERSONAL_ORG_PREFIX + hashlib.sha256(principal_id.encode("utf-8")).hexdigest()[:12]
+
+
 def is_paid_principal(principal_id: str) -> bool:
     return principal_id in settings.paid_principal_ids
 
 
-def ensure_personal_library(principal_id: str, display_name: str) -> dict[str, Any]:
+def ensure_personal_org(principal_id: str, display_name: str) -> dict[str, Any]:
+    """Idempotent personal org + admin membership; links personal library to org."""
+    org_id = personal_org_id(principal_id)
+    org_name = f"{display_name} 的个人账户" if display_name else "Personal account"
+    existing = db.get_organization(org_id)
+    if not existing:
+        db.create_organization(
+            org_id,
+            name=org_name,
+            kind="personal",
+            owner_principal_id=principal_id,
+        )
+        db.add_org_member(org_id=org_id, principal_id=principal_id, role="admin")
+    lib = ensure_personal_library(principal_id, display_name, org_id=org_id)
+    return {
+        "org_id": org_id,
+        "name": org_name,
+        "kind": "personal",
+        "personal_library_id": lib["library_id"],
+    }
+
+
+def ensure_personal_library(
+    principal_id: str,
+    display_name: str,
+    *,
+    org_id: str | None = None,
+) -> dict[str, Any]:
     """Idempotent: find by (kind=personal, owner) first; create deterministically otherwise."""
     lib_name = f"{display_name} 的个人库"
+    target_org = org_id or personal_org_id(principal_id)
     existing = db.find_personal_library(principal_id)
     if existing:
         if existing.get("name") != lib_name:
             db.set_library_name(str(existing["library_id"]), lib_name)
+            existing = db.find_personal_library(principal_id) or existing
+        if str(existing.get("org_id") or "") != target_org:
+            db.set_library_org_id(str(existing["library_id"]), target_org)
             existing = db.find_personal_library(principal_id) or existing
         return existing
     target_id = personal_library_id(principal_id)
@@ -43,6 +79,7 @@ def ensure_personal_library(principal_id: str, display_name: str) -> dict[str, A
             target_id,
             name=lib_name,
             visibility="private",
+            org_id=target_org,
             kind="personal",
             owner_principal_id=principal_id,
         )

@@ -151,6 +151,18 @@ code, .mono {
 .card-body { padding: 20px; }
 .card-muted { color: var(--text-muted); font-size: 13px; }
 .stat-card { padding: 16px 18px; }
+.storage-meter { margin: 12px 0 4px; }
+.storage-meter-track {
+  height: 10px; border-radius: 999px; background: var(--border);
+  overflow: hidden;
+}
+.storage-meter-fill {
+  height: 100%; border-radius: 999px; background: var(--accent);
+  max-width: 100%;
+}
+.storage-meter-fill.warn { background: #d4a017; }
+.storage-meter-fill.full { background: #cf222e; }
+.storage-meter-meta { font-size: 13px; color: var(--muted); margin-top: 6px; }
 .stat-value { font-size: 28px; font-weight: 700; line-height: 1.1; letter-spacing: -0.03em; }
 .stat-label { margin-top: 6px; color: var(--text-muted); font-size: 12px; text-transform: uppercase; letter-spacing: 0.04em; }
 .table-wrap { overflow: auto; }
@@ -300,6 +312,77 @@ input[type=text]:focus, .copy-input:focus {
 .data td a.key-link { color: var(--accent); font-weight: 600; text-decoration: none; }
 .data td a.key-link:hover { text-decoration: underline; }
 .page-narrow { max-width: 1012px; }
+.landing-hero {
+  text-align: center; padding: 32px 0 48px;
+}
+.landing-hero-title {
+  font-size: 28px; line-height: 1.25; font-weight: 700; color: #24292f;
+  max-width: 720px; margin: 0 auto 16px;
+}
+.landing-hero-lead {
+  font-size: 18px; line-height: 1.5; color: #57606a;
+  max-width: 640px; margin: 0 auto 24px;
+}
+.landing-hero-actions {
+  display: flex; flex-wrap: wrap; gap: 12px; justify-content: center;
+}
+.landing-section + .landing-section { margin-top: 48px; }
+.landing-section-title {
+  font-size: 20px; font-weight: 600; margin: 0 0 16px; color: #24292f;
+}
+.landing-section-lead {
+  font-size: 15px; color: #57606a; margin: -8px 0 16px; line-height: 1.5;
+}
+.landing-problem-list {
+  margin: 0; padding-left: 20px; color: #57606a;
+}
+.landing-problem-list li { margin: 10px 0; line-height: 1.5; }
+.landing-compare-grid {
+  display: grid; grid-template-columns: 1fr 1fr; gap: 16px;
+}
+.landing-compare-grid h3 {
+  font-size: 14px; font-weight: 600; margin: 0 0 12px; color: #24292f;
+}
+.landing-compare-grid ul {
+  margin: 0; padding-left: 18px; font-size: 14px; color: #57606a;
+}
+.landing-compare-grid li { margin: 6px 0; }
+.landing-flow {
+  display: flex; flex-wrap: wrap; gap: 12px; list-style: none; padding: 0; margin: 0;
+}
+.landing-flow li {
+  flex: 1 1 140px; display: flex; gap: 10px; align-items: flex-start;
+  padding: 12px; background: #f6f8fa; border: 1px solid #d0d7de; border-radius: 6px;
+}
+.landing-flow-step {
+  width: 24px; height: 24px; border-radius: 50%; background: #0969da; color: #fff;
+  font-size: 12px; font-weight: 700; display: flex; align-items: center; justify-content: center;
+  flex-shrink: 0;
+}
+.landing-flow-text { font-size: 14px; color: #24292f; line-height: 1.4; }
+.landing-feature-grid {
+  display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px;
+}
+.landing-feature-card h3 {
+  font-size: 14px; font-weight: 600; margin: 0 0 8px; color: #24292f;
+}
+.landing-feature-card p {
+  margin: 0; font-size: 13px; color: #57606a; line-height: 1.5;
+}
+.landing-status-meta {
+  margin-top: 12px; font-size: 13px; color: #57606a;
+}
+.landing-numbered-steps {
+  margin: 0; padding-left: 20px; color: #57606a;
+}
+.landing-numbered-steps li { margin: 10px 0; line-height: 1.5; }
+.landing-getstarted-cta { margin-top: 20px; }
+@media (max-width: 768px) {
+  .landing-hero-title { font-size: 24px; }
+  .landing-section + .landing-section { margin-top: 32px; }
+  .landing-compare-grid, .landing-feature-grid { grid-template-columns: 1fr; }
+  .landing-hero-actions .btn { width: 100%; justify-content: center; }
+}
 .nav-admin { opacity: 0.75; font-weight: 400 !important; }
 .subnav-links {
   display: flex; gap: 8px; margin-bottom: 20px;
@@ -423,6 +506,7 @@ def portal_nav_items(base: str, *, is_admin: bool, locale: str = DEFAULT_LOCALE)
     items: list[tuple[str, str, str, bool]] = [
         ("me", tr(locale, "nav.me"), f"{base}/ui/me/", False),
         ("libraries", tr(locale, "nav.libraries"), f"{base}/ui/libraries/", False),
+        ("orgs", tr(locale, "nav.orgs"), f"{base}/ui/orgs/", False),
         ("records", tr(locale, "nav.records"), f"{base}/ui/me/writes/", False),
         ("votes", tr(locale, "nav.votes"), f"{base}/ui/me/votes/", False),
         ("keys", tr(locale, "nav.keys"), f"{base}/ui/keys/", False),
@@ -592,6 +676,7 @@ def render_page(
     brand_href: str | None = None,
     show_minimal_header: bool = False,
     header_extra_html: str = "",
+    meta_description: str = "",
     locale: str = DEFAULT_LOCALE,
     request: Request | None = None,
 ) -> str:
@@ -623,12 +708,17 @@ def render_page(
       </div>
       <div class="actions">{actions_html}</div>
     </div>"""
+    meta_desc_html = (
+        f'  <meta name="description" content="{esc(meta_description)}"/>\n'
+        if meta_description
+        else ""
+    )
     return f"""<!DOCTYPE html>
 <html lang="{esc(locale)}">
 <head>
   <meta charset="utf-8"/>
   <meta name="viewport" content="width=device-width, initial-scale=1"/>
-  <title>{esc(title)} · ma3</title>
+{meta_desc_html}  <title>{esc(title)} · ma3</title>
   <style>{MA3_CSS}</style>
 </head>
 <body>
@@ -712,3 +802,21 @@ def render_stat_cards(items: Iterable[tuple[str, Any] | tuple[str, Any, str]]) -
 
 def badge(text: str, kind: str = "muted") -> str:
     return f'<span class="badge {esc(kind)}">{esc(text)}</span>'
+
+
+def render_storage_meter(*, used_bytes: int, limit_bytes: int | None, label: str) -> str:
+    used = max(0, int(used_bytes))
+    if limit_bytes is None or limit_bytes <= 0:
+        pct = 0
+        meta = label
+        fill_class = ""
+    else:
+        pct = min(100, int(round(100 * used / limit_bytes)))
+        fill_class = " full" if pct >= 100 else (" warn" if pct >= 85 else "")
+        meta = label
+    return f"""
+<div class="storage-meter">
+  <div class="storage-meter-track"><div class="storage-meter-fill{fill_class}" style="width:{pct}%;"></div></div>
+  <div class="storage-meter-meta">{esc(meta)}</div>
+</div>"""
+
