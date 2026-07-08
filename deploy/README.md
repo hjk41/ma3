@@ -9,76 +9,87 @@
 
 ---
 
-## 202 主机快速部署
+## 通用部署脚本 + 本地环境配置
 
-```bash
-# 从开发机同步并部署
-./deploy/deploy_ma3_v1_202.sh
+只有**一份通用脚本** `deploy/deploy.sh` 进 git；各环境的具体配置放在**本地、不进 git**的
+`*.env` 文件里（真实主机/路径/实例名）。仓库只提交模板 `deploy/deploy.env.sample`。
+
+```
+deploy/
+├── deploy.sh            # 通用部署驱动（进 git）
+├── deploy.env.sample    # 配置模板（进 git）
+├── common/verify_ma3.sh # 共享验收，按 MA3_* 变量参数化（进 git）
+├── README.md            # 本文（进 git）
+├── .gitignore           # 忽略本地 *.env 与遗留脚本
+├── deploy.202.env       # 本地：LAN 202 配置（不进 git）
+└── deploy.ma3.io.env    # 本地：ma3.io 生产配置（不进 git）
 ```
 
-部署脚本会在远端启动 uvicorn 并调用 `deploy/verify_ma3_v1.sh`。
+用法：
 
-### 环境变量（202）
+```bash
+./deploy/deploy.sh deploy/deploy.202.env       # 部署到 LAN 202
+./deploy/deploy.sh deploy/deploy.ma3.io.env    # 部署到 ma3.io 生产
+# 或： DEPLOY_CONFIG=deploy/deploy.202.env ./deploy/deploy.sh
+```
+
+新环境：复制 `deploy.env.sample` 为本地 `deploy.<name>.env`，填值即可。
+
+### 两种模式（配置里的 `ENV_MODE`）
+
+| | `regenerate`（LAN/dev，如 202） | `preserve`（生产，如 ma3.io） |
+|---|---|---|
+| 远端 `ma3.env` | 从 `LEGACY_ENV_FILE` + 配置**重新生成**（实例名、public base、dev auth） | **保留远端 env**，只注入 `MA3_GIT_COMMIT` |
+| dev 后门 | `DEV_AUTH` 可设 `1`（LAN 可用 `ma3dev`） | 启动前断言 `MA3_DEV_AUTH≠1`，否则中止 |
+| legacy 回填 | `RUN_MIGRATION=1` 跑 backfill | 不迁移 |
+| uvicorn bind | `0.0.0.0`（直连 LAN） | `127.0.0.1`（Caddy 反代 443） |
+| 验收 | `common/verify_ma3.sh`（含 pytest，用 `ma3dev`） | 内联生产 smoke（dev_auth off、`ma3dev` 被拒、Authing 回调、tools/list） |
+
+### 防串环境的护栏
+
+- **主机守卫 `ALLOWED_HOSTS`**：`REMOTE_HOST` 不在允许列表就 `exit 2`。202 配置永远无法推到 ma3.io。
+- **preserve 模式保留远端 `ma3.env`**：rsync `--exclude ma3.env`，脚本不 source 任何 legacy env、
+  不重写 env，只 `sed` 更新 `MA3_GIT_COMMIT`——这堵住了历史上把 202 配置写进 ma3.io 的根因
+  （公网开 dev 后门、`public_base_url` 指向内网、内网代理搞坏 Authing）。
+- **preserve 模式启动前断言**：`MA3_DEV_AUTH≠1`、`MA3_INSTANCE_ID`、`MA3_PUBLIC_BASE_URL`、无 LAN 代理变量。
+
+### 环境变量文件（202 运行时）
 
 | 文件 | 用途 |
 |------|------|
-| `/home/hct/ma3/ma3.env` | Postgres、Authing、HF 缓存路径 |
-| `/home/hct/ma3_deploy/ma3.env` | v1 运行时（`HF_HOME`、`MA3_DEV_AUTH` 等） |
+| `/home/hct/ma3/ma3.env` | Postgres、Authing、HF 缓存路径（`regenerate` 的 `LEGACY_ENV_FILE`） |
+| `/home/hct/ma3_deploy/ma3.env` | v1 运行时（由 `deploy.sh` 在 `regenerate` 模式生成） |
 
-**重启时必须同时 source 两个文件：**
-
-```bash
-set -a
-source /home/hct/ma3/ma3.env
-source /home/hct/ma3_deploy/ma3.env
-set +a
-export MA3_SKILL_VERSION=1.5.1
-cd /home/hct/ma3_deploy/code/server
-# embedding 启用时：启动会先加载模型，healthz 可能 1–3 分钟才就绪
-nohup .venv/bin/python -m uvicorn app.main:app --host 0.0.0.0 --port 8000 --app-dir . \
-  >> /tmp/ma3-v1-uvicorn.log 2>&1 &
-```
-
-**不要**在 `ma3.env` 中设置 `MA3_DISABLE_EMBEDDINGS=1`（除非刻意关闭 vector 搜索）。  
-确保 `HF_HOME=/home/hct/ma3/data/hf-cache`（或 `MA3_HF_HOME`，代码会自动映射）。
+生产 `ma3.io` 的 `ma3.env` 由人工维护、含 secret，不进 git，由 `preserve` 模式保留不动。
 
 ---
 
-## 部署后验收清单
+## 部署后验收（共享脚本）
 
-在 **202 本机**或能访问 `192.168.31.202:8000` 的环境执行：
+`deploy/common/verify_ma3.sh` 按环境变量参数化，`deploy.sh` 的 `regenerate` 模式会自动调用它；
+也可手动跑：
 
 ```bash
 export MA3_BASE_URL=http://127.0.0.1:8000   # 远端本机
-export MA3_API_KEY=ma3dev
-export MA3_READY_TIMEOUT=180                  # embedding 冷启动需更长时间
-bash deploy/verify_ma3_v1.sh
+export MA3_API_KEY=ma3dev                    # 仅 dev_auth=1 的环境（如 202）
+export MA3_EXPECT_INSTANCE_ID=ma3-v1-202     # ma3.io 用 ma3-v1-hk
+export MA3_EXPECT_ROOT_REDIRECT=/ui/me/      # ma3.io 落地页用 /ui/home/
+export MA3_READY_TIMEOUT=180
+bash deploy/common/verify_ma3.sh
 ```
 
-`verify_ma3_v1.sh` 会自动：
+`verify_ma3.sh` 会：
 
-1. 等待 `/healthz` 就绪（默认最多 180s）
-2. 跑 `tests/integration/test_deploy_verification.py`（MCP、doctor、搜索、client 升级等）
-3. 跑 UI/Auth smoke（登录跳转、Observatory/Keys 门禁、manifest、MCP tools/list）
+1. 等待 `/healthz` 就绪
+2. UI/Auth smoke（根跳转、Observatory/Keys 门禁、manifest、MCP tools/list）
+3. `tests/integration/test_deploy_verification.py` 等（MCP、doctor、搜索、client 升级、门户页）
 
-### 部署后 inventory（自动）
+### 部署后 inventory（regenerate 模式自动）
 
-`deploy_ma3_v1_202.sh` 会：
-
-1. **部署前** — `scripts/db_inventory.py` 快照（v1 + legacy 计数、`legacy_importable`）
+1. **部署前** — `scripts/db_inventory.py` 快照
 2. **部署中** — `MA3_MIGRATE_BACKFILL=1` 将 `legacy_records` upsert 进 v1 `records`
-3. **部署后** — 再次 inventory，断言 v1 未减少且 legacy 可导入条数已并入
-4. **pytest 门槛** — `MA3_EXPECT_MIN_RECORDS` 取自 post-deploy 实际 `v1_records`（不再硬编码 30）
-
-手动：
-
-```bash
-cd code/server
-export MA3_DATABASE_URL=postgresql://...
-.venv/bin/python scripts/db_inventory.py -o /tmp/pre.json
-MA3_MIGRATE_BACKFILL=1 MA3_DISABLE_EMBEDDINGS=1 .venv/bin/python scripts/migrate_legacy_pg.py
-.venv/bin/python scripts/db_inventory.py --compare /tmp/pre.json --backfill /tmp/backfill.json
-```
+3. **部署后** — 再次 inventory，断言 v1 未减少
+4. **pytest 门槛** — `MA3_EXPECT_MIN_RECORDS` 取自 post-deploy 实际 `v1_records`
 
 ### 手动补充（可选）
 
@@ -87,21 +98,21 @@ MA3_MIGRATE_BACKFILL=1 MA3_DISABLE_EMBEDDINGS=1 .venv/bin/python scripts/migrate
 | vector 已启用 | `curl -s $MA3_BASE_URL/healthz \| jq .features` 含 `"vector"` |
 | 登录直跳 Authing | `curl -sI $MA3_BASE_URL/auth/login` → `302`，`Location` 含 `authing.cn` |
 | 未登录门禁 | `/ui/observatory/`、`/ui/keys/` → `302` → `/auth/login` |
-| Authing 浏览器登录 + Key 创建 | 运行 `code/server/scripts/e2e_authing_ui.py`（需 `AUTHING_TEST_USER/PASS`）；`verify_ma3_v1.sh` 在变量已设置时会自动跑 |
+| Authing 浏览器登录 + Key 创建 | `code/server/scripts/e2e_authing_ui.py`（需 `AUTHING_TEST_USER/PASS`） |
 
 ### 已知可忽略项
 
-- `test_deploy_database_migration_state`：若 DB 已完成迁移且 `legacy_records` 表已不存在，该用例会失败；不影响线上功能。全新迁移环境才需此表存在。
+- `test_deploy_database_migration_state`：DB 已迁移且 `legacy_records` 表不存在时会失败；不影响线上。
 
 ---
 
 ## 向用户汇报模板
 
 ```
-已部署到 http://192.168.31.202:8000（skill x.x.x）
+已部署到 <目标 URL>（skill x.x.x, commit xxxxxxx）
 
 验收：
-- healthz OK，features: [...]
+- healthz OK，features: [...]（生产不含 dev_auth）
 - MCP 13 tools，ma3_context/whoami/doctor 正常
 - 登录 /auth/login → Authing；Observatory/Keys 未登录 302
 - [若测了] 浏览器 Authing 登录 → Observatory 正常
@@ -113,9 +124,11 @@ MA3_MIGRATE_BACKFILL=1 MA3_DISABLE_EMBEDDINGS=1 .venv/bin/python scripts/migrate
 
 ## 相关脚本
 
-| 脚本 | 说明 |
-|------|------|
-| `deploy/deploy_ma3_v1_202.sh` | rsync + 远端迁移 + 启动 + 验收 |
-| `deploy/verify_ma3_v1.sh` | 部署后自动化验收（**部署方必须跑**） |
-| `code/eval/scenarios/agent-client-sync/scripts/restart_host_ma3.sh` | 仅重启（skill 版本升级测试用） |
-| `code/server/scripts/e2e_authing_ui.py` | 浏览器级 Authing 登录/退出 E2E |
+| 脚本 | 状态 | 说明 |
+|------|------|------|
+| `deploy/deploy.sh` | git | 通用部署驱动（config 决定环境与模式） |
+| `deploy/deploy.env.sample` | git | 配置模板 |
+| `deploy/common/verify_ma3.sh` | git | 部署后自动化验收（**部署方必须跑**） |
+| `deploy/deploy.*.env` | 本地 | 各环境真实配置（不进 git） |
+| `code/eval/scenarios/agent-client-sync/scripts/restart_host_ma3.sh` | git | 仅重启（skill 版本升级测试） |
+| `code/server/scripts/e2e_authing_ui.py` | git | 浏览器级 Authing 登录/退出 E2E |

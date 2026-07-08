@@ -14,7 +14,7 @@ ma3/
 └── ma3.env              本地 env（勿提交 secret）
 ```
 
-**202 生产运行目录**（与源码 checkout `~/ma3` 分离）：`~/ma3_deploy/` — 由 `deploy/deploy_ma3_v1_202.sh` rsync 同步并在此启动 uvicorn。
+**202 生产运行目录**（与源码 checkout `~/ma3` 分离）：`~/ma3_deploy/` — 由通用脚本 `deploy/deploy.sh deploy/deploy.202.env` rsync 同步并在此启动 uvicorn。ma3.io 生产用 `deploy/deploy.sh deploy/deploy.ma3.io.env`（`/opt/ma3_deploy`）。
 
 ## Server 模块（目标）
 

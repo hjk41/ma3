@@ -34,7 +34,7 @@ cd code/server
 | 层次 | 工具 | 覆盖 |
 |------|------|------|
 | L1 自动化 HTML | pytest + TestClient | 路由、表头链接、批量表单、文案、403/302 |
-| L2 部署 smoke | `deploy/verify_ma3_v1.sh` | healthz、匿名页、MCP 工具数 |
+| L2 部署 smoke | `deploy/common/verify_ma3.sh` | healthz、匿名页、MCP 工具数 |
 | L3 浏览器 E2E | `scripts/e2e_authing_ui.py`（Playwright） | Authing 真登录、Keys 表单 |
 | L4 人工目视 | owner checklist（见各文档末尾） | 布局间距、移动端换行 |
 

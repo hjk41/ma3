@@ -32,8 +32,9 @@
 ## 在 202 上跑
 
 ```bash
-bash deploy/deploy_and_test_agents_202.sh
-# 或
+# 先部署（通用脚本 + 本地 202 配置，见 deploy/README.md）
+./deploy/deploy.sh deploy/deploy.202.env
+# 再跑本 scenario
 cd code/eval/scenarios/agent-client-sync && bash run.sh
 ```
 

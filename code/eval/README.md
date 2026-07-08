@@ -29,10 +29,11 @@ bash run_all_scenarios_verify.sh
 bash run_scenario_verify.sh mihomo-proxy
 ```
 
-On 202:
+On 202 (deploy first, then run the scenario verifies):
 
 ```bash
-bash deploy/run_eval_scenarios_202.sh
+./deploy/deploy.sh deploy/deploy.202.env
+cd code/eval/scripts && bash run_all_scenarios_verify.sh
 ```
 
 ## Full agent eval

@@ -204,7 +204,7 @@ cd code/server
 部署到 202 后追加：
 
 ```bash
-bash deploy/verify_ma3_v1.sh
+bash deploy/common/verify_ma3.sh
 # 可选：AUTHING_TEST_USER/PASS 设置时跑 e2e_authing_ui.py
 ```
 

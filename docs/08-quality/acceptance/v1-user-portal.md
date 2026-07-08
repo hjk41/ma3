@@ -95,5 +95,5 @@ Implementation true source: [../../04-frontend/information-architecture.md](../.
 
 ```text
 pytest tests/ → 246 passed (2026-07-05, includes P13–P19 integration tests)
-deploy_ma3_v1_202.sh → 192.168.31.202:8000
+deploy/deploy.sh deploy/deploy.202.env → 192.168.31.202:8000
 ```

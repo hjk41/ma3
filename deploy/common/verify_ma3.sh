@@ -1,10 +1,12 @@
 #!/usr/bin/env bash
-# Post-deploy verification for ma3_v1. Run on 202 after deploy or from dev machine against remote.
+# Post-deploy verification for ma3. Env-agnostic: parameterized via MA3_* vars so the
+# same script serves every environment. Run on the remote box or from a dev machine.
 # Policy: deploy/README.md — must pass before reporting "deploy complete" to users.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-SERVER_DIR="${SERVER_DIR:-${SCRIPT_DIR}/../code/server}"
+# deploy/common/ -> repo root is two levels up
+SERVER_DIR="${SERVER_DIR:-${SCRIPT_DIR}/../../code/server}"
 REMOTE_DIR="${REMOTE_DIR:-/home/hct/ma3_deploy}"
 
 export MA3_BASE_URL="${MA3_BASE_URL:-http://127.0.0.1:8000}"
@@ -15,6 +17,8 @@ export MA3_EXPECT_MIN_CASES="${MA3_EXPECT_MIN_CASES:-20}"
 export MA3_EXPECT_MIN_MIHOMO_HITS="${MA3_EXPECT_MIN_MIHOMO_HITS:-1}"
 export MA3_EXPECT_MIN_LIBRARIES="${MA3_EXPECT_MIN_LIBRARIES:-2}"
 export MA3_READY_TIMEOUT="${MA3_READY_TIMEOUT:-180}"
+# Root redirect target differs per env: LAN lands on /ui/me/, ma3.io on /ui/home/ (public landing).
+export MA3_EXPECT_ROOT_REDIRECT="${MA3_EXPECT_ROOT_REDIRECT:-/ui/me/}"
 
 if [[ -f "${REMOTE_DIR}/ma3.env" ]]; then
   set -a
@@ -72,7 +76,7 @@ keys_code="$(curl -s -o /dev/null -w '%{http_code}' "${MA3_BASE_URL}/ui/keys/")"
 manifest_code="$(curl -s -o /dev/null -w '%{http_code}' "${MA3_BASE_URL}/client/manifest.json")"
 [[ "${login_code}" == "302" ]] || { echo "FAIL: /auth/login expected 302 got ${login_code}" >&2; exit 1; }
 [[ "${root_code}" == "302" ]] || { echo "FAIL: / expected 302 got ${root_code}" >&2; exit 1; }
-[[ "${root_loc}" == *"/ui/me/"* ]] || { echo "FAIL: / redirect expected /ui/me/ got ${root_loc}" >&2; exit 1; }
+[[ "${root_loc}" == *"${MA3_EXPECT_ROOT_REDIRECT}"* ]] || { echo "FAIL: / redirect expected ${MA3_EXPECT_ROOT_REDIRECT} got ${root_loc}" >&2; exit 1; }
 [[ "${me_code}" == "302" ]] || { echo "FAIL: /ui/me/ expected 302 got ${me_code}" >&2; exit 1; }
 [[ "${pub_lib_code}" == "200" ]] || { echo "FAIL: anonymous lib_default expected 200 got ${pub_lib_code}" >&2; exit 1; }
 [[ "${obs_code}" == "302" ]] || { echo "FAIL: /ui/observatory/ expected 302 got ${obs_code}" >&2; exit 1; }
