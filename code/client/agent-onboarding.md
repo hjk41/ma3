@@ -18,30 +18,78 @@
 
 ## Agent 自检清单（给正在读本文的 agent）
 
-若用户要求接入 ma3，请按顺序完成 **你所在运行时** 对应的小节，然后验证 MCP 工具可见。
+若用户要求接入 ma3，请按顺序完成 **你所在运行时** 对应的小节，然后做 **接入验证**。
 
-1. 向用户确认或从上下文取得：
-   - `MA3_BASE_URL`（如 `https://ma3.io`）
-   - `MA3_API_KEY`（writer 权限；LAN dev 实例常用 `ma3dev`，生产由管理员发放）
-2. **一次性 bootstrap**（agent 填 env，ma3 不维护各 runtime 预设）：
-   ```bash
-   mkdir -p ~/.ma3/bin ~/.ma3/lib
-   MA3_BASE_URL=https://ma3.io
-   curl -fsSL "$MA3_BASE_URL/client/templates/ma3-client.env.example" -o ~/.ma3/ma3-client.env
-   # 编辑 ~/.ma3/ma3-client.env：MA3_BASE_URL、策略安装路径注释等
-   curl -fsSL "$MA3_BASE_URL/client/scripts/sync_ma3_client.py" -o ~/.ma3/bin/sync_ma3_client.py
-   curl -fsSL "$MA3_BASE_URL/client/lib/ma3_sync_core.py" -o ~/.ma3/lib/ma3_sync_core.py
-   curl -fsSL "$MA3_BASE_URL/client/scripts/sync_ma3_client.sh" -o ~/.ma3/bin/sync_ma3_client.sh
-   chmod +x ~/.ma3/bin/sync_ma3_client.sh
-   bash ~/.ma3/bin/sync_ma3_client.sh sync
-   ```
-   之后每次 MCP 调用带上 `~/.ma3/ma3-client.json` 里的：
-   - `client_version` ← `skill_bundle_version`
-   - `tool_schema_version` ← `tool_schema_version`
-3. 配置 **MCP**（见下方「各 Agent 配置」中你的那一节）
-4. 配置 **行为策略**（sync 写入 `~/.ma3/policy/ma3-agent-policy.mdc`，再按 env 注释复制到你的 runtime）
-5. 若 `mcp_reload_required` → reload MCP；否则重启 Cursor
-6. 验证：`tools/list` 含 `ma3_context`、`ma3_report`、`ma3_validate`
+### 0. 向用户索取凭据（必须先做）
+
+**不要** 使用文档里的占位 key，也 **不要** 假设 `ma3dev` 可用（仅部分 LAN dev 实例在 `MA3_DEV_AUTH=1` 时开放）。
+
+请向用户确认或从上下文取得：
+
+| 变量 | 说明 |
+|------|------|
+| `MA3_BASE_URL` | 如 `https://ma3.io` 或 `http://192.168.31.202:8000` |
+| `MA3_API_KEY` | 用户在门户自助创建的 **writer** key（`ma3k_…` 明文，只显示一次） |
+
+若用户尚未创建 key，引导其：
+
+1. 浏览器打开 `{MA3_BASE_URL}/ui/keys/`，用 Authing 注册/登录
+2. 首次登录自动获得个人库；填 label 点「创建」
+3. **立即复制**明文 key 并粘贴给你（或写入 `~/.ma3/ma3-client.env` / shell profile）
+4. 默认授权：个人库 writer + Community Library（`lib_default`）writer
+
+key 丢失或泄漏：回 `/ui/keys/` 撤销并重建。
+
+### 1. 一次性 bootstrap
+
+```bash
+mkdir -p ~/.ma3/bin ~/.ma3/lib
+export MA3_BASE_URL=https://ma3.io   # 按用户环境替换
+curl -fsSL "$MA3_BASE_URL/client/templates/ma3-client.env.example" -o ~/.ma3/ma3-client.env
+# 编辑 ~/.ma3/ma3-client.env：MA3_BASE_URL、策略安装路径注释等
+curl -fsSL "$MA3_BASE_URL/client/scripts/sync_ma3_client.py" -o ~/.ma3/bin/sync_ma3_client.py
+curl -fsSL "$MA3_BASE_URL/client/lib/ma3_sync_core.py" -o ~/.ma3/lib/ma3_sync_core.py
+curl -fsSL "$MA3_BASE_URL/client/scripts/sync_ma3_client.sh" -o ~/.ma3/bin/sync_ma3_client.sh
+chmod +x ~/.ma3/bin/sync_ma3_client.sh
+bash ~/.ma3/bin/sync_ma3_client.sh sync
+```
+
+之后每次 MCP 调用带上 `~/.ma3/ma3-client.json` 里的：
+
+- `client_version` ← `skill_bundle_version`
+- `tool_schema_version` ← `tool_schema_version`
+
+### 2. 配置 MCP
+
+见下方「各 Agent 配置」中你的那一节。Header 使用用户提供的 `MA3_API_KEY`。
+
+### 3. 配置行为策略
+
+sync 写入 `~/.ma3/policy/ma3-agent-policy.mdc`，再按 env 注释复制到你的 runtime。
+
+### 4. 接入验证（必须完成）
+
+MCP 连通后，用 **用户提供的 key** 跑通读写，确认写入 **个人库**（`ma3_report` 不带 `library_id`）：
+
+1. **`ma3_whoami`** — 确认 principal、可见库列表含个人库
+2. **`ma3_context`** — 例如 `problem`: "ma3 onboarding connectivity test"，`target_product`: "ma3"，`task_type`: "onboarding"
+3. **`ma3_validate`** — 对即将写入的 `ma3_report` payload 做 dry-run
+4. **`ma3_report`** — 写入一条测试记录，例如：
+   - `problem`: "ma3 onboarding connectivity test"
+   - `outcome`: "resolved"
+   - `result_summary`: "Agent completed onboarding: whoami, context, and personal-library write succeeded."
+   - `task_type`: "onboarding"
+   - `tags`: `["onboarding", "connectivity-test"]`
+   - **不要** 传 `library_id`（默认个人库）
+   - 可用 `idempotency_key` 避免重复接入时重复写入
+
+任一步 401/403 → 请用户检查 key 是否有效、是否在 `/ui/keys/` 被撤销。  
+`client_update_required: true` → 先 `sync_ma3_client.sh sync` 并 reload MCP，再继续验证。
+
+### 5. 收尾
+
+- 若 `mcp_reload_required` → reload MCP；否则重启 agent runtime
+- 向用户汇报：whoami 身份、context 是否返回、report 的 `record_id`（若有）
 
 **两层都必须做**：只有 MCP → 不一定会主动调用；只有策略 → 没有工具可调。
 
@@ -120,6 +168,9 @@ MCP `initialize` 的 `serverInfo` 也含 `min_client_version` / `recommended_cli
 
 ## 各 Agent 配置
 
+以下示例中的 `YOUR_MA3_API_KEY` 替换为用户在 `/ui/keys/` 创建并提供的明文 key。
+也可用环境变量：`${env:MA3_API_KEY}`（Cursor）、shell 展开 `${MA3_API_KEY}`（Claude `mcp add` 前先 `export`）。
+
 ### Cursor
 
 **MCP** — 创建或编辑 `~/.cursor/mcp.json`：
@@ -130,14 +181,12 @@ MCP `initialize` 的 `serverInfo` 也含 `min_client_version` / `recommended_cli
     "ma3": {
       "url": "https://ma3.io/mcp",
       "headers": {
-        "X-API-Key": "ma3dev"
+        "X-API-Key": "${env:MA3_API_KEY}"
       }
     }
   }
 }
 ```
-
-可选：用 `${env:MA3_BASE_URL}`、`${env:MA3_API_KEY}` 代替字面量。
 
 **行为策略** — 推荐安装 Cursor 规则（always apply）：
 
@@ -155,9 +204,11 @@ curl -fsSL https://ma3.io/client/templates/ma3-agent-policy.mdc \
 
 ```bash
 claude mcp remove ma3 2>/dev/null || true
+export MA3_BASE_URL=https://ma3.io          # 按用户环境
+export MA3_API_KEY=YOUR_MA3_API_KEY           # 用户从 /ui/keys/ 提供
 claude mcp add --scope user --transport http ma3 \
-  "https://ma3.io/mcp" \
-  --header "X-API-Key: ma3dev"
+  "${MA3_BASE_URL}/mcp" \
+  --header "X-API-Key: ${MA3_API_KEY}"
 ```
 
 行为策略：把 `/client/templates/ma3-agent-policy.mdc` 正文写入 `~/.claude/CLAUDE.md`。
@@ -174,7 +225,7 @@ claude mcp add --scope user --transport http ma3 \
     "ma3": {
       "type": "http",
       "url": "https://ma3.io/mcp",
-      "headers": { "X-API-Key": "ma3dev" },
+      "headers": { "X-API-Key": "YOUR_MA3_API_KEY" },
       "disabled": false
     }
   }
@@ -195,7 +246,7 @@ url = "https://ma3.io/mcp"
 enabled = true
 
 [mcp_servers.ma3.http_headers]
-X-API-Key = "ma3dev"
+X-API-Key = "YOUR_MA3_API_KEY"
 ```
 
 行为策略：写入 `~/.codex/model_instructions.md`。
@@ -209,7 +260,7 @@ mcp_servers:
   ma3:
     url: "https://ma3.io/mcp"
     headers:
-      X-API-Key: "ma3dev"
+      X-API-Key: "YOUR_MA3_API_KEY"
 ```
 
 已打开的 session 执行 **`/reload-mcp`**，或重启 Hermes。
@@ -218,27 +269,32 @@ mcp_servers:
 
 ## API Key（自助获取）
 
-1. 浏览器打开 `http://<ma3-host>:8000/ui/keys/`，用 Authing 注册/登录
+1. 浏览器打开 `{MA3_BASE_URL}/ui/keys/`，用 Authing 注册/登录
 2. 首次登录自动获得个人库；填 label 点「创建」
-3. **立即复制**明文 key（只显示一次），填入你的 MCP 配置 `X-API-Key`
+3. **立即复制**明文 key（只显示一次），交给 agent 填入 MCP `X-API-Key`
 4. 默认授权：你的个人库 writer + Community Library writer
    - `ma3_report` 不带 `library_id` → 写入你的个人库
    - 写社区库 → 显式 `library_id: "lib_default"`
-- LAN dev 实例仍可用 `ma3dev`（`MA3_DEV_AUTH=1` break-glass）
-- key 丢失/泄漏：回 `/ui/keys/` 撤销并重建
-- Authing 未配置的生产实例：联系管理员或使用 `seed_personal_library_key.py` 兜底
+5. key 丢失/泄漏：回 `/ui/keys/` 撤销并重建
+
+> **LAN dev 例外**：`MA3_DEV_AUTH=1` 的实例可用 `ma3dev` 作 break-glass；生产环境 **必须** 用门户 key。
 
 ---
 
 ## 验证
 
 ```bash
-curl -sf https://ma3.io/healthz
-curl -sf https://ma3.io/client/manifest.json | jq .skill_bundle_version
-curl -sf -H "X-API-Key: ma3dev" -H "Content-Type: application/json" \
+export MA3_BASE_URL=https://ma3.io
+export MA3_API_KEY=YOUR_MA3_API_KEY   # 用户提供
+
+curl -sf "$MA3_BASE_URL/healthz"
+curl -sf "$MA3_BASE_URL/client/manifest.json" | jq .skill_bundle_version
+curl -sf -H "X-API-Key: $MA3_API_KEY" -H "Content-Type: application/json" \
   -d '{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}' \
-  https://ma3.io/mcp | jq '.result.tools[].name'
+  "$MA3_BASE_URL/mcp" | jq '.result.tools[].name'
 ```
+
+接入后由 agent 完成 **接入验证**（`ma3_whoami` → `ma3_context` → `ma3_validate` → `ma3_report` 写个人库）。
 
 ---
 
@@ -250,11 +306,13 @@ curl -sf -H "X-API-Key: ma3dev" -H "Content-Type: application/json" \
 | Agent 从不写回 ma3 | 检查策略 mandatory report；writer key；是否被 `client_update_required` 阻塞 |
 | `client_update_required` 一直 true | curl 刷新 policy；把 `client_version` 改为 manifest 的 `skill_bundle_version` |
 | `ma3_context` 超时 | `curl $MA3_BASE_URL/healthz` |
-| `ma3_report` 401/403 | 检查 API key |
+| `ma3_report` 401/403 | 检查 API key 是否有效、是否在 UI 被撤销 |
+| 用户未提供 key | 引导至 `/ui/keys/` 创建，不要猜测 `ma3dev` |
 
 ---
 
 ## 给用户的简短说明
 
-> 打开 `http://<ma3-host>:8000/client/agent-onboarding.md`，让 agent 按文档配置 MCP 和策略；
-> 在 `/ui/keys/` 自助创建 API key，或（dev）使用 `ma3dev` 即可。无需 clone 仓库，无需安装 CLI。
+> 打开 `{MA3_BASE_URL}/client/agent-onboarding.md`，让 agent 按文档配置 MCP 和策略。
+> **先在** `/ui/keys/` **自助创建 API key 并把明文 key 交给 agent**；agent 会用该 key 完成接入验证（读写个人库测试）。
+> 无需 clone 仓库，无需安装 CLI。
