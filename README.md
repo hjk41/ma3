@@ -138,8 +138,6 @@ ma3/
 └── deploy/            # 部署与验收
 ```
 
-历史实现（原 v2–v4 层叠）：`git checkout old`
-
 ---
 
 ## 文档地图
@@ -180,8 +178,8 @@ pytest -q tests/unit
 
 | 项 | 说明 |
 |----|------|
-| 默认分支 | **`main`** — v1 redesign |
-| 历史分支 | **`old`** — 原 v4 及之前 |
+| 默认分支 | **`main`** — v1 redesign（当前交付） |
+| 实验分支 | **`trigger`** — read/write compliance 触发机制实验 |
 | v1 范围 | MCP + policy、Authing、library ACL、vector search、门户、Observatory |
 | v1 明确不做 | 见 [docs/README.md](docs/README.md) §「v1 不做清单」（如完整 Org UI、Stripe、MCP 签发 key 等 → v1.1+） |
 
