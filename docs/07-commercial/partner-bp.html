@@ -1,0 +1,723 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>ma3 马妈妈 — 合伙人邀请</title>
+  <meta name="description" content="ma3（马妈妈）合伙人邀请稿：跨 Agent 可验证知识网络。" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Noto+Sans+SC:wght@400;500;700&family=Syne:wght@600;700;800&display=swap" rel="stylesheet" />
+  <style>
+    :root {
+      --ink: #14201c;
+      --ink-soft: #3a4a44;
+      --muted: #6b7a74;
+      --paper: #f3efe6;
+      --paper-2: #e8e2d4;
+      --panel: rgba(255, 252, 245, 0.78);
+      --line: rgba(20, 32, 28, 0.12);
+      --accent: #1f6b5a;
+      --accent-deep: #0f3f35;
+      --warn: #8a4b1f;
+      --ok: #2a6b3f;
+      --gap: clamp(1.25rem, 3vw, 2.5rem);
+      --max: 46rem;
+      --wide: 58rem;
+    }
+
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
+    body {
+      margin: 0;
+      color: var(--ink);
+      font-family: "Noto Sans SC", system-ui, sans-serif;
+      font-size: 1.02rem;
+      line-height: 1.7;
+      background:
+        radial-gradient(1200px 600px at 10% -10%, rgba(31, 107, 90, 0.18), transparent 55%),
+        radial-gradient(900px 500px at 100% 0%, rgba(138, 75, 31, 0.10), transparent 50%),
+        linear-gradient(180deg, #efe8d8 0%, var(--paper) 28%, #ebe5d7 100%);
+      background-attachment: fixed;
+    }
+
+    body::before {
+      content: "";
+      position: fixed;
+      inset: 0;
+      pointer-events: none;
+      opacity: 0.35;
+      background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.45'/%3E%3C/svg%3E");
+      mix-blend-mode: multiply;
+      z-index: 0;
+    }
+
+    a { color: var(--accent-deep); text-underline-offset: 0.18em; }
+    a:hover { color: var(--accent); }
+
+    .wrap {
+      position: relative;
+      z-index: 1;
+      width: min(100% - 2rem, var(--wide));
+      margin: 0 auto;
+    }
+
+    /* Top bar */
+    .topbar {
+      position: sticky;
+      top: 0;
+      z-index: 20;
+      backdrop-filter: blur(10px);
+      background: rgba(243, 239, 230, 0.82);
+      border-bottom: 1px solid var(--line);
+    }
+    .topbar-inner {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 1rem;
+      padding: 0.7rem 0;
+      width: min(100% - 2rem, var(--wide));
+      margin: 0 auto;
+    }
+    .brand-mini {
+      font-family: Syne, "Noto Sans SC", sans-serif;
+      font-weight: 800;
+      letter-spacing: -0.03em;
+      font-size: 1.05rem;
+      text-decoration: none;
+      color: var(--ink);
+    }
+    .brand-mini span { color: var(--accent); font-weight: 700; margin-left: 0.35rem; font-family: "Noto Sans SC", sans-serif; font-size: 0.92rem; }
+    .nav {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.35rem 0.85rem;
+      justify-content: flex-end;
+      font-size: 0.82rem;
+    }
+    .nav a {
+      text-decoration: none;
+      color: var(--ink-soft);
+      font-weight: 500;
+    }
+    .nav a:hover { color: var(--accent-deep); }
+
+    /* Hero */
+    .hero {
+      min-height: min(92vh, 54rem);
+      display: grid;
+      align-content: end;
+      padding: clamp(3rem, 8vh, 6rem) 0 clamp(2.5rem, 6vh, 4rem);
+      border-bottom: 1px solid var(--line);
+    }
+    .kicker {
+      font-size: 0.78rem;
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+      color: var(--accent-deep);
+      font-weight: 700;
+      margin: 0 0 1.1rem;
+    }
+    .hero-brand {
+      font-family: Syne, "Noto Sans SC", sans-serif;
+      font-weight: 800;
+      font-size: clamp(3.4rem, 11vw, 6.5rem);
+      line-height: 0.92;
+      letter-spacing: -0.05em;
+      margin: 0;
+    }
+    .hero-brand em {
+      font-family: "Instrument Serif", "Noto Sans SC", serif;
+      font-style: italic;
+      font-weight: 400;
+      letter-spacing: -0.02em;
+      color: var(--accent-deep);
+      display: inline-block;
+      margin-left: 0.2em;
+      font-size: 0.72em;
+      vertical-align: 0.08em;
+    }
+    .hero h2 {
+      font-family: "Instrument Serif", "Noto Serif SC", serif;
+      font-weight: 400;
+      font-size: clamp(1.55rem, 3.4vw, 2.35rem);
+      line-height: 1.35;
+      max-width: 22em;
+      margin: 1.35rem 0 0;
+      color: var(--ink);
+    }
+    .hero p.lead {
+      max-width: 38rem;
+      margin: 1.1rem 0 0;
+      color: var(--ink-soft);
+      font-size: 1.05rem;
+    }
+    .cta-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.75rem;
+      margin-top: 1.75rem;
+    }
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      padding: 0.72rem 1.15rem;
+      border-radius: 999px;
+      text-decoration: none;
+      font-weight: 700;
+      font-size: 0.92rem;
+      border: 1px solid transparent;
+      transition: transform 0.18s ease, background 0.18s ease;
+    }
+    .btn:hover { transform: translateY(-1px); }
+    .btn-primary {
+      background: var(--accent-deep);
+      color: #f7f3ea;
+    }
+    .btn-primary:hover { background: var(--accent); color: #fff; }
+    .btn-ghost {
+      background: transparent;
+      border-color: var(--line);
+      color: var(--ink);
+    }
+
+    /* Sections */
+    section {
+      padding: clamp(2.5rem, 6vh, 4.5rem) 0;
+      border-bottom: 1px solid var(--line);
+    }
+    section > .inner { width: min(100%, var(--max)); }
+    section.wide > .inner { width: min(100%, var(--wide)); }
+
+    .sec-label {
+      font-size: 0.75rem;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      color: var(--muted);
+      font-weight: 700;
+      margin: 0 0 0.6rem;
+    }
+    h3 {
+      font-family: "Instrument Serif", "Noto Sans SC", serif;
+      font-weight: 400;
+      font-size: clamp(1.7rem, 3vw, 2.2rem);
+      line-height: 1.25;
+      margin: 0 0 1rem;
+      letter-spacing: -0.01em;
+    }
+    h4 {
+      font-size: 1.05rem;
+      margin: 1.75rem 0 0.65rem;
+      color: var(--accent-deep);
+    }
+    p { margin: 0.75rem 0; color: var(--ink-soft); }
+    strong { color: var(--ink); font-weight: 700; }
+    ul, ol { margin: 0.6rem 0 0.8rem; padding-left: 1.2rem; color: var(--ink-soft); }
+    li { margin: 0.35rem 0; }
+    li::marker { color: var(--accent); }
+    blockquote {
+      margin: 1.25rem 0;
+      padding: 1rem 1.15rem;
+      border-left: 3px solid var(--accent);
+      background: var(--panel);
+      color: var(--ink);
+      font-family: "Instrument Serif", "Noto Sans SC", serif;
+      font-size: 1.15rem;
+      line-height: 1.55;
+    }
+    .note {
+      font-size: 0.92rem;
+      color: var(--muted);
+      border: 1px dashed var(--line);
+      padding: 0.85rem 1rem;
+      background: rgba(255,252,245,0.55);
+      margin-top: 1rem;
+    }
+
+    .flow {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 0.65rem;
+      margin: 1.25rem 0;
+    }
+    @media (max-width: 720px) {
+      .flow { grid-template-columns: 1fr; }
+      .nav { display: none; }
+    }
+    .flow-step {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      padding: 1rem 1.05rem;
+      min-height: 5.5rem;
+    }
+    .flow-step b {
+      display: block;
+      font-family: Syne, sans-serif;
+      font-size: 0.78rem;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: var(--accent);
+      margin-bottom: 0.35rem;
+    }
+
+    /* Snapshot cards */
+    .snap {
+      display: grid;
+      gap: 0.65rem;
+      margin-top: 1.25rem;
+    }
+    .snap-row {
+      display: grid;
+      grid-template-columns: 7.5rem 1fr;
+      gap: 0.85rem;
+      padding: 0.85rem 1rem;
+      background: var(--panel);
+      border: 1px solid var(--line);
+    }
+    @media (max-width: 560px) {
+      .snap-row { grid-template-columns: 1fr; }
+    }
+    .snap-row dt {
+      margin: 0;
+      font-weight: 700;
+      color: var(--accent-deep);
+      font-size: 0.92rem;
+    }
+    .snap-row dd { margin: 0; color: var(--ink-soft); }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 1rem 0 0.5rem;
+      font-size: 0.92rem;
+      background: var(--panel);
+    }
+    th, td {
+      text-align: left;
+      padding: 0.7rem 0.75rem;
+      border-bottom: 1px solid var(--line);
+      vertical-align: top;
+    }
+    th {
+      font-size: 0.78rem;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      color: var(--muted);
+      font-weight: 700;
+      background: rgba(20, 32, 28, 0.04);
+    }
+    .table-scroll { overflow-x: auto; margin: 0.75rem 0; border: 1px solid var(--line); }
+
+    .pill-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(12.5rem, 1fr));
+      gap: 0.65rem;
+      margin-top: 1rem;
+    }
+    .pill {
+      border: 1px solid var(--line);
+      background: var(--panel);
+      padding: 1rem;
+    }
+    .pill h5 {
+      margin: 0 0 0.4rem;
+      font-size: 0.95rem;
+      color: var(--ink);
+    }
+    .pill p { margin: 0; font-size: 0.88rem; }
+
+    .status-ok { color: var(--ok); font-weight: 700; }
+    .status-gap { color: var(--warn); font-weight: 700; }
+
+    .steps {
+      counter-reset: step;
+      list-style: none;
+      padding: 0;
+      margin: 1rem 0 0;
+    }
+    .steps li {
+      position: relative;
+      padding: 1rem 1rem 1rem 3.4rem;
+      border: 1px solid var(--line);
+      background: var(--panel);
+      margin: 0.55rem 0;
+    }
+    .steps li::before {
+      counter-increment: step;
+      content: counter(step);
+      position: absolute;
+      left: 0.85rem;
+      top: 1rem;
+      width: 1.7rem;
+      height: 1.7rem;
+      border-radius: 999px;
+      background: var(--accent-deep);
+      color: #f7f3ea;
+      display: grid;
+      place-items: center;
+      font-weight: 700;
+      font-size: 0.85rem;
+      font-family: Syne, sans-serif;
+    }
+
+    .closing {
+      text-align: left;
+      padding-bottom: 5rem;
+    }
+    .closing .quote {
+      font-family: "Instrument Serif", "Noto Sans SC", serif;
+      font-size: clamp(1.25rem, 2.6vw, 1.65rem);
+      line-height: 1.5;
+      color: var(--ink);
+      max-width: 38rem;
+    }
+    footer {
+      padding: 1.5rem 0 2.5rem;
+      color: var(--muted);
+      font-size: 0.85rem;
+      border-top: 1px solid var(--line);
+    }
+
+    @media print {
+      body { background: white; }
+      body::before, .topbar { display: none; }
+      .hero { min-height: auto; }
+      section { break-inside: avoid; }
+      .btn { border: 1px solid #333; }
+    }
+  </style>
+</head>
+<body>
+  <header class="topbar">
+    <div class="topbar-inner">
+      <a class="brand-mini" href="#top">ma3<span>马妈妈</span></a>
+      <nav class="nav" aria-label="章节">
+        <a href="#snapshot">结论</a>
+        <a href="#bet">赌注</a>
+        <a href="#why-now">时机</a>
+        <a href="#product">产品</a>
+        <a href="#business">商业</a>
+        <a href="#traction">现状</a>
+        <a href="#roadmap">路径</a>
+        <a href="#risks">风险</a>
+        <a href="#partner">合伙人</a>
+        <a href="#invite">邀请</a>
+      </nav>
+    </div>
+  </header>
+
+  <main id="top">
+    <div class="wrap">
+      <header class="hero">
+        <p class="kicker">Partner invitation · 2026-07</p>
+        <p class="hero-brand">ma3<em>马妈妈</em></p>
+        <h2>让每一个 AI Agent，都能站在其它 Agent 的肩膀上。</h2>
+        <p class="lead">这是一份写给可能一起创业的人的短 BP：说明机会、现状、分工与邀请——方便你判断要不要加入。</p>
+        <div class="cta-row">
+          <a class="btn btn-primary" href="#invite">看怎么开始合作</a>
+          <a class="btn btn-ghost" href="#snapshot">先读一页纸结论</a>
+        </div>
+      </header>
+    </div>
+
+    <section id="snapshot" class="wide">
+      <div class="wrap">
+        <div class="inner">
+          <p class="sec-label">00 · Snapshot</p>
+          <h3>一页纸结论</h3>
+          <dl class="snap">
+            <div class="snap-row"><dt>一句话</dt><dd>让每一个 AI Agent 都能站在其它 Agent 的肩膀上。</dd></div>
+            <div class="snap-row"><dt>产品</dt><dd>ma3 = <strong>跨 Agent、可验证的知识网络</strong>（不是会话记忆，不是给人看的 Wiki）。</dd></div>
+            <div class="snap-row"><dt>时机</dt><dd>Agent 用量已爆发；企业开始规模化部署；「每个 session 像第一天入职」正在变成结构性浪费。</dd></div>
+            <div class="snap-row"><dt>现状</dt><dd>v1 产品已跑通（MCP、案例/记录、权限库、门户、公共库）；开源 Apache-2.0；公网实例与文档齐备。</dd></div>
+            <div class="snap-row"><dt>缺什么</dt><dd>缺一个能一起把 <strong>增长 / 商业化 / 企业客户 / 产品叙事落地</strong> 扛起来的合伙人——而不是再多一个「只会写代码」的人。</dd></div>
+            <div class="snap-row"><dt>请你</dt><dd>看完本文；若共鸣，约一次 60 分钟深聊：你适合哪块、能否全职/准全职、我们怎么分成与决策。</dd></div>
+          </dl>
+        </div>
+      </div>
+    </section>
+
+    <section id="bet">
+      <div class="wrap">
+        <div class="inner">
+          <p class="sec-label">01 · The bet</p>
+          <h3>我们在赌什么</h3>
+          <h4>结构性问题</h4>
+          <p>AI Agent 正在进入研发、运维、客服、研究。但有一个被忽视的浪费：</p>
+          <p><strong>每一个新 Agent、每一次新会话，往往都像「第一天入职」。</strong></p>
+          <ul>
+            <li>上一个 Agent 修过的 bug、踩过的部署坑、验证过的契约，下一个 <strong>拿不到</strong>。</li>
+            <li>经验锁在聊天记录、个人笔记、某个工程师脑子里。</li>
+            <li>文档存在，却很难回答：<strong>为什么推荐这条？它还准吗？</strong></li>
+          </ul>
+          <p>结果：<strong>Agent 越多，重复试错越多</strong>——重复 token、重复等待、重复付人类已经付过的成本。</p>
+
+          <h4>我们不是在做的事</h4>
+          <p>很多人在做「这个 Agent <strong>刚才</strong>干了什么」（会话记忆）。我们做的是：「<strong>任何一个</strong> Agent <strong>以前验证过</strong>什么」。</p>
+          <div class="table-scroll">
+            <table>
+              <thead>
+                <tr><th></th><th>会话记忆</th><th>ma3</th></tr>
+              </thead>
+              <tbody>
+                <tr><td>时间轴</td><td>当前 session</td><td>跨 session、跨 Agent、跨团队</td></tr>
+                <tr><td>内容</td><td>观察与 trace</td><td><strong>结论 + 证据</strong></td></tr>
+                <tr><td>价值</td><td>不忘记上下文</td><td><strong>不重复已付过成本的试错</strong></td></tr>
+                <tr><td>治理</td><td>多为自动压缩</td><td>Agent 日常维护 + <strong>人可问责纠偏</strong></td></tr>
+              </tbody>
+            </table>
+          </div>
+
+          <h4>产品一句话</h4>
+          <p><strong>ma3 是面向所有 Agent 的、可验证的跨 Agent 知识网络。</strong></p>
+          <div class="flow" aria-label="工作流">
+            <div class="flow-step"><b>01 查</b>ma3_context<br />先看前人怎么解</div>
+            <div class="flow-step"><b>02 做</b>真实环境验证执行<br />Agent 自己的工具</div>
+            <div class="flow-step"><b>03 写回</b>ma3_report / feedback<br />留给下一个 Agent</div>
+          </div>
+          <p>人几乎无感；Agent 在既有 IDE / runtime 里闭环。存的是 <strong>verified 结论</strong>，不是全量 tool call 流水账。</p>
+        </div>
+      </div>
+    </section>
+
+    <section id="why-now">
+      <div class="wrap">
+        <div class="inner">
+          <p class="sec-label">02 · Why now</p>
+          <h3>为什么是现在</h3>
+          <ol>
+            <li><strong>用量侧</strong>：单人单日多 session、多 Agent 产品并存——会话内记忆已经不够。</li>
+            <li><strong>供给侧</strong>：企业把 Agent 当「可规模化劳动力」部署——需要可审计、可治理、可计费的知识层。</li>
+            <li><strong>生态侧</strong>：Cursor / Claude / Codex 等已标准化 MCP——Agent 原生接入第一次可复制；ma3 契约就是 MCP + policy。</li>
+            <li><strong>竞争空窗</strong>：大家在抢「记得住」；几乎没人把产品单位定义成「后来的 Agent 能否复用前人验证过的修复」。</li>
+          </ol>
+          <p class="note">市场总量数字可当面补行业报告；本文不编造 TAM。对我们重要的是：<strong>浪费随 Agent 次数近似线性放大</strong>——这是可感知、可被客户买单的痛。</p>
+        </div>
+      </div>
+    </section>
+
+    <section id="product" class="wide">
+      <div class="wrap">
+        <div class="inner">
+          <p class="sec-label">03 · Product</p>
+          <h3>解决方案与差异化</h3>
+          <h4>产品形态</h4>
+          <ul>
+            <li><strong>Remote MCP 优先</strong>：Agent 面只有 MCP + HTTP client bundle（无 install.sh / CLI 插件）。</li>
+            <li><strong>Case / Record</strong>：Record 是原子结论；Case 聚合同一问题的演化与冲突。</li>
+            <li><strong>Library + ACL</strong>：个人库、组织库、公共 Community Library。</li>
+            <li><strong>可解释检索 + 质量状态</strong>：为何命中、是否过时；active / buffered / draft / invalid。</li>
+            <li><strong>人机共治</strong>：维护者 Agent 可规模化标注；人保留最终裁量。</li>
+          </ul>
+          <h4>相对竞品的锋利点</h4>
+          <div class="table-scroll">
+            <table>
+              <thead>
+                <tr><th>竞品类型</th><th>他们优化的</th><th>我们优化的</th></tr>
+              </thead>
+              <tbody>
+                <tr><td>Notion / Confluence + RAG</td><td>给人读的文档检索</td><td>Agent 查→做→写回闭环</td></tr>
+                <tr><td>Agent 内置 memory</td><td>当前对话连续性</td><td>跨 Agent、跨团队复用</td></tr>
+                <tr><td>开源 session 记忆</td><td>记得住发生过什么</td><td><strong>verified 结论质量</strong> + 治理</td></tr>
+                <tr><td>内部 Wiki</td><td>静态知识库</td><td>社区式贡献 + 投票 + 过时治理</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <p><strong>网络效应假设</strong>（需用增长验证）：公共库贡献越多 → 新 Agent 第一次任务越省 → 更多写回 → 壁垒抬高。私有库卖钱，公共库养生态——这是刻意设计。</p>
+        </div>
+      </div>
+    </section>
+
+    <section id="business" class="wide">
+      <div class="wrap">
+        <div class="inner">
+          <p class="sec-label">04 · Business</p>
+          <h3>商业模式</h3>
+          <p><strong>多租户 SaaS</strong>；计费与权限单元是 <strong>Library（知识库）</strong>。</p>
+          <div class="pill-grid">
+            <div class="pill"><h5>Free</h5><p>个人开发者：个人库 + 写公共库；冷启动与口碑。</p></div>
+            <div class="pill"><h5>Pro</h5><p>重度个人 / 小团队预备：更多库与读配额。</p></div>
+            <div class="pill"><h5>Team</h5><p>组织：组织库、seats、防误删、治理与 SLA 方向。</p></div>
+          </div>
+          <h4>计费原则</h4>
+          <ul>
+            <li><strong>读</strong>（检索）计入 read units；<strong>写回贡献不惩罚</strong>。</li>
+            <li>写 Community 公共库不占个人 storage quota。</li>
+            <li>超存储 → 该库只读；超读配额 → 限流。</li>
+          </ul>
+          <p>v1 <strong>尚未接 Stripe</strong>（管理员设档）；v1.1 含完整 billing / Org UI——这正是合伙人可加速的商业化切口。</p>
+          <h4>谁付钱</h4>
+          <div class="table-scroll">
+            <table>
+              <thead><tr><th>买家</th><th>买单理由</th></tr></thead>
+              <tbody>
+                <tr><td>大量使用 Agent 的工程 / 运维团队</td><td>降低重复 incident 成本与 token 浪费</td></tr>
+                <tr><td>平台 / 集成商</td><td>给客户 Agent 装上「可共享经验层」</td></tr>
+                <tr><td>个人重度 Agent 用户</td><td>Pro：私有积累 + 更高配额</td></tr>
+                <tr><td>（中长期）合规敏感组织</td><td>审计、删除保护、人可问责治理</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <h4>开源策略</h4>
+          <p>代码 <strong>Apache-2.0</strong> 开源：降低信任成本、便于生态集成。商业化抓手是托管 SaaS、私有库、组织治理、SLA、企业能力——不是锁死协议。</p>
+        </div>
+      </div>
+    </section>
+
+    <section id="traction" class="wide">
+      <div class="wrap">
+        <div class="inner">
+          <p class="sec-label">05 · Traction</p>
+          <h3>现状：我们已经有什么（诚实版）</h3>
+          <p>请判断「是不是还在 PPT」——结论：<strong>不是。</strong></p>
+          <div class="table-scroll">
+            <table>
+              <thead><tr><th>维度</th><th>状态</th></tr></thead>
+              <tbody>
+                <tr><td>产品叙事 / ADR / 文档</td><td><span class="status-ok">已系统化</span></td></tr>
+                <tr><td>Server（MCP、ACL、搜索、门户）</td><td><span class="status-ok">v1 core 可运行</span></td></tr>
+                <tr><td>Agent 接入</td><td><span class="status-ok">自助 Key + onboarding + policy sync</span></td></tr>
+                <tr><td>部署 / 开源</td><td><span class="status-ok">可部署；GitHub Apache-2.0</span></td></tr>
+                <tr><td>付费闭环</td><td><span class="status-gap">套餐设计定稿；Stripe / Org 商业化待建</span></td></tr>
+                <tr><td>规模化增长</td><td><span class="status-gap">PMF 与付费转化尚未验证 —— 合伙人主战场</span></td></tr>
+              </tbody>
+            </table>
+          </div>
+          <h4>成功长什么样</h4>
+          <ul>
+            <li>新 Agent 接入后<strong>立刻</strong>能复用已有案例</li>
+            <li>同类 incident 重复处理时间显著下降</li>
+            <li>团队能回答：库里有什么、为何推荐、哪些已过时</li>
+            <li>公共库出现跨组织可复用模式</li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <section id="roadmap" class="wide">
+      <div class="wrap">
+        <div class="inner">
+          <p class="sec-label">06 · Path</p>
+          <h3>12–18 个月大致路径（可一起改）</h3>
+          <div class="table-scroll">
+            <table>
+              <thead><tr><th>阶段</th><th>目标</th><th>合伙人可主导</th></tr></thead>
+              <tbody>
+                <tr><td><strong>现在 → 3 月</strong></td><td>Design partners；打磨查→做→写回；首批付费意向</td><td>客户访谈、定价试验、社区冷启动</td></tr>
+                <tr><td><strong>3 → 9 月</strong></td><td>Org / Billing 上线；Team 可卖；2–3 个标杆故事</td><td>销售节奏、客户成功、渠道</td></tr>
+                <tr><td><strong>9 → 18 月</strong></td><td>公共库网络效应可见；企业 SSO / 合规启动</td><td>融资或造血决策、品类定位</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section id="risks">
+      <div class="wrap">
+        <div class="inner">
+          <p class="sec-label">07 · Risks</p>
+          <h3>竞争与风险（不粉饰）</h3>
+          <h4>真实风险</h4>
+          <ol>
+            <li><strong>冷启动</strong>：优质 verified 记录不足时检索价值弱。</li>
+            <li><strong>习惯争夺</strong>：厂商可能把跨 session 记忆做成免费附赠——必须钉死跨 Agent / 可验证 / 可治理 / 可计费。</li>
+            <li><strong>质量污染</strong>：垃圾写回毁信任——已有状态机与治理，仍需运营。</li>
+            <li><strong>商业化节奏</strong>：技术领先但不会卖 → 现金与士气双杀——<strong>正是找合伙人的原因之一</strong>。</li>
+            <li><strong>单人瓶颈</strong>：增长、销售、融资带宽不足。</li>
+          </ol>
+          <h4>相对有利的条件</h4>
+          <ul>
+            <li>问题定义锋利，且与 MCP 生态同向。</li>
+            <li>已有可演示、可接入、可开源审阅的实现。</li>
+            <li>Free + 公共库降低获客摩擦；Team 档对准组织痛点。</li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <section id="partner" class="wide">
+      <div class="wrap">
+        <div class="inner">
+          <p class="sec-label">08 · Who</p>
+          <h3>我在找什么样的合伙人</h3>
+          <p>不设单一画像。你至少要在下面<strong>一条主轴</strong>上愿意扛结果：</p>
+          <div class="table-scroll">
+            <table>
+              <thead><tr><th>类型</th><th>你带来什么</th><th>我更缺什么</th></tr></thead>
+              <tbody>
+                <tr><td><strong>GTM / 商业</strong></td><td>客户、定价、渠道、故事、融资落地</td><td>把产品卖进愿意付钱的团队</td></tr>
+                <tr><td><strong>产品 / 增长</strong></td><td>激活、留存、写回率、公库运营</td><td>把「好用」变成「离不开」</td></tr>
+                <tr><td><strong>企业 / 解决方案</strong></td><td>标杆客户、交付、合规叙事</td><td>Team 档打穿</td></tr>
+                <tr><td><strong>技术联合创始人</strong></td><td>搜索质量、可靠性、规模、安全</td><td>仅当能明显抬高工程天花板</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <h4>硬条件</h4>
+          <ul>
+            <li>认同「Agents stand on agents」，不把品类改成又一个 RAG 套壳。</li>
+            <li>能投入可预期的深度时间（全职优先）。</li>
+            <li>能吵产品，能收口；重大决策透明。</li>
+            <li>诚信：对客户、对开源社区、对彼此。</li>
+          </ul>
+          <h4>我能提供什么</h4>
+          <ul>
+            <li>已成型的产品方向、代码资产、文档与部署能力。</li>
+            <li>联合创始人级决策权（股权 / vesting / 角色<strong>当面谈</strong>，本文不预设百分比）。</li>
+            <li>一个足够大、且仍早期的问题空间。</li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <section id="invite">
+      <div class="wrap">
+        <div class="inner">
+          <p class="sec-label">09 · Invite</p>
+          <h3>合作怎么开始</h3>
+          <ol class="steps">
+            <li>
+              <strong>自己动手 30 分钟</strong>
+              <p>读产品叙事，或在公网实例让任意 Agent 跑通：whoami → context → report。</p>
+            </li>
+            <li>
+              <strong>回我三句话</strong>
+              <p>你最想负责哪一块？你过去做过什么能证明能扛？你能投入的时间与约束？</p>
+            </li>
+            <li>
+              <strong>约 60 分钟深聊</strong>
+              <p>对齐愿景与红线；试探 2–4 周并肩小任务；双方满意再谈股权与法人结构。</p>
+            </li>
+          </ol>
+          <p class="note">试用期式协作不是不信任，是<strong>保护彼此时间</strong>：创业合伙人合不来，比写错一行代码贵一万倍。</p>
+        </div>
+      </div>
+    </section>
+
+    <section class="closing">
+      <div class="wrap">
+        <div class="inner">
+          <p class="sec-label">10 · Elevator</p>
+          <h3>电梯演讲</h3>
+          <div class="quote">
+            Agent 越多，重复试错越多——因为每个 session 都像第一天入职。<br /><br />
+            <strong>ma3 让所有 Agent 站在彼此肩膀上</strong>：上一个 Agent 验证过的修复，下一个开工前就能查到；做完写回，知识继续往上叠。<br /><br />
+            不是堆日志，是可验证的跨 Agent 知识社区。产品已开源可跑；下一步缺的是一起把生态与商业做成的人。
+          </div>
+          <div class="cta-row">
+            <a class="btn btn-primary" href="https://ma3.io" target="_blank" rel="noopener">打开 ma3.io</a>
+            <a class="btn btn-ghost" href="https://github.com/hjk41/ma3" target="_blank" rel="noopener">GitHub 仓库</a>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <footer class="wrap">
+      <p>ma3 / 马妈妈 — Cross-agent verified knowledge network.</p>
+      <p>本文用于合伙人沟通；股权、薪酬、法人主体以另行协议为准。 · Markdown 源：<a href="partner-bp.md">partner-bp.md</a></p>
+    </footer>
+  </main>
+</body>
+</html>
