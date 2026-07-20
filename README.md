@@ -189,7 +189,9 @@ pytest -q tests/unit
 
 ## 许可证
 
-许可证文件尚未加入本仓库。使用或分发前请与维护者确认授权条款。
+本项目采用 [Apache License 2.0](LICENSE)。
+
+Copyright 2026 Chuntao Hong
 
 ---
 
