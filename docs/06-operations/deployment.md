@@ -18,14 +18,14 @@
 # 数据库
 MA3_DATABASE_URL=postgresql://...
 
-# Authing（见 deployment-authing.md）
-MA3_AUTHING_ENABLED=1
-MA3_AUTHING_ISSUER=...
-MA3_AUTHING_APP_ID=...
-MA3_AUTHING_APP_SECRET=...
+# OIDC（推荐 MA3_OIDC_*；Authing 可用 MA3_AUTHING_* 别名）
+MA3_OIDC_ENABLED=1
+MA3_OIDC_ISSUER=...
+MA3_OIDC_CLIENT_ID=...
+MA3_OIDC_CLIENT_SECRET=...
 MA3_PUBLIC_BASE_URL=https://...
 
-# 管理员（非空，否则拒绝启动）
+# 管理员（OIDC 开启时非空，否则拒绝启动）
 MA3_AUTH_ADMIN_USERS=admin@example.com
 
 # 搜索（默认开 vector）
@@ -35,6 +35,10 @@ MA3_AUTH_ADMIN_USERS=admin@example.com
 HF_HUB_OFFLINE=1
 HF_HOME=/path/to/hf
 ```
+
+## 社区自托管（Compose）
+
+见 **[self-hosting.md](self-hosting.md)** 与仓库 `deploy/self-host/`（bootstrap key / 可选 OIDC）。
 
 ## 目录与数据
 
@@ -51,7 +55,7 @@ curl -s "$BASE/doctor"   # 或 MCP ma3_doctor
 
 ## 待补充
 
-- [ ] `profile-saas.md` / `profile-lan.md` 完整 runbook
-- [ ] systemd / docker compose 示例
-- [ ] 密钥管理（MA3_AUTHING_APP_SECRET、Fernet key for key_ciphertext）
-- [ ] 备份恢复 procedure
+- [x] `deploy/self-host` docker compose 示例（见 [self-hosting.md](self-hosting.md)）
+- [ ] systemd 示例
+- [x] 密钥管理（`MA3_API_KEY_ENCRYPTION_SECRET`、bootstrap key 文件）
+- [ ] 备份恢复 procedure（摘要已写入 self-hosting.md）

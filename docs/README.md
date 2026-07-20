@@ -87,6 +87,7 @@
 | 文档 | 状态 | 说明 |
 |------|------|------|
 | [deployment.md](06-operations/deployment.md) | 📝 | Profile 总览 |
+| [self-hosting.md](06-operations/self-hosting.md) | ✅ | Compose 自托管（bootstrap / OIDC） |
 | [deployment-authing.md](06-operations/deployment-authing.md) | ✅ | Authing 控制台 + env |
 | [runbook.md](06-operations/runbook.md) | 📝 | 发版/回滚/排障 |
 | [monitoring-and-health.md](06-operations/monitoring-and-health.md) | 📝 | healthz/doctor/告警 |

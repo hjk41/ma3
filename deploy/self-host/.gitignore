@@ -1,0 +1,4 @@
+.env
+data/
+*.key
+bootstrap_api_key.txt

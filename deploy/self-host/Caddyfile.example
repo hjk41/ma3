@@ -1,0 +1,18 @@
+# Optional: put in front of ma3 for HTTPS / OIDC callbacks.
+# Not required for LAN + bootstrap API key.
+#
+# Example:
+#   caddy run --config Caddyfile.example
+#
+# ma3.example.com {
+#     reverse_proxy 127.0.0.1:8000
+# }
+#
+# Then set MA3_PUBLIC_BASE_URL=https://ma3.example.com
+# and OIDC redirect URI to https://ma3.example.com/auth/callback
+
+:8000 {
+	# Replace with your hostname and enable automatic HTTPS, e.g.:
+	# ma3.example.com {
+	reverse_proxy 127.0.0.1:8000
+}

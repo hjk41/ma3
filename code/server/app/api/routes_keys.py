@@ -51,8 +51,9 @@ def _require_authing_configured() -> None:
             status_code=503,
             detail=(
                 "self-service key management requires Authing; "
-                "use MA3_DEV_AUTH break-glass key or ask an admin to run seed_personal_library_key.py"
-            ),
+            "use MA3_DEV_AUTH break-glass, self-host bootstrap key "
+            "(scripts/bootstrap_selfhost.py), or configure OIDC and open /ui/keys/"
+        ),
         )
 
 

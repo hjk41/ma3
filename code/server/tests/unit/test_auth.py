@@ -38,9 +38,13 @@ def test_auth_login_start_redirects_when_configured(authing_client: TestClient):
 def test_auth_login_503_when_not_configured(monkeypatch):
     monkeypatch.setattr(settings, "authing_enabled", False)
     monkeypatch.setattr(settings, "authing_issuer", "")
+    monkeypatch.setattr(settings, "bootstrap_selfhost", True)
     client = TestClient(app, raise_server_exceptions=True)
     response = client.get("/auth/login", follow_redirects=False)
     assert response.status_code == 503
+    assert "text/html" in response.headers.get("content-type", "")
+    assert "bootstrap" in response.text.lower() or "OIDC" in response.text
+    assert "Authing auth is not configured" not in response.text
 
 
 def test_auth_callback_sets_session_and_principal(authing_client: TestClient):

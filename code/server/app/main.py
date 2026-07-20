@@ -39,15 +39,20 @@ async def _buffer_publish_loop() -> None:
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
     validate_authing_admin_config()
-    if settings.dev_auth and settings.authing_configured:
+    if settings.dev_auth and settings.oidc_configured:
         public = (settings.public_base_url or "").lower()
         if public.startswith("https://") and "localhost" not in public and "127.0.0.1" not in public:
             logger.warning(
-                "MA3_DEV_AUTH=1 with Authing on a public URL (%s) — disable dev_auth on SaaS (see deployment-authing.md)",
+                "MA3_DEV_AUTH=1 with OIDC on a public URL (%s) — disable MA3_DEV_AUTH for production",
                 settings.public_base_url,
             )
     initialize_database()
     from app.storage import db
+
+    if not settings.oidc_configured and settings.bootstrap_selfhost:
+        from app.services.bootstrap_selfhost import ensure_bootstrap_key
+
+        ensure_bootstrap_key()
 
     db.publish_due_buffered_records()
     buffer_task = asyncio.create_task(_buffer_publish_loop())

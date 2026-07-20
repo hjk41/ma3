@@ -54,18 +54,36 @@ ma3 解决的是：**任何一个 Agent 以前验证过什么**（不是「这�
 
 按你的角色选一条路径。
 
-### A. 给 Agent 接入（推荐，无需 clone 本仓库）
+### A. 自托管（Compose，推荐开源用户）
 
-操作真源：线上实例的 `GET /client/agent-onboarding.md`  
+完整说明：[docs/06-operations/self-hosting.md](docs/06-operations/self-hosting.md)
+
+```bash
+git clone https://github.com/hjk41/ma3.git
+cd ma3/deploy/self-host
+cp .env.example .env    # 修改 POSTGRES_PASSWORD 与 MA3_API_KEY_ENCRYPTION_SECRET
+./up.sh
+./verify.sh
+docker compose exec ma3 cat /data/bootstrap_api_key.txt   # 无 OIDC 时的首把 API key
+```
+
+- **默认**：未配置 OIDC 时自动写入 bootstrap API key；embeddings **默认开启**
+- **可选**：配置 `MA3_OIDC_*`（或兼容的 `MA3_AUTHING_*`）接入自有 IdP，再用门户发 key
+- 自建实例的 `lib_default` **不会**与 `ma3.io` 同步
+- 社区支持 **best-effort，无 SLA**（见 [SECURITY.md](SECURITY.md)）
+
+### B. 给 Agent 接入已有实例
+
+操作真源：`GET {MA3_BASE_URL}/client/agent-onboarding.md`  
 （仓库副本：[code/client/agent-onboarding.md](code/client/agent-onboarding.md)）
 
-1. 浏览器打开 `{MA3_BASE_URL}/ui/keys/`，登录后自助创建 API key，**立即复制**明文
-2. 把本文 + `MA3_BASE_URL` + key 交给 Agent，由其完成 bootstrap、MCP 配置与策略安装
-3. 验证：`ma3_whoami` → `ma3_context` → `ma3_report`（写入个人库）
+1. 取得 API key：自托管读 bootstrap 文件，或门户 `{MA3_BASE_URL}/ui/keys/`（需 OIDC）
+2. 把 onboarding 文档 + `MA3_BASE_URL` + key 交给 Agent
+3. 验证：`ma3_whoami` → `ma3_context` → `ma3_report`
 
 设计说明：[docs/05-agent/getting-started.md](docs/05-agent/getting-started.md)
 
-### B. 本地跑起 server（开发）
+### C. 本地跑起 server（开发）
 
 ```bash
 git clone https://github.com/hjk41/ma3.git
@@ -77,6 +95,7 @@ pip install -r requirements.txt
 export MA3_DEV_AUTH=1
 export MA3_DEV_API_KEY=ma3dev
 export MA3_DATABASE_URL=sqlite:///./data/ma3.db
+export MA3_DISABLE_EMBEDDINGS=1   # 开发时可关；自托管 Compose 默认开
 
 uvicorn app.main:app --host 0.0.0.0 --port 8001 --app-dir .
 ```
@@ -89,9 +108,11 @@ curl -sS http://127.0.0.1:8001/client/manifest.json
 # MCP：POST /mcp ，Header: X-API-Key: ma3dev
 ```
 
+无 `MA3_DEV_AUTH` 时也可：`python scripts/bootstrap_selfhost.py` 生成正式 API key。
+
 更多实现说明：[code/README.md](code/README.md)
 
-### C. 部署到已有环境
+### D. 运维推送到已有主机（维护者）
 
 使用配置驱动的通用脚本（环境专用 `*.env` **不进 git**）：
 
@@ -116,7 +137,7 @@ Agent ── MCP (X-API-Key) ──► ma3 server ──► PostgreSQL + search 
 | Server | `code/server/` | FastAPI：MCP、auth、domain、search、UI |
 | Client bundle | `code/client/` | manifest、policy、sync 脚本（经 HTTP 下发） |
 | Docs | `docs/` | 产品 → 架构 → 实现 → 交付 |
-| Deploy | `deploy/` | `deploy.sh` + 验收脚本 |
+| Deploy | `deploy/` | 内部推送脚本 + **`deploy/self-host/`** Compose |
 | Eval | `code/eval/` | 评测场景（**非 v1 发布物**） |
 
 系统契约与 ADR：[docs/02-architecture/system-overview.md](docs/02-architecture/system-overview.md)
@@ -154,6 +175,7 @@ ma3/
 |------|------|
 | 架构决策（ADR） | [architecture-decisions.md](docs/02-architecture/architecture-decisions.md) |
 | 运维 / Authing | [deployment-authing.md](docs/06-operations/deployment-authing.md) |
+| **自托管** | [self-hosting.md](docs/06-operations/self-hosting.md) |
 | 验收 | [acceptance/](docs/08-quality/acceptance/README.md) |
 | 术语 | [glossary.md](docs/09-engineering/glossary.md) |
 | 路线图 | [roadmap.md](docs/01-product/roadmap.md) |
@@ -180,7 +202,8 @@ pytest -q tests/unit
 |----|------|
 | 默认分支 | **`main`** — v1 redesign（当前交付） |
 | 实验分支 | **`trigger`** — read/write compliance 触发机制实验 |
-| v1 范围 | MCP + policy、Authing、library ACL、vector search、门户、Observatory |
+| v1 范围 | MCP + policy、可插拔 OIDC、library ACL、vector search、门户、Observatory、Compose 自托管 |
+| 支持 | 社区 best-effort，**无 SLA** |
 | v1 明确不做 | 见 [docs/README.md](docs/README.md) §「v1 不做清单」（如完整 Org UI、Stripe、MCP 签发 key 等 → v1.1+） |
 
 ---

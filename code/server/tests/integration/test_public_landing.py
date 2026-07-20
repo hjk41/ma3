@@ -52,7 +52,45 @@ def test_home_english_locale(isolated_client, monkeypatch):
 def test_home_dev_mode_cta(isolated_client, monkeypatch):
     monkeypatch.setattr(settings, "authing_enabled", False)
     monkeypatch.setattr(settings, "authing_issuer", None)
+    monkeypatch.setattr(settings, "bootstrap_selfhost", False)
     response = isolated_client.get("/ui/home/")
     assert response.status_code == 200
-    assert "/ui/me/" in response.text
-    assert "landing.dev_alert" not in response.text
+    assert "/client/agent-onboarding.md" in response.text
+    assert "进入门户" not in response.text
+
+
+def test_home_bootstrap_mode_cta(isolated_client, monkeypatch):
+    monkeypatch.setattr(settings, "authing_enabled", False)
+    monkeypatch.setattr(settings, "authing_issuer", None)
+    monkeypatch.setattr(settings, "bootstrap_selfhost", True)
+    response = isolated_client.get("/ui/home/")
+    assert response.status_code == 200
+    assert "/mcp/info" in response.text
+    assert "bootstrap" in response.text.lower() or "API Key" in response.text
+
+
+def test_me_without_oidc_returns_html_explain(isolated_client, monkeypatch):
+    monkeypatch.setattr(settings, "authing_enabled", False)
+    monkeypatch.setattr(settings, "authing_issuer", None)
+    monkeypatch.setattr(settings, "bootstrap_selfhost", True)
+    response = isolated_client.get("/ui/me/")
+    assert response.status_code == 503
+    assert "text/html" in response.headers.get("content-type", "")
+    assert "bootstrap" in response.text.lower() or "OIDC" in response.text
+    assert "this page requires Authing login" not in response.text
+
+
+def test_auth_login_without_oidc_returns_html_explain(isolated_client, monkeypatch):
+    monkeypatch.setattr(settings, "authing_enabled", False)
+    monkeypatch.setattr(settings, "authing_issuer", None)
+    monkeypatch.setattr(settings, "bootstrap_selfhost", True)
+    for path in ("/auth/login", "/auth/login/start"):
+        response = isolated_client.get(
+            path,
+            params={"next": "http://192.168.31.202:8010/ui/me/"},
+        )
+        assert response.status_code == 503, path
+        assert "text/html" in response.headers.get("content-type", ""), path
+        assert "bootstrap" in response.text.lower() or "OIDC" in response.text, path
+        assert "Authing auth is not configured" not in response.text, path
+        assert "/mcp/info" in response.text or "/client/agent-onboarding.md" in response.text, path

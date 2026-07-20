@@ -3,8 +3,8 @@ from __future__ import annotations
 
 from urllib.parse import quote
 
-from fastapi import HTTPException, Request
-from fastapi.responses import RedirectResponse, Response
+from fastapi import Request
+from fastapi.responses import HTMLResponse, RedirectResponse, Response
 
 from app.auth.session import SessionUser, resolve_session_user
 from app.core.config import settings
@@ -47,8 +47,57 @@ def redirect_if_setup_required(request: Request, user: SessionUser) -> Response 
     return RedirectResponse(f"/ui/me/setup/?next={quote(next_path, safe='')}", status_code=302)
 
 
+def oidc_required_ui_response(request: Request) -> HTMLResponse:
+    """Friendly HTML when portal pages need OIDC but it is not configured."""
+    from app.api.ui_i18n import html_response, ui_locale
+    from app.api.ui_theme import esc, render_page
+
+    locale, t = ui_locale(request)
+    base = str(request.base_url).rstrip("/")
+    if settings.bootstrap_selfhost:
+        title = t("portal.oidc_required.bootstrap_title")
+        message = t("portal.oidc_required.bootstrap_body")
+        primary_href = f"{base}/mcp/info"
+        primary_label = t("portal.oidc_required.cta_mcp")
+        secondary_href = f"{base}/client/agent-onboarding.md"
+        secondary_label = t("portal.oidc_required.cta_docs")
+    else:
+        title = t("portal.oidc_required.title")
+        message = t("portal.oidc_required.body")
+        primary_href = f"{base}/ui/home/"
+        primary_label = t("portal.oidc_required.cta_home")
+        secondary_href = f"{base}/client/agent-onboarding.md"
+        secondary_label = t("portal.oidc_required.cta_docs")
+
+    body = f"""
+  <div class="page-403">
+    <h1>{esc(title)}</h1>
+    <p>{esc(message)}</p>
+    <p>
+      <a class="btn primary" href="{esc(primary_href)}">{esc(primary_label)}</a>
+      <a class="btn subtle" href="{esc(secondary_href)}">{esc(secondary_label)}</a>
+      <a class="btn" href="{esc(base)}/ui/home/">{esc(t("portal.oidc_required.cta_home"))}</a>
+    </p>
+  </div>"""
+    return html_response(
+        request,
+        render_page(
+            title=title,
+            base=base,
+            active_nav="",
+            body=body,
+            show_minimal_header=True,
+            brand_href=f"{base}/ui/home/",
+            locale=locale,
+            request=request,
+        ),
+        status_code=503,
+    )
+
+
 def require_authed_ui_user(request: Request, *, require_setup: bool = True) -> SessionUser | Response:
-    require_authing_for_ui()
+    if not settings.authing_configured:
+        return oidc_required_ui_response(request)
     user = resolve_ui_user(request)
     if user is None:
         return login_redirect(request)
@@ -57,11 +106,3 @@ def require_authed_ui_user(request: Request, *, require_setup: bool = True) -> S
         if setup_redirect is not None:
             return setup_redirect
     return user
-
-
-def require_authing_for_ui() -> None:
-    if not settings.authing_configured:
-        raise HTTPException(
-            status_code=503,
-            detail="this page requires Authing login",
-        )

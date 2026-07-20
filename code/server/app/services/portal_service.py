@@ -11,10 +11,16 @@ from app.services.entitlement_service import (
 
 
 def validate_authing_admin_config() -> None:
-    if settings.authing_configured and not settings.auth_admin_users:
+    """Require admin allowlist when OIDC (including Authing) is enabled."""
+    if settings.oidc_configured and not settings.auth_admin_users:
         raise RuntimeError(
-            "MA3_AUTH_ADMIN_USERS must list at least one product admin when MA3_AUTHING_ENABLED=1"
+            "MA3_AUTH_ADMIN_USERS must list at least one product admin when OIDC is enabled "
+            "(MA3_OIDC_* or MA3_AUTHING_*)"
         )
+
+
+# Back-compat alias
+validate_oidc_admin_config = validate_authing_admin_config
 
 
 __all__ = [
@@ -23,4 +29,5 @@ __all__ = [
     "is_library_owner",
     "list_entitled_libraries",
     "validate_authing_admin_config",
+    "validate_oidc_admin_config",
 ]

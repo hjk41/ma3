@@ -8,6 +8,7 @@ from fastapi import APIRouter, HTTPException, Query, Request, Response
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 
 from app.api.ui_i18n import html_response, resolve_locale, tr, ui_locale
+from app.api.ui_session import oidc_required_ui_response
 from app.api.ui_theme import esc, render_page
 from app.auth import authing_client
 from app.auth.session import (
@@ -31,6 +32,13 @@ router = APIRouter(prefix="/auth", tags=["auth"])
 def _require_authing() -> None:
     if not settings.authing_configured:
         raise HTTPException(status_code=503, detail="Authing auth is not configured")
+
+
+def _require_authing_html(request: Request) -> Response | None:
+    """Browser auth pages: friendly HTML when OIDC is off (bootstrap self-host)."""
+    if not settings.authing_configured:
+        return oidc_required_ui_response(request)
+    return None
 
 
 def _normalize_next_path(next_path: str) -> str:
@@ -77,7 +85,9 @@ def auth_login(
     request: Request,
     next: str = Query("/ui/me/", alias="next"),
 ) -> Response:
-    _require_authing()
+    denied = _require_authing_html(request)
+    if denied is not None:
+        return denied
     return _start_authing_login(request, _normalize_next_path(next))
 
 
@@ -86,7 +96,9 @@ def auth_login_start(
     request: Request,
     next: str = Query("/ui/me/", alias="next"),
 ) -> Response:
-    _require_authing()
+    denied = _require_authing_html(request)
+    if denied is not None:
+        return denied
     return _start_authing_login(request, _normalize_next_path(next))
 
 
@@ -97,7 +109,9 @@ def auth_callback(
     state: str | None = None,
     error: str | None = None,
 ) -> Response:
-    _require_authing()
+    denied = _require_authing_html(request)
+    if denied is not None:
+        return denied
     next_path = pop_oauth_next(request)
     if error:
         logger.warning("authing callback error=%s", error)
@@ -155,7 +169,9 @@ def auth_whoami(request: Request) -> JSONResponse:
 
 @router.get("/account")
 def auth_account(request: Request) -> Response:
-    _require_authing()
+    denied = _require_authing_html(request)
+    if denied is not None:
+        return denied
     if resolve_session_user(request) is None:
         return RedirectResponse("/auth/login?next=/auth/account", status_code=302)
     return RedirectResponse(settings.resolve_authing_account_url(), status_code=302)
@@ -164,7 +180,9 @@ def auth_account(request: Request) -> Response:
 @router.get("/logout")
 @router.post("/logout")
 def auth_logout(request: Request) -> Response:
-    _require_authing()
+    denied = _require_authing_html(request)
+    if denied is not None:
+        return denied
     token = get_access_token(request)
     if token:
         authing_client.invalidate_userinfo_cache(token)

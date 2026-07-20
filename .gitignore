@@ -34,3 +34,7 @@ tmp-*.json
 node_modules/
 dist/
 *.tsbuildinfo
+
+# Local bootstrap / runtime data
+code/server/data/
+**/bootstrap_api_key.txt

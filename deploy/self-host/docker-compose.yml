@@ -1,0 +1,64 @@
+# ma3 self-host stack
+# Usage:
+#   cp .env.example .env   # edit secrets
+#   ./up.sh
+#
+# Default path: no OIDC → bootstrap API key in volume ./data/bootstrap_api_key.txt
+# Optional: set MA3_OIDC_* (or legacy MA3_AUTHING_*) for portal login.
+
+services:
+  db:
+    image: pgvector/pgvector:pg16
+    environment:
+      POSTGRES_USER: ma3
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-ma3pass}
+      POSTGRES_DB: ma3
+    volumes:
+      - ma3_pgdata:/var/lib/postgresql/data
+      - ./initdb:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ma3 -d ma3"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+
+  ma3:
+    build:
+      context: ../..
+      dockerfile: deploy/self-host/Dockerfile
+    depends_on:
+      db:
+        condition: service_healthy
+    env_file:
+      - .env
+    environment:
+      MA3_DATABASE_URL: postgresql://ma3:${POSTGRES_PASSWORD:-ma3pass}@db:5432/ma3
+      MA3_PUBLIC_BASE_URL: ${MA3_PUBLIC_BASE_URL:-http://127.0.0.1:8000}
+      MA3_INSTANCE_ID: ${MA3_INSTANCE_ID:-ma3-selfhost}
+      MA3_BOOTSTRAP_SELFHOST: ${MA3_BOOTSTRAP_SELFHOST:-1}
+      MA3_BOOTSTRAP_KEY_FILE: /data/bootstrap_api_key.txt
+      MA3_HF_HOME: /data/hf
+      HF_HOME: /data/hf
+      # Embeddings on by default (set MA3_DISABLE_EMBEDDINGS=1 to skip)
+      MA3_DISABLE_EMBEDDINGS: ${MA3_DISABLE_EMBEDDINGS:-0}
+      MA3_DEV_AUTH: "0"
+      # Optional egress proxy for first-time HF model download (Docker often lacks IPv6/WAN)
+      HTTP_PROXY: ${HTTP_PROXY:-}
+      HTTPS_PROXY: ${HTTPS_PROXY:-}
+      NO_PROXY: ${NO_PROXY:-db,localhost,127.0.0.1}
+    volumes:
+      - ma3_data:/data
+    ports:
+      - "${MA3_PORT:-8000}:8000"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/healthz')"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 120s
+
+volumes:
+  ma3_pgdata:
+  ma3_data:

@@ -87,15 +87,27 @@ class Settings:
     )
     embedding_dim: int = field(default_factory=lambda: int(os.environ.get("MA3_EMBEDDING_DIM", "384")))
 
-    authing_enabled: bool = field(default_factory=lambda: _env_bool("MA3_AUTHING_ENABLED", False))
-    authing_issuer: str = field(default_factory=lambda: _env_str("MA3_AUTHING_ISSUER", ""))
-    authing_app_id: str = field(default_factory=lambda: _env_str("MA3_AUTHING_APP_ID", ""))
-    authing_app_secret: str = field(default_factory=lambda: _env_str("MA3_AUTHING_APP_SECRET", ""))
-    authing_redirect_uri: str = field(default_factory=lambda: _env_str("MA3_AUTHING_REDIRECT_URI", ""))
-    authing_post_logout_redirect_uri: str = field(
-        default_factory=lambda: _env_str("MA3_AUTHING_POST_LOGOUT_REDIRECT_URI", "")
+    # Human login via OIDC (MA3_OIDC_* preferred; MA3_AUTHING_* kept as aliases).
+    authing_enabled: bool = False
+    authing_issuer: str = ""
+    authing_app_id: str = ""
+    authing_app_secret: str = ""
+    authing_redirect_uri: str = ""
+    authing_post_logout_redirect_uri: str = ""
+    authing_account_url: str = ""
+    # When True, issuer URLs get Authing-style "/oidc" suffix if missing.
+    oidc_authing_path_compat: bool = False
+    # When OIDC is off: write/reuse a first-admin API key for self-host MCP.
+    bootstrap_selfhost: bool = field(default_factory=lambda: _env_bool("MA3_BOOTSTRAP_SELFHOST", True))
+    bootstrap_key_file: str = field(
+        default_factory=lambda: _env_str("MA3_BOOTSTRAP_KEY_FILE", "./data/bootstrap_api_key.txt")
     )
-    authing_account_url: str = field(default_factory=lambda: _env_str("MA3_AUTHING_ACCOUNT_URL", ""))
+    bootstrap_principal_id: str = field(
+        default_factory=lambda: _env_str("MA3_BOOTSTRAP_PRINCIPAL_ID", "user:selfhost-admin")
+    )
+    bootstrap_display_name: str = field(
+        default_factory=lambda: _env_str("MA3_BOOTSTRAP_DISPLAY_NAME", "Self-host Admin")
+    )
     auth_session_cookie: str = field(default_factory=lambda: _env_str("MA3_AUTH_SESSION_COOKIE", "ma3_session"))
     auth_oauth_state_cookie: str = field(default_factory=lambda: _env_str("MA3_AUTH_OAUTH_STATE_COOKIE", "ma3_oauth_state"))
     auth_admin_users: tuple[str, ...] = field(default_factory=lambda: tuple())
@@ -159,6 +171,7 @@ class Settings:
     )
 
     def __post_init__(self) -> None:
+        self._resolve_oidc_from_env()
         raw_admins = os.environ.get("MA3_AUTH_ADMIN_USERS", "")
         if raw_admins.strip():
             object.__setattr__(
@@ -201,32 +214,97 @@ class Settings:
             os.environ["HF_HOME"] = ma3_hf_home
         validate_ranking_config(self)
 
+    def _resolve_oidc_from_env(self) -> None:
+        """Prefer MA3_OIDC_*; fall back to MA3_AUTHING_* for backwards compatibility."""
+        oidc_issuer = _env_str("MA3_OIDC_ISSUER", "")
+        oidc_client_id = _env_str("MA3_OIDC_CLIENT_ID", "")
+        oidc_client_secret = _env_str("MA3_OIDC_CLIENT_SECRET", "")
+        oidc_enabled_explicit = os.environ.get("MA3_OIDC_ENABLED")
+        authing_issuer = _env_str("MA3_AUTHING_ISSUER", "")
+        authing_app_id = _env_str("MA3_AUTHING_APP_ID", "")
+        authing_app_secret = _env_str("MA3_AUTHING_APP_SECRET", "")
+        authing_enabled = _env_bool("MA3_AUTHING_ENABLED", False)
+
+        using_oidc_prefix = bool(oidc_issuer or oidc_client_id or oidc_client_secret or oidc_enabled_explicit is not None)
+        if using_oidc_prefix:
+            if oidc_enabled_explicit is not None:
+                enabled = _env_bool("MA3_OIDC_ENABLED", False)
+            else:
+                enabled = bool(oidc_issuer and oidc_client_id and oidc_client_secret)
+            issuer = oidc_issuer
+            client_id = oidc_client_id
+            client_secret = oidc_client_secret
+            redirect = _env_str("MA3_OIDC_REDIRECT_URI", "") or _env_str("MA3_AUTHING_REDIRECT_URI", "")
+            post_logout = _env_str("MA3_OIDC_POST_LOGOUT_REDIRECT_URI", "") or _env_str(
+                "MA3_AUTHING_POST_LOGOUT_REDIRECT_URI", ""
+            )
+            account_url = _env_str("MA3_OIDC_ACCOUNT_URL", "") or _env_str("MA3_AUTHING_ACCOUNT_URL", "")
+            path_compat = _env_bool("MA3_OIDC_AUTHING_PATH_COMPAT", False)
+        else:
+            enabled = authing_enabled
+            issuer = authing_issuer
+            client_id = authing_app_id
+            client_secret = authing_app_secret
+            redirect = _env_str("MA3_AUTHING_REDIRECT_URI", "")
+            post_logout = _env_str("MA3_AUTHING_POST_LOGOUT_REDIRECT_URI", "")
+            account_url = _env_str("MA3_AUTHING_ACCOUNT_URL", "")
+            path_compat = True  # Authing apps historically omit /oidc on issuer
+
+        object.__setattr__(self, "authing_enabled", enabled)
+        object.__setattr__(self, "authing_issuer", issuer)
+        object.__setattr__(self, "authing_app_id", client_id)
+        object.__setattr__(self, "authing_app_secret", client_secret)
+        object.__setattr__(self, "authing_redirect_uri", redirect)
+        object.__setattr__(self, "authing_post_logout_redirect_uri", post_logout)
+        object.__setattr__(self, "authing_account_url", account_url)
+        object.__setattr__(self, "oidc_authing_path_compat", path_compat)
+
     @property
-    def authing_configured(self) -> bool:
+    def oidc_configured(self) -> bool:
         return bool(self.authing_enabled and self.authing_issuer and self.authing_app_id and self.authing_app_secret)
 
+    @property
+    def authing_configured(self) -> bool:
+        """Back-compat alias for oidc_configured (Authing is one OIDC provider)."""
+        return self.oidc_configured
+
     def authing_issuer_base(self) -> str:
+        return self.oidc_issuer_base()
+
+    def oidc_issuer_base(self) -> str:
         issuer = self.authing_issuer.rstrip("/")
-        if issuer.endswith("/oidc"):
-            return issuer
-        return f"{issuer}/oidc"
+        if self.oidc_authing_path_compat and not issuer.endswith("/oidc"):
+            return f"{issuer}/oidc"
+        return issuer
 
     def resolve_authing_redirect_uri(self) -> str:
+        return self.resolve_oidc_redirect_uri()
+
+    def resolve_oidc_redirect_uri(self) -> str:
         if self.authing_redirect_uri:
             return self.authing_redirect_uri
         base = (self.public_base_url or "http://127.0.0.1:8000").rstrip("/")
         return f"{base}/auth/callback"
 
     def resolve_authing_post_logout_redirect_uri(self) -> str:
+        return self.resolve_oidc_post_logout_redirect_uri()
+
+    def resolve_oidc_post_logout_redirect_uri(self) -> str:
         if self.authing_post_logout_redirect_uri:
             return self.authing_post_logout_redirect_uri
         base = (self.public_base_url or "http://127.0.0.1:8000").rstrip("/")
-        return f"{base}/ui/observatory/"
+        return f"{base}/ui/home/"
 
     def resolve_authing_account_url(self) -> str:
+        return self.resolve_oidc_account_url()
+
+    def resolve_oidc_account_url(self) -> str:
         if self.authing_account_url:
             return self.authing_account_url
-        return f"{self.authing_issuer_base().removesuffix('/oidc')}/u"
+        base = self.oidc_issuer_base()
+        if base.endswith("/oidc"):
+            return f"{base.removesuffix('/oidc')}/u"
+        return ""
 
     @property
     def database_backend(self) -> str:
@@ -240,8 +318,12 @@ class Settings:
             flags.append("vector")
         if self.dev_auth:
             flags.append("dev_auth")
-        if self.authing_configured:
-            flags.append("authing")
+        if self.oidc_configured:
+            flags.append("oidc")
+            if self.oidc_authing_path_compat:
+                flags.append("authing")
+        if not self.oidc_configured and self.bootstrap_selfhost:
+            flags.append("bootstrap_selfhost")
         return tuple(flags)
 
 

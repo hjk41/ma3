@@ -18,6 +18,7 @@
 | 012 | Billing 与配额 | [012-billing-and-quotas.md](decisions/012-billing-and-quotas.md) |
 | 013 | 写入确认、审计、删除 | [013-write-confirmation-audit-delete.md](decisions/013-write-confirmation-audit-delete.md) |
 | 014 | MCP 错误可自纠 | [014-mcp-error-self-correction.md](decisions/014-mcp-error-self-correction.md) |
+| 015 | 可插拔 OIDC + 自托管 bootstrap key | [015-oidc-pluggable-selfhost-bootstrap.md](decisions/015-oidc-pluggable-selfhost-bootstrap.md) |
 
 ## 产品层决策（未单独 ADR）
 

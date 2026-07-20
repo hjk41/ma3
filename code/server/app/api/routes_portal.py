@@ -11,7 +11,6 @@ from app.core.security import assert_same_origin as _assert_same_origin
 from app.api.ui_session import (
     login_redirect,
     require_authed_ui_user,
-    require_authing_for_ui,
     resolve_ui_user,
     ui_user_line,
 )
@@ -245,7 +244,9 @@ def _problem_summary(problem: str | None, *, width: int = 60) -> str:
 def _landing_primary_href(base: str) -> str:
     if settings.authing_configured:
         return f"{base}/auth/login?next={base}/ui/me/"
-    return f"{base}/ui/me/"
+    if settings.bootstrap_selfhost:
+        return f"{base}/mcp/info"
+    return f"{base}/client/agent-onboarding.md"
 
 
 def _render_public_landing(request: Request, *, locale: str, t: Callable[..., str]) -> str:
@@ -255,7 +256,12 @@ def _render_public_landing(request: Request, *, locale: str, t: Callable[..., st
     rec = lib_stats.get("records") or {}
     by_status = rec.get("by_status") or {}
     primary_href = _landing_primary_href(base)
-    primary_label = t("landing.hero.cta_primary_dev" if not settings.authing_configured else "landing.hero.cta_primary")
+    if settings.authing_configured:
+        primary_label = t("landing.hero.cta_primary")
+    elif settings.bootstrap_selfhost:
+        primary_label = t("landing.hero.cta_primary_bootstrap")
+    else:
+        primary_label = t("landing.hero.cta_primary_dev")
     library_href = f"{base}/ui/libraries/{lib_id}/"
     docs_href = f"{base}/client/agent-onboarding.md"
     instance = settings.instance_id or "local"
@@ -263,7 +269,8 @@ def _render_public_landing(request: Request, *, locale: str, t: Callable[..., st
 
     dev_alert = ""
     if not settings.authing_configured:
-        dev_alert = f'<div class="alert info">{esc(t("landing.dev_alert"))}</div>'
+        alert_key = "landing.bootstrap_alert" if settings.bootstrap_selfhost else "landing.dev_alert"
+        dev_alert = f'<div class="alert info">{esc(t(alert_key))}</div>'
 
     workflow_steps = "".join(
         f'<li><span class="landing-flow-step">{i}</span>'
