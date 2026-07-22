@@ -13,6 +13,9 @@ from app.services.mcp_tool_service import call_mcp_tool, list_mcp_tools, mcp_ini
 
 router = APIRouter(prefix="/mcp", tags=["remote-mcp"])
 
+# Discovery-only tools permitted without credentials. Knowledge read/write requires a key.
+_ANONYMOUS_ALLOWED_TOOLS = frozenset({"ma3_whoami"})
+
 
 def _jsonrpc_result(request_id: str | int | None, result: Any) -> dict[str, Any]:
     return {"jsonrpc": "2.0", "id": request_id, "result": result}
@@ -129,6 +132,13 @@ def _handle_rpc(req: McpJsonRpcRequest, raw_auth: str | None) -> dict[str, Any] 
                     -32001,
                     "Invalid credentials: the X-API-Key is unknown, revoked, or expired. Check your MCP server API key with the ma3 administrator.",
                     {"status_code": 401},
+                )
+            if auth.principal.kind == "anonymous" and name not in _ANONYMOUS_ALLOWED_TOOLS:
+                return _jsonrpc_error(
+                    req.id,
+                    -32001,
+                    "authentication required: set X-API-Key (from /ui/keys/ or self-host bootstrap) to use ma3 tools",
+                    {"status_code": 401, "tool_name": name},
                 )
             result = call_mcp_tool(name, arguments, auth)
             return _jsonrpc_result(req.id, result.model_dump(mode="json", exclude_none=True))

@@ -122,6 +122,17 @@ def test_unknown_tool_message_names_tool(isolated_client):
     assert "ma3_nope" in err["message"]
 
 
+def test_missing_credentials_message_requires_api_key(isolated_client):
+    mcp = McpClient(isolated_client)
+    err = mcp.rpc(
+        "tools/call",
+        {"name": "ma3_context", "arguments": {"problem": "x"}},
+        expect_error=True,
+    )
+    assert err["code"] == -32001
+    assert "authentication required" in err["message"].lower()
+
+
 def test_invalid_credentials_message_mentions_api_key(isolated_client):
     mcp = McpClient(isolated_client)
     err = mcp.rpc(

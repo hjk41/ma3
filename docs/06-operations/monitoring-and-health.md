@@ -12,7 +12,7 @@
 
 ## doctor 应报告项（目标）
 
-- `anonymous_mcp_enabled: false`
+- `anonymous_mcp_enabled: false`（无 API key 时 `tools/call` 除 `ma3_whoami` 外返回 authentication required；匿名无 Community 记录可读权）
 - `api_keys_table: ok`
 - `auth_admin_configured: ok`（Authing on 时）
 - `billing_schema_ok`（Phase B）

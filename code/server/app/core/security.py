@@ -197,6 +197,11 @@ class McpAuthContext:
 
     @property
     def readable_library_ids(self) -> set[str]:
+        # Anonymous has no MCP library entitlement (portal may still show public
+        # Stats-only HTML). Authenticated principals get Community Library by
+        # default unless key grants narrow the set.
+        if self.principal.kind == "anonymous":
+            return set()
         if self.principal.is_admin_bypass:
             from app.storage.db import all_library_ids
 
@@ -205,8 +210,6 @@ class McpAuthContext:
             return set(self.principal.grant_readable)
         if self.principal.library_id:
             return {self.principal.library_id}
-        if self.principal.kind != "anonymous":
-            return {settings.default_library_id}
         return {settings.default_library_id}
 
     @property

@@ -89,7 +89,7 @@ def test_ma3_validate_success_and_failure(isolated_client):
 
 
 def test_search_explain_is_not_exposed(isolated_client):
-    mcp = McpClient(isolated_client)
+    mcp = McpClient(isolated_client, api_key="ma3dev")
 
     # ma3_search_explain tool is removed (internal-only ranking explain)
     assert "ma3_search_explain" not in EXPECTED_TOOLS
@@ -164,18 +164,67 @@ def test_ma3_whoami_and_doctor(isolated_client):
 
     anon = mcp.structured("ma3_whoami")
     assert anon["caller"]["type"] == "anonymous"
-    assert anon["readable_library_ids"]
+    assert anon["readable_library_ids"] == []
+    assert anon["writable_library_ids"] == []
 
     admin = mcp.structured("ma3_whoami", api_key="ma3dev")
     assert admin["caller"]["type"] == "admin"
     assert admin["writable_library_ids"]
 
-    doctor = mcp.structured("ma3_doctor")
+    doctor = mcp.structured("ma3_doctor", api_key="ma3dev")
     assert doctor["status"] == "ok"
     assert doctor["database"] == "sqlite"
     assert doctor["records"] >= 0
     assert "server" in doctor
     assert doctor["server"]["client_update_urls"]
+
+
+def test_anonymous_cannot_read_community_knowledge(isolated_client):
+    """Regression: Community Library MCP reads require an API key (not anonymous)."""
+    admin = McpClient(isolated_client, api_key="ma3dev")
+    seeded = admin.structured(
+        "ma3_report",
+        {
+            "problem": "anonymous read must not see this community record",
+            "outcome": "resolved",
+            "result_summary": "seed for anonymous denial test",
+            "library_id": "lib_default",
+            "evidence": _EVIDENCE,
+        },
+    )
+    record_id = seeded["record_id"]
+    case_id = seeded["case_assignment"]["case_id"]
+
+    anon = McpClient(isolated_client)
+    ctx_err = anon.call(
+        "ma3_context",
+        {"problem": "anonymous read must not see this community record"},
+        expect_error=True,
+    )
+    assert ctx_err["code"] == -32001
+    assert "authentication required" in ctx_err["message"].lower()
+
+    case_err = anon.call("ma3_case", {"case_id": case_id}, expect_error=True)
+    assert case_err["code"] == -32001
+
+    locate_err = anon.call("ma3_locate_by_id", {"id": record_id}, expect_error=True)
+    assert locate_err["code"] == -32001
+
+    doctor_err = anon.call("ma3_doctor", {}, expect_error=True)
+    assert doctor_err["code"] == -32001
+
+    # Authed caller still sees the seeded knowledge.
+    ctx = admin.structured(
+        "ma3_context",
+        {"problem": "anonymous read must not see this community record"},
+    )
+    hit_ids = {
+        rec["id"]
+        for group in ctx.get("cases", [])
+        for rec in group.get("records", [])
+    }
+    hit_ids.update(rec["id"] for rec in ctx.get("ungrouped_records", []))
+    assert record_id in hit_ids
 
 
 def test_draft_review_flow(isolated_client):
@@ -313,14 +362,15 @@ def test_ma3_locate_by_id_hides_others_drafts_but_author_sees_own(isolated_clien
     record_id = draft["record_id"]
     assert draft["status"] == "draft"
 
-    # Anonymous (non-author, non-maintainer) must not see the draft -> 404.
+    # Anonymous must not see the draft (auth required before existence leak).
     anon = McpClient(isolated_client)
     hidden = anon.rpc(
         "tools/call",
         {"name": "ma3_locate_by_id", "arguments": {"id": record_id}},
         expect_error=True,
     )
-    assert hidden["code"] == 404 or hidden["message"]
+    assert hidden["code"] == -32001
+    assert "authentication required" in hidden["message"].lower()
 
     # Admin (maintainer/author) can see it.
     seen = admin.structured("ma3_locate_by_id", {"id": record_id})

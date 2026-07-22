@@ -220,6 +220,27 @@ def test_deploy_auth_login_friendly_when_oidc_off(deploy_http):
         assert "/mcp/info" in response.text or "agent-onboarding" in response.text, path
 
 
+def test_deploy_anonymous_cannot_read_knowledge(deploy_http, deploy_api_key):
+    """Live regression: tools/call without X-API-Key must not return Community records."""
+    anon = McpClient(deploy_http)  # no api_key
+    who = anon.structured("ma3_whoami")
+    assert who["caller"]["type"] == "anonymous"
+    assert who.get("readable_library_ids") == []
+
+    ctx_err = anon.call(
+        "ma3_context",
+        {"problem": "mihomo proxy docker", "max_cases": 3},
+        expect_error=True,
+    )
+    assert ctx_err["code"] == -32001
+    assert "authentication required" in ctx_err["message"].lower()
+
+    # With a valid key, knowledge tools work (instance may be empty; just no auth error).
+    authed = McpClient(deploy_http, api_key=deploy_api_key)
+    ctx = authed.structured("ma3_context", {"problem": "mihomo proxy docker", "max_cases": 3})
+    assert "cases" in ctx
+
+
 @pytest.mark.deploy
 def test_deploy_eval_claude_db_api_key(deploy_http):
     """Regression: eval tenant keys in api_keys table must authenticate tools/call."""
