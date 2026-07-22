@@ -53,6 +53,18 @@ curl -s "$BASE/healthz"
 curl -s "$BASE/doctor"   # 或 MCP ma3_doctor
 ```
 
+## 部署后验收（强制）
+
+每次线上部署（`ENV_MODE=preserve`）必须按 **[deploy/README.md](../../deploy/README.md)** 的标准流程验收：
+
+1. `./deploy/deploy.sh deploy/deploy.ma3.io.env`（自动含远端 smoke + 公网 `verify_ma3_prod.sh`）
+2. 或单独：`bash deploy/common/verify_ma3_prod.sh`（对 `https://ma3.io`）
+
+清单摘要：healthz / UI·Auth / client bundle / 匿名 MCP 拒绝 / `ma3dev` 拒绝 / pytest。  
+未设 `VERIFY_API_KEY` 时跳过需 API key 的 MCP 测例，汇报时须注明。
+
+LAN（`regenerate`）用 `deploy/common/verify_ma3.sh`，勿与生产清单混用。
+
 ## 待补充
 
 - [x] `deploy/self-host` docker compose 示例（见 [self-hosting.md](self-hosting.md)）

@@ -140,7 +140,7 @@ python3 -m json.tool /tmp/ma3-healthz.json
 REMOTE
 
   if [[ "${RUN_VERIFY}" == "1" ]]; then
-    echo "==> [3/3] production verification (remote 127.0.0.1:${MA3_PORT})"
+    echo "==> [3/3a] production remote loopback smoke (127.0.0.1:${MA3_PORT})"
     $SSH "${REMOTE_USER}@${REMOTE_HOST}" bash -s <<REMOTE
 set -euo pipefail
 PORT="${MA3_PORT}"; EXPECT_INSTANCE_ID="${EXPECT_INSTANCE_ID}"; EXPECT_PUBLIC_BASE_URL="${EXPECT_PUBLIC_BASE_URL}"
@@ -161,8 +161,20 @@ tools=\$(curl -sf -X POST "\${BASE}/mcp" -H 'Content-Type: application/json' \
   -d '{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}' \
   | python3 -c "import sys,json;print(len(json.load(sys.stdin)['result']['tools']))")
 [[ "\${tools}" -ge 13 ]] || { echo "FAIL: MCP tools/list=\${tools}" >&2; exit 1; }
-echo "    prod checks OK (instance=\${inst} base=\${base} tools=\${tools} dev_auth=off ma3dev=rejected)"
+echo "    remote smoke OK (instance=\${inst} base=\${base} tools=\${tools})"
 REMOTE
+
+    echo "==> [3/3b] production public-URL verify (deploy/common/verify_ma3_prod.sh)"
+    export MA3_BASE_URL="${EXPECT_PUBLIC_BASE_URL}"
+    export MA3_EXPECT_INSTANCE_ID="${EXPECT_INSTANCE_ID}"
+    export MA3_EXPECT_PUBLIC_BASE_URL="${EXPECT_PUBLIC_BASE_URL}"
+    export MA3_EXPECT_FEATURES="${MA3_EXPECT_FEATURES:-postgresql,vector,oidc}"
+    export MA3_READY_TIMEOUT="${HEALTHZ_TIMEOUT}"
+    # Optional: set VERIFY_API_KEY in deploy.ma3.io.env for authed MCP pytest.
+    if [[ -n "${VERIFY_API_KEY:-}" ]]; then
+      export MA3_API_KEY="${VERIFY_API_KEY}"
+    fi
+    bash "${SCRIPT_DIR}/common/verify_ma3_prod.sh"
   fi
 
 # ===========================================================================
