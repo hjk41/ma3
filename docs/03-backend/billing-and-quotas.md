@@ -2,7 +2,8 @@
 
 > **ADR**：[ADR-012](../02-architecture/decisions/012-billing-and-quotas.md)  
 > **前置**：[authorization-and-libraries.md](authorization-and-libraries.md)  
-> **状态**：设计定稿；**v1 未全量实现** — 当前以 `paid_principal_ids` 等启发式过渡（见 [api-keys-ui-and-api.md](../04-frontend/api-keys-ui-and-api.md) 免费档 grant 锁定），schema/enforcement 按 Phase B1–B4 落地  
+> **状态**：设计定稿；**v1 过渡实现** — 付费判定 = `principals.plan_code=pro` **或** `MA3_PAID_PRINCIPAL_IDS` env 白名单。运营可在 Observatory（`/ui/observatory/users/`）直接设为 Pro，无需重启。完整 `billing_accounts` / Stripe 仍按 Phase B1–B4 落地。  
+> **运营 UI**：产品管理员 → Observatory → 付费概况 / 用户付费 / 组织  
 > **商业叙事**：[pricing-and-plans.md](../07-commercial/pricing-and-plans.md)、[pitch.md](../01-product/pitch.md)
 
 ---

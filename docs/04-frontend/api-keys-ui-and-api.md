@@ -16,7 +16,7 @@
 | **删除** 替代撤销 | UI/REST 统一 **删除**；用户视角 key 立即失效且不可恢复 |
 | Grants 可理解 | 创建时 grant picker：personal + Community，各 `reader`/`writer`/`none`；免费档 Community writer 锁定 |
 | 复制便利 | 列表/详情展示完整 key（`key_ciphertext` decrypt 成功时）+ 复制按钮 |
-| 安全边界 | mutating 路由须 Authing session + same-origin；MCP/API-key auth **不能** 管理 key |
+| 安全边界 | mutating：session 须 same-origin；**用户 `X-API-Key` 可管理本人 keys**（不可删除当前正在使用的 key）；bootstrap key 不能管理 keys |
 | 小 diff | 复用现有表结构 + SSR 路由模式 |
 
 ### 非目标（v1）
@@ -65,7 +65,7 @@ api_key_deleted principal_id=user:... key_id=key_... key_prefix=ma3k_...
 
 ## 4. API 契约
 
-所有 `/api/keys` 路由要求：Authing session、Authing 已配置（否则 503）、mutating 路由 same-origin、owner-only（他人/不存在 → 404）、**不接受 X-API-Key**。
+所有 `/api/keys` 路由要求：门户鉴权已启用（OIDC 或 `MA3_LOCAL_AUTH`，否则 503）；**session cookie 或用户 `X-API-Key`**；session 写操作须 same-origin；owner-only（他人/不存在 → 404）；**不可删除当前请求正在使用的 API key**；bootstrap key 禁止。
 
 ### `GET /api/keys`
 

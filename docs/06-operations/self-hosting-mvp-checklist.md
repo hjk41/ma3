@@ -10,7 +10,7 @@
 
 | # | 议题 | 决策 |
 |---|------|------|
-| 1 | Auth | **解耦 IdP**：可接入用户自有 **OIDC**；**未配置 OIDC 时默认 bootstrap key**（无门户登录也能用 MCP） |
+| 1 | Auth | **解耦 IdP**：可接入用户自有 **OIDC**；**未配置 OIDC 时**默认 **本地账号门户**（`MA3_LOCAL_AUTH=1`）+ **bootstrap key**（MCP）；二者并行 |
 | 2 | Embeddings | Compose / 自托管默认 **开启**（`MA3_DISABLE_EMBEDDINGS` 默认关；文档写清 HF 缓存与体积） |
 | 3 | 反代 | **不是硬性前提**（见下文说明）；MVP 默认局域网可直连；公网 / OIDC 场景**推荐**反代 + HTTPS |
 | 4 | 支持 | **无 SLA**；GitHub Issues / Discussion **best-effort** |
@@ -38,8 +38,8 @@ MVP 文档写法建议：
 ## 验收定义（Done = 全部勾上）
 
 - [x] `deploy/self-host` Compose + Dockerfile + initdb pgvector + up/verify（见 [self-hosting.md](self-hosting.md)）
-- [x] **无 OIDC**：startup bootstrap → `MA3_BOOTSTRAP_KEY_FILE`
-- [x] **有 OIDC**：`MA3_OIDC_*`（`MA3_AUTHING_*` 兼容别名）+ ADR-015
+- [x] **无 OIDC**：startup bootstrap → `MA3_BOOTSTRAP_KEY_FILE`；本地门户 `MA3_LOCAL_AUTH`（注册/登录/Observatory 管用户）
+- [x] **有 OIDC**：`MA3_OIDC_*`（`MA3_AUTHING_*` 兼容别名）+ ADR-015（此时 local auth 关闭）
 - [x] Authing 降级为一种 OIDC 配置 / 路径兼容
 - [x] Compose 默认关闭 `MA3_DEV_AUTH`；embeddings 默认开
 - [x] 文档：Community 语义、反代非硬性、**无 SLA**；根目录 `SECURITY.md`
