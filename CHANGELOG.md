@@ -10,8 +10,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 - Self-host local auth, first-run setup, portal REST (orgs/libraries/admin), org invites & member aliases
 - Public legal draft docs under `docs/07-commercial/legal/`
-- GitHub Actions CI (unit, integration, self-host Docker build)
+- GitHub Actions CI (unit, integration, **integration-postgres**, self-host Docker build)
 - `CONTRIBUTING.md`, Issue/PR templates, English README gateway
+- `scripts/file_design_backlog_issues.sh` to turn design backlog into GitHub Issues
 
 ### Changed
 

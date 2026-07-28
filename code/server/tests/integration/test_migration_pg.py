@@ -43,7 +43,9 @@ def test_migration_script_idempotent_on_legacy_tables(monkeypatch):
               library_id TEXT PRIMARY KEY,
               organization_id TEXT,
               name TEXT NOT NULL,
-              is_public BOOLEAN NOT NULL DEFAULT FALSE
+              description TEXT NOT NULL DEFAULT '',
+              is_public BOOLEAN NOT NULL DEFAULT FALSE,
+              created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
             )
             """
         )

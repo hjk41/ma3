@@ -257,6 +257,7 @@ def test_deploy_eval_claude_db_api_key(deploy_http):
 
 
 @pytest.mark.postgres
+@pytest.mark.deploy
 def test_deploy_database_migration_state():
     database_url = os.environ.get("MA3_DATABASE_URL")
     if not database_url or not database_url.startswith("postgresql"):
