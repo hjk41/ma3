@@ -3,23 +3,19 @@
 > 来源：原仓库根 `todo.md`（2026-07-03 pitch vs PITCH.md 缺口评审）迁移至此。
 > 这些是**计划中的设计议题（planned design issues），不是承诺（not commitments）**——
 > 无排期、无交付承诺，讨论定稿后才会转为 ADR / design 文档。
+>
+> **真源**：以下 GitHub Issues（本文件仅作索引）。
 
-## 待设计议题 → GitHub Issues
+## 待设计议题
 
-在已登录 `gh` 的环境执行一次：
+| ID | Issue | 摘要 |
+|----|-------|------|
+| B1 | https://github.com/hjk41/ma3/issues/1 | 维护者/合规删除他人内容 |
+| B2 | https://github.com/hjk41/ma3/issues/2 | 自动维护者 Agent |
+| B3 | https://github.com/hjk41/ma3/issues/3 | Org 成员 / SSO / SCIM / seats |
+| B4 | https://github.com/hjk41/ma3/issues/4 | Integrator / 委托子身份（B2B2C） |
 
-```bash
-bash scripts/file_design_backlog_issues.sh
-```
-
-脚本会创建 B1–B4 Issues，并把本文件改成带链接的索引表。
-
-| ID | 摘要 |
-|----|------|
-| B1 | 维护者/合规删除他人内容（含 audit / legal hold） |
-| B2 | 自动维护者 Agent（过时检测 / supersede / 人纠偏） |
-| B3 | Org 成员管理 / SSO / SCIM / seat 分配 |
-| B4 | Integrator / 委托子身份（B2B2C） |
+重新建 Issue：`bash scripts/file_design_backlog_issues.sh`（会新建而非去重，慎用）。
 
 ## 已决策（追溯用，已落文档）
 

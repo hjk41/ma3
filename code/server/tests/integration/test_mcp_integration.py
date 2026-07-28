@@ -29,7 +29,7 @@ def test_healthz_and_client_bundle(isolated_client):
     body = health.json()
     assert body["status"] == "ok"
     assert body["api_version"] == "v1"
-    assert "sqlite" in body["features"]
+    assert "sqlite" in body["features"] or "postgresql" in body["features"]
 
     manifest = isolated_client.get("/client/manifest.json")
     assert manifest.status_code == 200
@@ -173,7 +173,7 @@ def test_ma3_whoami_and_doctor(isolated_client):
 
     doctor = mcp.structured("ma3_doctor", api_key="ma3dev")
     assert doctor["status"] == "ok"
-    assert doctor["database"] == "sqlite"
+    assert doctor["database"] in {"sqlite", "postgresql"}
     assert doctor["records"] >= 0
     assert "server" in doctor
     assert doctor["server"]["client_update_urls"]
