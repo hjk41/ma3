@@ -16,6 +16,7 @@
 | seats | 1 | 1 | 5 |
 | API keys | 10 | 50 | 200 |
 | 防误删（deletion_protection） | ❌ | ❌ | ✅ |
+| 支持 | best-effort | best-effort | best-effort（正式 SLA v1.1+ 规划） |
 
 ## 计费原则
 

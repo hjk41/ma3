@@ -44,7 +44,7 @@ MA3_BASE_URL="${MA3_BASE_URL}" MA3_PORT="${MA3_PORT}" bash ./verify.sh
 
 echo "==> Bootstrap UI expectations (no OIDC)"
 me_code="$(curl -s -o /dev/null -w '%{http_code}' "${MA3_BASE_URL}/ui/me/")"
-login_code="$(curl -s -o /tmp/ma3-auth-login.html -w '%{http_code}' "${MA3_BASE_URL}/auth/login?next=http://192.168.31.202:8010/ui/me/")"
+login_code="$(curl -s -o /tmp/ma3-auth-login.html -w '%{http_code}' "${MA3_BASE_URL}/auth/login?next=http://192.168.1.100:8010/ui/me/")"
 onb_code="$(curl -s -o /tmp/ma3-onboarding.md -w '%{http_code}' "${MA3_BASE_URL}/client/agent-onboarding.md")"
 home_code="$(curl -s -o /dev/null -w '%{http_code}' "${MA3_BASE_URL}/ui/home/")"
 [[ "${me_code}" == "503" ]] || { echo "FAIL: /ui/me/ expected 503 (bootstrap) got ${me_code}" >&2; exit 1; }

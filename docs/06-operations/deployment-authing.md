@@ -11,7 +11,7 @@
    - 返回类型：`code`
    - 回调 URL（示例）：
      - `https://ma3.io/auth/callback`（生产）
-     - `http://192.168.31.202:8000/auth/callback`（内网 staging）
+     - `http://192.168.1.100:8000/auth/callback`（内网 staging，替换为你的 LAN 主机 IP）
 4. **登录控制 → 注册/登录方式**：
    - 开启 **微信**（需微信开放平台网站应用 + 备案域名）
    - 开启 **手机号验证码**（配阿里云/腾讯云短信或 Authing 短信）

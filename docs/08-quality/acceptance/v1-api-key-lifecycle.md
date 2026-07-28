@@ -2,7 +2,7 @@
 
 - **Tester**: fable (QA acceptance)
 - **Date**: 2026-07-04 (updated after layout pass)
-- **Target**: 192.168.31.202, ma3 `http://192.168.31.202:8000`, Postgres, Authing enabled
+- **Target**: LAN staging host, ma3 `http://ma3.example.internal:8000`, Postgres, Authing enabled
 - **Scope**: design/14 §10 criteria A1–A12 (see [../../04-frontend/api-keys-ui-and-api.md](../../04-frontend/api-keys-ui-and-api.md))
 - **Method**: real-browser Playwright E2E (`code/server/scripts/e2e_authing_ui.py`) against 202 with the real Authing test account `user:6a45abec4d2ef946d80649f6`, plus the shipped integration suite `tests/integration/test_self_service_onboarding.py` (15 tests) run locally, plus code inspection of `routes_keys.py` / `db.py` for criteria without a dedicated test.
 
@@ -44,7 +44,7 @@
 ## Operations log (condensed)
 
 ```text
-e2e_authing_ui.py vs 192.168.31.202:8000, AUTHING_TEST_USER=user:6a45abec4d2ef946d80649f6
+e2e_authing_ui.py vs ma3.example.internal:8000, AUTHING_TEST_USER=user:6a45abec4d2ef946d80649f6
   login → /ui/keys/ loads (no login redirect)
   create form label=e2e-authing-key → 303 → detail shows label + ma3k_ plaintext
   assert 撤销 not in page                                    → OK

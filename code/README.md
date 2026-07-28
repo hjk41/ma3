@@ -4,8 +4,10 @@ Greenfield server per [../docs/01-product/pitch.md](../docs/01-product/pitch.md)
 
 ## Quick start
 
+See root [README.md §C 本地跑起 server（开发）](../README.md#c-本地跑起-server开发) for the canonical dev setup. In short (paths relative to repo root):
+
 ```bash
-cd /home/hct/ma3_deploy/code/server
+cd code/server
 python3 -m venv .venv
 .venv/bin/pip install -r requirements.txt
 export MA3_DEV_AUTH=1
@@ -28,13 +30,16 @@ MCP `tools/list` / `tools/call` via POST `/mcp` with header `X-API-Key: ma3dev`.
 
 ```text
 server/app/
-  api/          health, mcp, client static, observatory stub
-  core/         config, dev auth
-  models/       MCP payloads (Pydantic single source of truth)
-  services/     mcp_tool_service, mcp_server_info
-  storage/      sqlite bootstrap + queries
-client/         HTTP bundle：manifest, onboarding, policy, sync scripts, env template (ADR-009)
+  api/          MCP, portal HTML, REST (/api/*), setup gate, i18n
+  auth/         session, OIDC / local auth
+  core/         config, security
+  models/       MCP payloads (Pydantic)
+  services/     domain services (keys, orgs, invites, setup, billing, …)
+  storage/      db, search, ranking
+client/         HTTP bundle: manifest, onboarding, policy, sync scripts
 ```
+
+See also [docs/09-engineering/repository-layout.md](../docs/09-engineering/repository-layout.md).
 
 ## Tests
 

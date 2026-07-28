@@ -6,11 +6,13 @@
 
 | Profile | 用途 | Auth | 数据库 |
 |---------|------|------|--------|
-| **profile-saas** | 公网 / staging **首要** | Authing OIDC + API Key | PostgreSQL |
-| **profile-lan** | dev / 192.168.31.202 | 可选 `MA3_DEV_AUTH=1` | Postgres 或 SQLite |
+| **profile-saas** | 公网 SaaS / staging **首要** | OIDC（如 Authing）+ API Key | PostgreSQL |
+| **profile-lan** | dev / 内网 staging（自选 LAN 主机） | 可选 `MA3_DEV_AUTH=1`（仅限内网） | Postgres 或 SQLite |
+| **profile-selfhost** | 社区自托管（Docker Compose） | bootstrap key / 本地账号 / 可选 OIDC | PostgreSQL（compose 内置） |
 | profile-ltp | legacy | — | 非 v1 core |
 
-**同一 binary**；通过环境变量切换 profile 行为。
+**同一 binary**；通过环境变量切换 profile 行为。文档不绑定具体主机——
+LAN staging 主机由维护者在本地 deploy env 文件（不进 git）中配置。
 
 ## 必备环境变量（SaaS）
 
@@ -57,8 +59,8 @@ curl -s "$BASE/doctor"   # 或 MCP ma3_doctor
 
 每次线上部署（`ENV_MODE=preserve`）必须按 **[deploy/README.md](../../deploy/README.md)** 的标准流程验收：
 
-1. `./deploy/deploy.sh deploy/deploy.ma3.io.env`（自动含远端 smoke + 公网 `verify_ma3_prod.sh`）
-2. 或单独：`bash deploy/common/verify_ma3_prod.sh`（对 `https://ma3.io`）
+1. `./deploy/deploy.sh deploy/deploy.<prod>.env`（本地配置文件，不进 git；自动含远端 smoke + 公网 `verify_ma3_prod.sh`）
+2. 或单独：`MA3_BASE_URL=$MA3_BASE_URL bash deploy/common/verify_ma3_prod.sh`（对生产公网 URL）
 
 清单摘要：healthz / UI·Auth / client bundle / 匿名 MCP 拒绝 / `ma3dev` 拒绝 / pytest。  
 未设 `VERIFY_API_KEY` 时跳过需 API key 的 MCP 测例，汇报时须注明。

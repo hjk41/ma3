@@ -7,7 +7,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 # deploy/common/ -> repo root is two levels up
 SERVER_DIR="${SERVER_DIR:-${SCRIPT_DIR}/../../code/server}"
-REMOTE_DIR="${REMOTE_DIR:-/home/hct/ma3_deploy}"
+REMOTE_DIR="${REMOTE_DIR:-${HOME}/ma3_deploy}"
 
 export MA3_BASE_URL="${MA3_BASE_URL:-http://127.0.0.1:8000}"
 export MA3_API_KEY="${MA3_API_KEY:-ma3dev}"
@@ -26,10 +26,11 @@ if [[ -f "${REMOTE_DIR}/ma3.env" ]]; then
   source "${REMOTE_DIR}/ma3.env"
   set +a
 fi
-if [[ -f "/home/hct/ma3/ma3.env" ]]; then
+LEGACY_ENV_FILE="${LEGACY_ENV_FILE:-${HOME}/ma3/ma3.env}"
+if [[ -f "${LEGACY_ENV_FILE}" ]]; then
   set -a
   # shellcheck disable=SC1090
-  source "/home/hct/ma3/ma3.env"
+  source "${LEGACY_ENV_FILE}"
   set +a
 fi
 

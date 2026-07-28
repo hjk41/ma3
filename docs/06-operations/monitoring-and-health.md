@@ -1,6 +1,6 @@
 # 监控与健康检查
 
-> **状态**：待补充
+> TODO(v1.1): 补 metrics/告警/SLO（见文末清单）；已有端点与 doctor 检查项如下。
 
 ## 已有端点
 
@@ -23,9 +23,9 @@
 
 成功读响应可选 `structuredContent.quota` — Agent policy 可要求转告 `warnings`。
 
-## 待补充
-
-- [ ] Prometheus metrics（若有）
-- [ ] 告警阈值（read quota 80%、publish job lag）
-- [ ] 日志结构化字段约定
-- [ ] SLO / SLA 定义
+> TODO(v1.1)：
+>
+> - Prometheus metrics（若有）
+> - 告警阈值（read quota 80%、publish job lag）
+> - 日志结构化字段约定
+> - SLO / SLA 定义（正式 SLA 为 v1.1+ 规划）

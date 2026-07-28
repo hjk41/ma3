@@ -28,7 +28,7 @@ Observatory 以 **只读浏览** 为主，供 **人 — 维护者** 使用；**A
 
 ### 2. 首个 deploy 目标（选项 A）
 
-v1 **先在 LAN dev（192.168.31.202）平行验证**：
+v1 **先在 LAN dev（内网 staging 主机）平行验证**：
 
 - 新端口（如 `:8001`）
 - SaaS **同一 binary**，`profile-lan` + `MA3_DEV_AUTH=1`

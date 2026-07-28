@@ -97,7 +97,7 @@ bash "$EVAL_ROOT/scripts/setup_agent_profiles.sh"
 
 # Register Claude MCP if claude available
 if command -v claude >/dev/null 2>&1 && [[ -n "${MA3_KEY_CLAUDE_CODE:-}" ]]; then
-  export HOME="${EVAL_PROFILE_ROOT:-/home/hct/ma3-eval/profiles}/claude"
+  export HOME="${EVAL_PROFILE_ROOT:-$HOME/ma3-eval/profiles}/claude"
   claude mcp remove ma3 2>/dev/null || true
   claude mcp add --scope user --transport http ma3 \
     "${MA3_BASE_URL:-http://127.0.0.1:8000}/mcp" \

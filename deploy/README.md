@@ -39,7 +39,7 @@ bash deploy/common/verify_ma3_prod.sh
 | 5 | pytest | 必跑：`healthz`、`client_bundle`（OIDC off 时另测友好登录页）；设了 `MA3_API_KEY` 时再跑完整 deploy 套件（含匿名拒绝 + doctor/context） |
 | 6 | 汇报 | 见下方模板；未测项（如缺 API key）必须写明 |
 
-LAN / regenerate（如 202）仍用 `deploy/common/verify_ma3.sh`（可用 `ma3dev`），不要与生产清单混用。
+LAN / regenerate（内网 staging）仍用 `deploy/common/verify_ma3.sh`（可用 `ma3dev`），不要与生产清单混用。
 
 ---
 
@@ -56,23 +56,23 @@ deploy/
 ├── common/verify_ma3_prod.sh # 生产/公网验收（进 git）——每次线上部署必跑
 ├── README.md                 # 本文（进 git）
 ├── .gitignore                # 忽略本地 *.env 与遗留脚本
-├── deploy.202.env            # 本地：LAN 202（不进 git）
-└── deploy.ma3.io.env         # 本地：ma3.io 生产（不进 git）
+├── deploy.<lan>.env          # 本地：LAN staging（不进 git）
+└── deploy.<prod>.env         # 本地：生产（不进 git）
 ```
 
 用法：
 
 ```bash
-./deploy/deploy.sh deploy/deploy.202.env       # 部署到 LAN 202
-./deploy/deploy.sh deploy/deploy.ma3.io.env    # 部署到 ma3.io 生产
-# 或： DEPLOY_CONFIG=deploy/deploy.202.env ./deploy/deploy.sh
+./deploy/deploy.sh deploy/deploy.<lan>.env     # 部署到 LAN staging
+./deploy/deploy.sh deploy/deploy.<prod>.env    # 部署到生产
+# 或： DEPLOY_CONFIG=deploy/deploy.<lan>.env ./deploy/deploy.sh
 ```
 
 新环境：复制 `deploy.env.sample` 为本地 `deploy.<name>.env`，填值即可。
 
 ### 两种模式（配置里的 `ENV_MODE`）
 
-| | `regenerate`（LAN/dev，如 202） | `preserve`（生产，如 ma3.io） |
+| | `regenerate`（LAN/dev staging） | `preserve`（生产，如 ma3.io） |
 |---|---|---|
 | 远端 `ma3.env` | 从 `LEGACY_ENV_FILE` + 配置**重新生成** | **保留远端 env**，只注入 `MA3_GIT_COMMIT` |
 | dev 后门 | `DEV_AUTH` 可设 `1`（LAN 可用 `ma3dev`） | 启动前断言 `MA3_DEV_AUTH≠1`，否则中止 |
@@ -82,17 +82,17 @@ deploy/
 
 ### 防串环境的护栏
 
-- **主机守卫 `ALLOWED_HOSTS`**：`REMOTE_HOST` 不在允许列表就 `exit 2`。202 配置永远无法推到 ma3.io。
+- **主机守卫 `ALLOWED_HOSTS`**：`REMOTE_HOST` 不在允许列表就 `exit 2`。LAN 配置永远无法推到生产。
 - **preserve 模式保留远端 `ma3.env`**：rsync `--exclude ma3.env`，脚本不 source 任何 legacy env、
   不重写 env，只 `sed` 更新 `MA3_GIT_COMMIT`。
 - **preserve 模式启动前断言**：`MA3_DEV_AUTH≠1`、`MA3_INSTANCE_ID`、`MA3_PUBLIC_BASE_URL`、无 LAN 代理变量。
 
-### 环境变量文件（202 运行时）
+### 环境变量文件（LAN staging 运行时）
 
 | 文件 | 用途 |
 |------|------|
-| `/home/hct/ma3/ma3.env` | Postgres、Authing、HF 缓存路径（`regenerate` 的 `LEGACY_ENV_FILE`） |
-| `/home/hct/ma3_deploy/ma3.env` | v1 运行时（由 `deploy.sh` 在 `regenerate` 模式生成） |
+| `<LEGACY_ENV_FILE>`（如 `~/ma3/ma3.env`） | Postgres、OIDC、HF 缓存路径（`regenerate` 的 `LEGACY_ENV_FILE`） |
+| `<DEPLOY_DIR>/ma3.env`（如 `~/ma3_deploy/ma3.env`） | v1 运行时（由 `deploy.sh` 在 `regenerate` 模式生成） |
 
 生产 `ma3.io` 的 `ma3.env` 由人工维护、含 secret，不进 git，由 `preserve` 模式保留不动。
 
@@ -105,7 +105,7 @@ deploy/
 ```bash
 export MA3_BASE_URL=http://127.0.0.1:8000
 export MA3_API_KEY=ma3dev
-export MA3_EXPECT_INSTANCE_ID=ma3-v1-202
+export MA3_EXPECT_INSTANCE_ID=<your-instance-id>   # 与 WRITE_INSTANCE_ID 一致
 export MA3_EXPECT_ROOT_REDIRECT=/ui/me/
 export MA3_READY_TIMEOUT=180
 bash deploy/common/verify_ma3.sh

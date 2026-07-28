@@ -1,30 +1,34 @@
 # 代码仓库布局
 
-> **状态**：待补充 — 以下为 v1 目标结构摘要
+> 结构变更时请随 PR 同步更新本文件。真源以仓库实际目录为准。
 
 ## 顶层
 
 ```text
 ma3/
+├── README.md / README.en.md / CONTRIBUTING.md / CHANGELOG.md / LICENSE / SECURITY.md
 ├── code/
-│   ├── server/          FastAPI：MCP、UI、auth、domain、search
-│   └── client/          HTTP bundle：manifest、policy、sync 脚本
-├── docs/                系统化文档（产品、架构、运维、验收）
-├── data/                运行时数据（勿 rsync --delete）
-└── ma3.env              本地 env（勿提交 secret）
+│   ├── server/          FastAPI：MCP、门户 UI、REST、auth、search
+│   ├── client/          HTTP bundle：manifest、policy、sync 脚本
+│   └── eval/            评测场景（非 v1 发布物）
+├── docs/                系统化文档（01–09）
+└── deploy/
+    ├── self-host/       社区 Compose 交付物
+    └── *.sh / README    维护者推送与验收（环境 env 不进 git）
 ```
 
-**202 生产运行目录**（与源码 checkout `~/ma3` 分离）：`~/ma3_deploy/` — 由通用脚本 `deploy/deploy.sh deploy/deploy.202.env` rsync 同步并在此启动 uvicorn。ma3.io 生产用 `deploy/deploy.sh deploy/deploy.ma3.io.env`（`/opt/ma3_deploy`）。
+运行时数据与 secret 留在部署目录 / 环境变量中（例如 `<DEPLOY_DIR>`），**不要**假定仓库根下存在已提交的 `data/` 或 `ma3.env`。
 
-## Server 模块（目标）
+## Server 模块
 
 ```text
 code/server/app/
-├── api/           routes_mcp, routes_portal, routes_keys, routes_auth, ui_theme
-├── services/      mcp_tool, onboarding, api_key, entitlement, billing, write_audit
-├── storage/       db, search, ranking
+├── api/           MCP、门户 HTML、REST（keys/orgs/libraries/setup/admin）、i18n、setup_gate
+├── services/      mcp、onboarding、api_key、org、invite、local_auth、setup、billing、…
+├── storage/       db、search、ranking
 ├── models/        mcp_payloads
-└── core/          config, security
+├── auth/          session、OIDC / local
+└── core/          config、security
 ```
 
 ## Client 面
@@ -45,8 +49,8 @@ code/server/tests/
 └── integration/
 ```
 
-## 待补充
+CI：`.github/workflows/ci.yml`（unit + integration + self-host Docker build）。
 
-- [ ] 各 service 职责一句话表
-- [ ] 新功能应修改的文件 checklist 模板
-- [ ] eval 与 server 关系说明
+## 设计过程稿
+
+`docs/09-engineering/design-archive/` 仅保留各主题**决策摘要**（非契约）。规划中的设计项见 `design-backlog.md`。

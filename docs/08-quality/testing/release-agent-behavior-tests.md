@@ -18,7 +18,8 @@ ma3 的价值只有在**真实 Agent 无人值守**时才成立：Agent 能查�
 - Agent 命中已有知识却**新建重复 record**，而不是点赞（→ policy 1.1.0）。
 - Agent 判断某条 record 是错的，却**默默跳过**、不点踩（→ policy 1.3.0）。
 
-**结论**：每次发版前，必须在 **192.168.31.202** 上用真实 Agent 跑一遍下面的行为场景，
+**结论**：每次发版前，必须在**维护者的 LAN 测试主机**（下文简称 **LAN host**，
+实际地址由维护者本地配置 `$MA3_LAN_HOST` 指定）上用真实 Agent 跑一遍下面的行为场景，
 任一不过则**阻塞发版**。
 
 ---
@@ -27,13 +28,13 @@ ma3 的价值只有在**真实 Agent 无人值守**时才成立：Agent 能查�
 
 | 项 | 要求 |
 |----|------|
-| **执行主机** | **仅 192.168.31.202**（ma3 host + Docker + eval profiles） |
-| **ma3 服务端** | `http://127.0.0.1:8000`（202 本机 host ma3） |
-| **场景目录** | `/home/hct/ma3_deploy/code/eval/scenarios/*` |
-| **Agent profiles** | `/home/hct/ma3-eval/profiles/{claude,codex,hermes}` |
-| **本机** | **不跑** Docker 场景；本机仅作开发/文档编辑。Codex 的 **LLM API** 可复用本机 `~/.codex/config.toml` 里的 `model_providers.*`（如 duckcoding）同步到 202 的 codex profile |
+| **执行主机** | **仅 LAN host**（`$MA3_LAN_HOST`；ma3 host + Docker + eval profiles） |
+| **ma3 服务端** | `http://127.0.0.1:8000`（LAN host 本机 host ma3） |
+| **场景目录** | `<DEPLOY_DIR>/code/eval/scenarios/*` |
+| **Agent profiles** | `~/ma3-eval/profiles/{claude,codex,hermes}` |
+| **本机** | **不跑** Docker 场景；本机仅作开发/文档编辑。Codex 的 **LLM API** 可复用本机 `~/.codex/config.toml` 里的 `model_providers.*` 同步到 LAN host 的 codex profile |
 
-> 所有 SSH、docker compose、DB 断言、Agent 非交互运行均在 202 上完成。
+> 所有 SSH、docker compose、DB 断言、Agent 非交互运行均在 LAN host 上完成。
 
 ---
 
@@ -63,12 +64,12 @@ ma3 的价值只有在**真实 Agent 无人值守**时才成立：Agent 能查�
 > 1. 同步 standalone：`rsync ~/.codex/packages/standalone → 202:~/.codex/packages/standalone`
 > 2. 复制本机 `~/.codex/config.toml` 到 profile，**仅**改 `[mcp_servers.ma3]` 为 `http://127.0.0.1:8000/mcp` + eval `X-API-Key`
 > 3. `bootstrap_agent_client_sync.sh codex` → policy 落到 `.codex/model_instructions.md`
-> 4. 运行 codex 时：**LLM** 走 `HTTP_PROXY=192.168.31.200:1080`（duckcoding 从 202 直连不可用）；**MCP** 设 `NO_PROXY=127.0.0.1,localhost`（避免 proxy 把 localhost 打成 503）
+> 4. 运行 codex 时：**LLM** 走 `HTTP_PROXY=$MA3_LAN_PROXY`（LLM 供应商从 LAN host 直连不可用时）；**MCP** 设 `NO_PROXY=127.0.0.1,localhost`（避免 proxy 把 localhost 打成 503）
 
 > **Hermes on 202（已验证步骤）**
 > Hermes 是 **Python 应用**（无预编译单文件 binary），用官方 PyPI 包安装，**不要** clone 源码（`install.sh` 会卡在 GitHub SSH clone）。
 > 1. 专用 venv：`python3 -m venv ~/.hermes-venv`（202 是 py3.12，满足 `>=3.11,<3.14`）
-> 2. `~/.hermes-venv/bin/pip install hermes-agent`（走 `HTTPS_PROXY=192.168.31.200:1080`）
+> 2. `~/.hermes-venv/bin/pip install hermes-agent`（走 `HTTPS_PROXY=$MA3_LAN_PROXY`）
 > 3. **关键**：`pip install "mcp[cli]"` —— 默认 hermes 依赖里**不带** `mcp` 包，导致 `hermes mcp test` 报 `mcp.client.streamable_http is not available`，HTTP MCP 连不上（agent 会退回用 shell `curl`，且漏 `X-API-Key`）。装上后 `hermes mcp test ma3` 应显示 `✓ Connected` + 14 tools。
 > 4. `ln -sf ~/.hermes-venv/bin/hermes ~/.local/bin/hermes`
 > 5. profile 用 `HERMES_HOME=~/…/profiles/hermes/.hermes` 隔离；`config.yaml` 写 `model: {provider: deepseek, default: deepseek-chat}` + `mcp_servers.ma3`（url + `headers.X-API-Key`）；`.env` 放 `DEEPSEEK_API_KEY`
@@ -80,8 +81,8 @@ ma3 的价值只有在**真实 Agent 无人值守**时才成立：Agent 能查�
 
 ## 2. 必测场景（Release Gate T0–T5）
 
-**全部在 202 上执行**（见 §0.1）。默认载体 `mihomo-proxy`
-（`/home/hct/ma3_deploy/code/eval/scenarios/mihomo-proxy`），需 Docker。
+**全部在 LAN host 上执行**（见 §0.1）。默认载体 `mihomo-proxy`
+（`<DEPLOY_DIR>/code/eval/scenarios/mihomo-proxy`），需 Docker。
 
 | ID | 能力 | 通过判据（以 DB / verify 为准） |
 |----|------|-------------------------------|
@@ -97,7 +98,7 @@ ma3 的价值只有在**真实 Agent 无人值守**时才成立：Agent 能查�
 ## 3. 执行步骤（每个 Agent 重复）
 
 下述以 `AGENT` 变量代表 `claude` / `codex` / `hermes`，profile 在
-`/home/hct/ma3-eval/profiles/$AGENT`，服务端跑在 202 的 `:8000`（host ma3）。
+`~/ma3-eval/profiles/$AGENT`，服务端跑在 LAN host 的 `:8000`（host ma3）。
 
 ### 3.0 T0 — 安装 / 接入测试（全新 profile）
 
@@ -105,7 +106,7 @@ ma3 的价值只有在**真实 Agent 无人值守**时才成立：Agent 能查�
 必须从**干净**状态开始（删掉或换一个全新的 profile 目录）。
 
 ```bash
-P=/home/hct/ma3-eval/profiles/$AGENT           # 或用临时全新目录
+P=~/ma3-eval/profiles/$AGENT                   # 或用临时全新目录
 rm -rf "$P/.ma3"                               # 清掉既有 ma3 客户端状态（模拟首次）
 export HOME="$P" MA3_BASE_URL="http://127.0.0.1:8000" MA3_API_KEY="<该 Agent 的 key>"
 
@@ -134,16 +135,16 @@ runtime 文件；Agent 运行时的 `ma3_whoami` / `ma3_context` 返回 `result`
 **失败信号**：MCP 未注册（Agent 看不到 ma3 工具）、header 缺失导致 `-32001`、
 或 sync 拉不到 policy。
 
-> **Codex on 202**：若 202 尚无 `codex` 二进制，可从本机同步 standalone 包：
-> `rsync -av ~/.codex/packages/standalone hct@192.168.31.202:~/.codex/packages/`
-> 并在 202 上 `ln -sf ~/.codex/packages/standalone/current/bin/codex ~/.local/bin/codex`。
+> **Codex on LAN host**：若 LAN host 尚无 `codex` 二进制，可从本机同步 standalone 包：
+> `rsync -av ~/.codex/packages/standalone <user>@$MA3_LAN_HOST:~/.codex/packages/`
+> 并在 LAN host 上 `ln -sf ~/.codex/packages/standalone/current/bin/codex ~/.local/bin/codex`。
 > 再把本机 `~/.codex/config.toml` 中 **model 段**复制到 profile，MCP 段用
 > `configure_mcp.sh` 写入 `127.0.0.1:8000`。
 
 ### 3.1 清记忆（所有 Agent 通用思路）
 
 ```bash
-P=/home/hct/ma3-eval/profiles/$AGENT
+P=~/ma3-eval/profiles/$AGENT
 # Claude Code：清会话历史，保留 CLAUDE.md（policy）与 ~/.ma3
 rm -rf "$P"/.claude/projects/* "$P"/.claude/sessions/* "$P"/.claude/tasks/* \
        "$P"/.claude/shell-snapshots/* "$P"/.claude/session-env/* "$P"/.cache/claude-cli-node
@@ -156,8 +157,8 @@ rm -rf "$P"/.claude/projects/* "$P"/.claude/sessions/* "$P"/.claude/tasks/* \
 ```bash
 # 1) 记录 Agent 当前 skill 版本
 jq -r .skill_bundle_version "$P/.ma3/ma3-client.json"        # e.g. 1.2.0
-# 2) 在 202 上把服务端 skill 版本 +1（会触发 policy_refresh_required）
-bash /home/hct/ma3_deploy/code/eval/scenarios/agent-client-sync/scripts/restart_host_ma3.sh <new_version>
+# 2) 在 LAN host 上把服务端 skill 版本 +1（会触发 policy_refresh_required）
+bash <DEPLOY_DIR>/code/eval/scenarios/agent-client-sync/scripts/restart_host_ma3.sh <new_version>
 # 3) 让 Agent 按 policy 跑一次 ma3_context，检查 structuredContent.server 并自动 sync
 # 4) 断言
 jq -r .skill_bundle_version "$P/.ma3/ma3-client.json"        # 应 == <new_version>
@@ -168,7 +169,7 @@ grep -c ma3_feedback "$P/.claude/CLAUDE.md"                  # policy 内容已�
 ### 3.3 T2 — 用知识 + 点赞去重
 
 ```bash
-URL=$(grep -E '^MA3_DATABASE_URL=' /home/hct/ma3_deploy/ma3.env | cut -d= -f2-)
+URL=$(grep -E '^MA3_DATABASE_URL=' <DEPLOY_DIR>/ma3.env | cut -d= -f2-)
 # BEFORE 快照
 psql "$URL" -Atc "select count(*) from records";  \
 psql "$URL" -Atc "select count(*) from cases";    \
@@ -236,10 +237,10 @@ curl -s -X POST http://127.0.0.1:8000/mcp \
 ### 3.8 场景重置模板（mihomo）
 
 ```bash
-S=/home/hct/ma3_deploy/code/eval/scenarios/mihomo-proxy
+S=<DEPLOY_DIR>/code/eval/scenarios/mihomo-proxy
 cd "$S" && docker compose down -v --remove-orphans
 bash setup.sh                                   # 拷回 broken/config.yaml
-set -a; . /home/hct/ma3/eval/secrets/secrets.env 2>/dev/null; set +a
+set -a; . ~/ma3/eval/secrets/secrets.env 2>/dev/null; set +a
 docker compose up -d && sleep 3
 bash verify.sh                                  # 修复前应失败；Agent 跑完应 "verify ok"
 ```

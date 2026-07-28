@@ -3,7 +3,7 @@
 - **Date**: 2026-07-04
 - **Tester**: fable (QA/acceptance)
 - **ma3 version**: service 1.0.0, **skill_bundle_version 1.5.0**, tool_schema `ma3.mcp.v1`, instance `ma3-v1-202` (deployed 2026-07-03T11:50:42Z)
-- **Environment**: ma3 server at `http://127.0.0.1:8000` on host 192.168.31.202 (Ubuntu, Postgres backend, pgvector hybrid search). Driver: **Claude Code CLI** (DeepSeek `deepseek-v4-pro[1m]` BYOK) run as `claude -p` fresh sessions with `HOME=/home/hct/ma3-eval/profiles/nova`, ma3 MCP pre-configured, policy v1.5.0 in `CLAUDE.md`, `timeout 300` on every call.
+- **Environment**: ma3 server at `http://127.0.0.1:8000` on the maintainer LAN staging host (Ubuntu, Postgres backend, pgvector hybrid search). Driver: **Claude Code CLI** (DeepSeek `deepseek-v4-pro[1m]` BYOK) run as `claude -p` fresh sessions with `HOME=~/ma3-eval/profiles/nova`, ma3 MCP pre-configured, policy v1.5.0 in `CLAUDE.md`, `timeout 300` on every call.
 - **Persona**: `user:nova-dev`, a personal developer holding one API key ("Nova's key", plaintext withheld) with **writer grants on both** `lib_default` (Community Library, kind=community, public) and `lib_personal_nova` ("Nova Dev personal library", kind=personal, private, owner `user:nova-dev`).
 - **Method**: every claim by claude was independently verified via direct MCP `tools/call` probes (curl with Nova's key) and read-only psql queries against the live DB. Baseline captured before the run.
 
@@ -34,7 +34,7 @@ No unexpected writes; all deltas are attributable to the scripted journey.
 - `GET /client/agent-onboarding.md` → 200. The doc is complete for the *"I already have a key"* case: one-shot bootstrap (`~/.ma3` sync tooling via curl), per-runtime MCP config, policy install, upgrade-flag behavior, verification checklist. Quality is good.
 - MCP `tools/list` → 13 tools: `ma3_context, ma3_case, ma3_locate_by_id, ma3_report, ma3_list_my_writes, ma3_delete_record, ma3_restore_record, ma3_validate, ma3_doctor, ma3_whoami, ma3_feedback, ma3_list_drafts, ma3_review_record`. **No `ma3_create_key`.**
 - `GET /ui/keys` → **404** (and `/ui/` → 404): no Observatory key-management UI.
-- Onboarding doc explicitly says keys are "生产由管理员发放" (production keys issued by an admin); the only concrete acquisition path is `code/server/scripts/seed_personal_library_key.py` run by an admin with DB access. On host 202 that script exists only in the **source checkout** (`/home/hct/ma3_deploy/code/server/scripts/`), *not* in the deployed service tree (`/home/hct/ma3/server/scripts/`).
+- Onboarding doc explicitly says keys are "生产由管理员发放" (production keys issued by an admin); the only concrete acquisition path is `code/server/scripts/seed_personal_library_key.py` run by an admin with DB access. On the LAN host that script exists only in the **source checkout** (`<DEPLOY_DIR>/code/server/scripts/`), *not* in the deployed service tree (`~/ma3/server/scripts/`).
 
 **Finding**: registration/key issuance is **admin-mediated only**, matching the stated design gap (design/08 Phase 5 not implemented). For a brand-new personal developer the required steps are: (1) find an admin, (2) admin runs the seed script from a source checkout against the production DB, (3) admin hands over the plaintext key out-of-band, (4) developer follows onboarding bootstrap. Steps 1–3 are outside the product. Friction rated **major** (see Friction #1). Once a key exists, onboarding itself is smooth — the Nova profile's pre-provisioned MCP + policy connected first try ("ma3 ✔ Connected").
 

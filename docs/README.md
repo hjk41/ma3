@@ -87,7 +87,8 @@
 | 文档 | 状态 | 说明 |
 |------|------|------|
 | [deployment.md](06-operations/deployment.md) | 📝 | Profile 总览 |
-| [self-hosting.md](06-operations/self-hosting.md) | ✅ | Compose 自托管（bootstrap / OIDC） |
+| [self-hosting.md](06-operations/self-hosting.md) | ✅ | Compose 自托管（bootstrap / 本地账号 / OIDC） |
+| [self-host-first-run-guide.md](06-operations/self-host-first-run-guide.md) | 设计中 | 首启引导：创建管理员 → checklist → 日常使用 |
 | [deployment-authing.md](06-operations/deployment-authing.md) | ✅ | Authing 控制台 + env |
 | [runbook.md](06-operations/runbook.md) | 📝 | 发版/回滚/排障 |
 | [monitoring-and-health.md](06-operations/monitoring-and-health.md) | 📝 | healthz/doctor/告警 |
@@ -102,6 +103,7 @@
 | [pricing-and-plans.md](07-commercial/pricing-and-plans.md) | ✅ | 用户向套餐摘要 |
 | [administrator-guide.md](07-commercial/administrator-guide.md) | 📝 | Observatory/运维指南 |
 | [end-user-faq.md](07-commercial/end-user-faq.md) | 📝 | 用户 FAQ 草稿 |
+| [legal/](07-commercial/legal/README.md) | 📝 | 服务条款/隐私/数据保留（草案，未经律师审阅） |
 
 ---
 
@@ -122,6 +124,9 @@
 | [glossary.md](09-engineering/glossary.md) | ✅ | 术语与废止用语 |
 | [repository-layout.md](09-engineering/repository-layout.md) | 📝 | 代码布局摘要 |
 | [changelog.md](09-engineering/changelog.md) | 📝 | 变更日志（待建立版本节奏） |
+| [design-backlog.md](09-engineering/design-backlog.md) | ✅ | 待设计议题（原根目录 todo.md 迁入；非承诺） |
+
+> [design-archive/README.md](09-engineering/design-archive/README.md) 仅为**历史设计决策摘要**（decision summaries），不是实现真源。
 
 ---
 
@@ -133,7 +138,7 @@
 
 | 建议路径 | 内容 |
 |----------|------|
-| `02-architecture/decisions/` | ✅ 已迁入 | 14 篇 ADR 正文 |
+| `02-architecture/decisions/` | ✅ 已迁入 | 15 篇 ADR 正文（001–015） |
 | `05-agent/agent-onboarding.md` | 自 `code/client/agent-onboarding.md` 迁入或链接替换 |
 | `08-quality/acceptance/v1-*.md` | ✅ 已迁入 `08-quality/acceptance/` |
 | `09-engineering/design-archive/` | ✅ 近期 design fable（23/24 等） |

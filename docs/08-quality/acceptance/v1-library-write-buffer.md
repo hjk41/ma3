@@ -58,5 +58,5 @@ grep publish_due_buffered_records code/server/app/main.py → _buffer_publish_lo
 ## Nits / follow-ups
 
 1. **Decision 7** — Community user-guide record in `lib_default` not auto-seeded in this slice; content exists in design docs.
-2. **202 deploy** — **done 2026-07-04.** `deploy_ma3_v1_202.sh` rsync + restart OK; `http://192.168.31.202:8000/healthz` UP; MCP **15 tools** (`ma3_publish_record`, `ma3_patch_record` present); UI smoke OK. Deploy gate fails on `MA3_EXPECT_MIN_RECORDS=30` (DB has 21 active) — env threshold drift, not buffer regression. Onboarding `test_ui_create_key_form_post` cross-origin when pytest uses 127.0.0.1 vs `public_base_url` 192.168.31.202 (known).
+2. **LAN staging deploy** — **done 2026-07-04.** `deploy_ma3_v1_202.sh` rsync + restart OK; `http://ma3.example.internal:8000/healthz` UP; MCP **15 tools** (`ma3_publish_record`, `ma3_patch_record` present); UI smoke OK. Deploy gate fails on `MA3_EXPECT_MIN_RECORDS=30` (DB has 21 active) — env threshold drift, not buffer regression. Onboarding `test_ui_create_key_form_post` cross-origin when pytest uses 127.0.0.1 vs LAN `public_base_url` (known).
 3. **Personal library default 24h** — owner may set 0 in `/ui/libraries/{id}/settings/`; sole-owner experience documented in fable §0.

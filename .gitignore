@@ -38,3 +38,6 @@ dist/
 # Local bootstrap / runtime data
 code/server/data/
 **/bootstrap_api_key.txt
+
+# Local UX walkthrough scratch (never commit)
+tmp-*/

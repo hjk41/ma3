@@ -1,6 +1,6 @@
 # 运维 Runbook
 
-> **状态**：待补充
+> TODO(v1.1): 补全发版/回滚/migration 步骤（见文末清单）；当前仅覆盖常见操作速查。
 
 ## 常见操作（占位）
 
@@ -13,10 +13,10 @@
 | 搜索无 vector | `MA3_DISABLE_EMBEDDINGS`、HF 缓存 | [system-overview.md](../02-architecture/system-overview.md) |
 | 启动失败 admin 白名单 | 设置 `MA3_AUTH_ADMIN_USERS` | portal-permissions |
 
-## 待补充
-
-- [ ] 发版步骤（rsync、migrate、restart、smoke test）
-- [ ] 回滚 procedure
-- [ ] 数据库 migration 执行与验证
-- [ ] 日志位置与常用 grep
-- [ ] 值班/on-call 联系人
+> TODO(v1.1)：
+>
+> - 发版步骤（rsync、migrate、restart、smoke test）
+> - 回滚 procedure
+> - 数据库 migration 执行与验证
+> - 日志位置与常用 grep
+> - 值班/on-call 联系人

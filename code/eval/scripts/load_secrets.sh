@@ -5,7 +5,7 @@ set -euo pipefail
 
 _EVAL_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 _SECRETS_DIR="${EVAL_SECRETS_DIR:-$_EVAL_ROOT/secrets}"
-_LEGACY_SECRETS="/home/hct/ma3/eval/secrets"
+_LEGACY_SECRETS="${MA3_LEGACY_SECRETS_DIR:-$HOME/ma3/eval/secrets}"
 
 if [[ -f "$_SECRETS_DIR/secrets.env" ]]; then
   set -a

@@ -45,5 +45,5 @@ bash code/eval/orchestrator/run_eval.sh --scenario mihomo-proxy --agent droid --
 
 See [orchestrator/scenarios.json](orchestrator/scenarios.json) for the rotation matrix.
 
-Host profiles (not in repo): `/home/hct/ma3-eval/profiles/{claude,droid,cursor}/`
+Host profiles (not in repo): `~/ma3-eval/profiles/{claude,droid,cursor}/`
 

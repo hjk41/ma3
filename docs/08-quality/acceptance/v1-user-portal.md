@@ -2,7 +2,7 @@
 
 - **Tester**: fable (QA acceptance)
 - **Date**: 2026-07-04 (P1–P12); design/22 implementation 2026-07-05 (P13–P19)
-- **Target**: local pytest + code inspection; production smoke on 192.168.31.202 when deployed
+- **Target**: local pytest + code inspection; production smoke on the LAN staging host when deployed
 - **Scope**: ratified design/15 + visual spec `15-user-portal-visual-sonnet5.md` + fable visual review `15-user-portal-visual-review-fable.md`
 - **Method**: integration suite `tests/integration/test_user_portal.py`, unit updates in `tests/unit/test_auth.py`, full suite `pytest tests/`, structural grep for IA/routing
 
@@ -95,5 +95,5 @@ Implementation true source: [../../04-frontend/information-architecture.md](../.
 
 ```text
 pytest tests/ → 246 passed (2026-07-05, includes P13–P19 integration tests)
-deploy/deploy.sh deploy/deploy.202.env → 192.168.31.202:8000
+deploy/deploy.sh deploy/deploy.<lan>.env → <LAN host>:8000
 ```

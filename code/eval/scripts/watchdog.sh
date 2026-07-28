@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
-# Watchdog: every 5 minutes check ma3 + eval on 202; auto-fix and resume.
+# Watchdog: every 5 minutes check ma3 + eval on the LAN host; auto-fix and resume.
 set -euo pipefail
 
 INTERVAL="${WATCHDOG_INTERVAL_SEC:-60}"
-EVAL_ROOT="${EVAL_ROOT:-/home/hct/ma3/eval}"
-MA3_DIR="${MA3_DIR:-/home/hct/ma3}"
+EVAL_ROOT="${EVAL_ROOT:-$HOME/ma3/eval}"
+MA3_DIR="${MA3_DIR:-$HOME/ma3}"
 LOG="/tmp/ma3-eval-watchdog.log"
 EVAL_LOG="/tmp/ma3-eval-full.log"
 EXPECTED_LIVE_RUNS=30
@@ -106,10 +106,11 @@ restart_ma3() {
 }
 
 count_live_runs() {
-  python3 - <<'PY'
-import json, glob
+  EVAL_ROOT="$EVAL_ROOT" python3 - <<'PY'
+import json, glob, os
 n = 0
-for p in glob.glob("/home/hct/ma3/eval/results/eval-*.json"):
+eval_root = os.environ.get("EVAL_ROOT", os.path.expanduser("~/ma3/eval"))
+for p in glob.glob(f"{eval_root}/results/eval-*.json"):
     try:
         d = json.load(open(p))
     except Exception:

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Print one-line eval + ma3 status for watchdog / operator reports.
 set -euo pipefail
-EVAL_ROOT="${EVAL_ROOT:-/home/hct/ma3/eval}"
+EVAL_ROOT="${EVAL_ROOT:-$HOME/ma3/eval}"
 MA3_BASE="${MA3_BASE_URL:-http://127.0.0.1:8000}"
 
 ma3_ok=no
@@ -10,14 +10,15 @@ if curl -sf -m 5 "${MA3_BASE}/healthz" >/dev/null 2>&1; then
 fi
 
 eval_running=no
-if pgrep -f '/home/hct/ma3/eval/orchestrator/run_all_eval' >/dev/null \
-  || pgrep -f '/home/hct/ma3/eval/orchestrator/run_eval.sh --scenario' >/dev/null; then
+if pgrep -f "$EVAL_ROOT/orchestrator/run_all_eval" >/dev/null \
+  || pgrep -f "$EVAL_ROOT/orchestrator/run_eval.sh --scenario" >/dev/null; then
   eval_running=yes
 fi
 
-stats=$(python3 - <<'PY'
+stats=$(EVAL_ROOT="$EVAL_ROOT" python3 - <<'PY'
 import glob, json, os
-cfg = json.load(open("/home/hct/ma3/eval/orchestrator/scenarios.json"))
+EVAL_ROOT = os.environ.get("EVAL_ROOT", os.path.expanduser("~/ma3/eval"))
+cfg = json.load(open(f"{EVAL_ROOT}/orchestrator/scenarios.json"))
 order = cfg["agent_order"]
 all_runs = []
 for item in cfg["rotation"]:
@@ -29,7 +30,7 @@ for item in cfg["rotation"]:
 done = fail = pending = 0
 current = ""
 for rid in all_runs:
-    p = f"/home/hct/ma3/eval/results/{rid}.json"
+    p = f"{EVAL_ROOT}/results/{rid}.json"
     if not os.path.exists(p):
         pending += 1
         if not current:

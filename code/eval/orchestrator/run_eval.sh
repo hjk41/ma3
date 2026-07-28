@@ -37,7 +37,7 @@ SCENARIO_DIR="$EVAL_ROOT/scenarios/$SCENARIO"
 RUN_ID="eval-${SCENARIO}-${AGENT}-r${ROUND}"
 RESULT_DIR="$EVAL_ROOT/results"
 RESULT_FILE="$RESULT_DIR/${RUN_ID}.json"
-PROFILE_ROOT="${EVAL_PROFILE_ROOT:-/home/hct/ma3-eval/profiles}"
+PROFILE_ROOT="${EVAL_PROFILE_ROOT:-$HOME/ma3-eval/profiles}"
 
 mkdir -p "$RESULT_DIR"
 
@@ -47,7 +47,7 @@ if [[ ! -d "$SCENARIO_DIR" ]]; then
 fi
 
 LOG_OFFSET=0
-LOG_DIR="${MA3_OP_LOG_DIR:-/home/hct/ma3/data/ops}"
+LOG_DIR="${MA3_OP_LOG_DIR:-$HOME/ma3/data/ops}"
 TODAY="$(date -u +%F)"
 if [[ -f "$LOG_DIR/$TODAY.jsonl" ]]; then
   LOG_OFFSET=$(wc -l < "$LOG_DIR/$TODAY.jsonl")

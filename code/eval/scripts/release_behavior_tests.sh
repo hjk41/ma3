@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Release-gate agent behavior tests (T0-T5) — see docs/08-quality/testing/release-agent-behavior-tests.md
-# Runs ONE agent through the behavior scenarios on the 202 host.
+# Runs ONE agent through the behavior scenarios on the maintainer LAN host.
 #
 # Usage:
 #   release_behavior_tests.sh <claude|codex|hermes> <T0|T4|T5|whoami> [prompt]
@@ -14,18 +14,19 @@ AGENT="${1:?agent required: claude|codex|hermes}"
 MODE="${2:?mode required: run|whoami}"
 PROMPT="${3:-}"
 
-PROFILE_ROOT="${EVAL_PROFILE_ROOT:-/home/hct/ma3-eval/profiles}"
+PROFILE_ROOT="${EVAL_PROFILE_ROOT:-$HOME/ma3-eval/profiles}"
 MA3_BASE_URL="${MA3_BASE_URL:-http://127.0.0.1:8000}"
-PROXY="${MA3_EVAL_PROXY:-http://192.168.31.200:1080}"
+PROXY="${MA3_EVAL_PROXY:-}"
 export PATH="$HOME/.npm-global/bin:$HOME/.local/bin:$PATH"
 
 # localhost MCP must never go through the proxy
-export NO_PROXY="127.0.0.1,localhost,192.168.31.202"
+export NO_PROXY="127.0.0.1,localhost${MA3_LAN_HOST:+,$MA3_LAN_HOST}"
 
+SECRETS_DIR="${EVAL_SECRETS_DIR:-$HOME/ma3/eval/secrets}"
 # shellcheck disable=SC1091
-source /home/hct/ma3/eval/secrets/secrets.env 2>/dev/null || true
+source "$SECRETS_DIR/secrets.env" 2>/dev/null || true
 # shellcheck disable=SC1091
-source /home/hct/ma3/eval/secrets/agent-keys.env 2>/dev/null || true
+source "$SECRETS_DIR/agent-keys.env" 2>/dev/null || true
 
 run_agent() {
   local prompt="$1"

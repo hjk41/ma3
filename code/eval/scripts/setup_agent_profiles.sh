@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Install isolated agent profiles under /home/hct/ma3-eval/profiles (not in git).
+# Install isolated agent profiles under ~/ma3-eval/profiles (not in git).
 # Reads API keys from eval/secrets/agent-keys.env
 set -euo pipefail
 
@@ -7,7 +7,7 @@ EVAL_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 # shellcheck disable=SC1091
 source "$EVAL_ROOT/scripts/load_secrets.sh"
 
-PROFILE_ROOT="${EVAL_PROFILE_ROOT:-/home/hct/ma3-eval/profiles}"
+PROFILE_ROOT="${EVAL_PROFILE_ROOT:-$HOME/ma3-eval/profiles}"
 MA3_MCP_URL="${MA3_BASE_URL:-http://127.0.0.1:8000}/mcp"
 
 mkdir -p "$PROFILE_ROOT"/{claude/.claude,droid/.claude,droid/.factory,cursor/.claude,cursor/.cursor}

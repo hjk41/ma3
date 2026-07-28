@@ -1,11 +1,11 @@
 # agent-client-sync — Docker 多 Agent 安装/升级测试（真实 CLI）
 
-**ma3 跑在 host（202 `:8000`），Docker 只装 agent 二进制并测 sync。**
+**ma3 跑在 host（LAN 测试主机 `:8000`），Docker 只装 agent 二进制并测 sync。**
 
 ## 架构
 
 ```text
-192.168.31.202 (host)
+LAN host (维护者内网测试主机)
   ma3_v1 :8000          ← 真实服务；升级测试时 restart + MA3_SKILL_VERSION
   docker compose
     runner              ← Claude / Codex / Cursor / Droid 真实 CLI
@@ -14,7 +14,7 @@
 ```
 
 原先 compose 里再跑一个 ma3 是为了 **隔离升级**（随意 bump skill version），但：
-- 与 202 上已部署实例重复
+- 与 LAN host 上已部署实例重复
 - 增加构建失败面（Docker 镜像层、proxy 等）
 - 测的不是你实际在用的 ma3
 
@@ -29,11 +29,11 @@
 | Cursor | `curl cursor.com/install` → `agent` / `cursor-agent` |
 | Droid | host 二进制 bundle 或 factory installer |
 
-## 在 202 上跑
+## 在 LAN host 上跑
 
 ```bash
-# 先部署（通用脚本 + 本地 202 配置，见 deploy/README.md）
-./deploy/deploy.sh deploy/deploy.202.env
+# 先部署（通用脚本 + 本地 LAN 配置，见 deploy/README.md）
+./deploy/deploy.sh deploy/deploy.<lan>.env
 # 再跑本 scenario
 cd code/eval/scenarios/agent-client-sync && bash run.sh
 ```
@@ -44,4 +44,4 @@ cd code/eval/scenarios/agent-client-sync && bash run.sh
 |------|------|------|
 | `MA3_HOST_MA3_URL` | `http://host.docker.internal:8000` | runner 访问 host ma3 |
 | `MA3_RESTORE_VERSION` | `1.0.0` | 测试结束 restore 的 skill version |
-| `MA3_DIR` | `/home/hct/ma3_deploy` | host ma3 路径（restart 脚本） |
+| `MA3_DIR` | `~/ma3_deploy` | host ma3 路径（restart 脚本） |

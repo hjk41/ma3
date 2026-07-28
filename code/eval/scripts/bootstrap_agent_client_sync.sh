@@ -8,7 +8,7 @@ EVAL_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 source "${EVAL_ROOT}/scripts/load_secrets.sh"
 
 AGENT="${1:?agent required: claude|droid|cursor|codex}"
-PROFILE_ROOT="${EVAL_PROFILE_ROOT:-/home/hct/ma3-eval/profiles}"
+PROFILE_ROOT="${EVAL_PROFILE_ROOT:-$HOME/ma3-eval/profiles}"
 MA3_BASE_URL="${MA3_BASE_URL:-http://127.0.0.1:8000}"
 AGENT_HOME="${PROFILE_ROOT}/${AGENT}"
 

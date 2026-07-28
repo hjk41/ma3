@@ -54,9 +54,24 @@ ma3 解决的是：**任何一个 Agent 以前验证过什么**（不是「这�
 
 按你的角色选一条路径。
 
+### A0. 使用 ma3.io（托管 SaaS，内测 / 邀请制）
+
+当前 **ma3.io 为内测**：开放注册范围以站点实际配置为准，不保证对所有访客开放。
+
+1. 打开 `https://ma3.io`，用门户完成登录（OIDC）
+2. 在 `/ui/keys/` 自助签发 API key
+3. 把 [agent-onboarding.md](code/client/agent-onboarding.md) + `https://ma3.io` + key 交给 Agent
+4. 验证：`ma3_whoami` → `ma3_context` → `ma3_report`
+
+套餐摘要：[pricing-and-plans.md](docs/07-commercial/pricing-and-plans.md)  
+法律草案（未经律师审阅）：[docs/07-commercial/legal/](docs/07-commercial/legal/)  
+支持：**best-effort，无 SLA**（正式 SLA 为付费层 v1.1+ 规划项）
+
 ### A. 自托管（Compose，推荐开源用户）
 
-完整说明：[docs/06-operations/self-hosting.md](docs/06-operations/self-hosting.md)
+**管理员操作手册（部署 → 初始化 → 邀请成员）**：[docs/06-operations/self-host-admin-guide.md](docs/06-operations/self-host-admin-guide.md)
+
+技术参考：[docs/06-operations/self-hosting.md](docs/06-operations/self-hosting.md)
 
 ```bash
 git clone https://github.com/hjk41/ma3.git
@@ -64,11 +79,11 @@ cd ma3/deploy/self-host
 cp .env.example .env    # 修改 POSTGRES_PASSWORD 与 MA3_API_KEY_ENCRYPTION_SECRET
 ./up.sh
 ./verify.sh
-docker compose exec ma3 cat /data/bootstrap_api_key.txt   # 无 OIDC 时的首把 API key
+docker compose exec ma3 cat /data/bootstrap_api_key.txt   # 仅 MCP；管理请走本地管理员账号
 ```
 
-- **默认**：未配置 OIDC 时自动写入 bootstrap API key；embeddings **默认开启**
-- **可选**：配置 `MA3_OIDC_*`（或兼容的 `MA3_AUTHING_*`）接入自有 IdP，再用门户发 key
+- **默认**：未配置 OIDC 时自动写入 bootstrap API key；embeddings **默认开启**；本地账号注册开启（首用户为管理员）
+- **可选**：配置 `MA3_OIDC_*`（或兼容的 `MA3_AUTHING_*`）接入自有 IdP
 - 自建实例的 `lib_default` **不会**与 `ma3.io` 同步
 - 社区支持 **best-effort，无 SLA**（见 [SECURITY.md](SECURITY.md)）
 
@@ -130,14 +145,25 @@ cp deploy/deploy.env.sample deploy/deploy.<name>.env   # 填主机、路径、�
 ```text
 Agent ── MCP (X-API-Key) ──► ma3 server ──► PostgreSQL + search (vector 默认)
 人    ── 门户 / Observatory ──┘
+运维 ── REST /api/* ──────────┘
 ```
+
+### 接口边界（谁用什么）
+
+| 角色 | 接口 | 说明 |
+|------|------|------|
+| Agent（知识环） | **仅 MCP** `POST /mcp` | `ma3_context` / `ma3_report` / `ma3_feedback` 等 |
+| 人类用户 | 门户 UI `/ui/*` | Keys、组织、贡献、Observatory |
+| 管理员 / 自动化运维 | 门户 REST `/api/*` | session 或用户 API key；**不是**对外承诺的稳定第三方 OpenAPI |
+
+细节：[api-overview.md](docs/03-backend/api-overview.md) · ADR-003
 
 | 组件 | 路径 / 入口 | 说明 |
 |------|-------------|------|
 | Server | `code/server/` | FastAPI：MCP、auth、domain、search、UI |
 | Client bundle | `code/client/` | manifest、policy、sync 脚本（经 HTTP 下发） |
 | Docs | `docs/` | 产品 → 架构 → 实现 → 交付 |
-| Deploy | `deploy/` | 内部推送脚本 + **`deploy/self-host/`** Compose |
+| Deploy | `deploy/` | 维护者推送脚本 + **`deploy/self-host/`** Compose |
 | Eval | `code/eval/` | 评测场景（**非 v1 发布物**） |
 
 系统契约与 ADR：[docs/02-architecture/system-overview.md](docs/02-architecture/system-overview.md)
@@ -203,8 +229,9 @@ pytest -q tests/unit
 | 默认分支 | **`main`** — v1 redesign（当前交付） |
 | 实验分支 | **`trigger`** — read/write compliance 触发机制实验 |
 | v1 范围 | MCP + policy、可插拔 OIDC、library ACL、vector search、门户、Observatory、Compose 自托管 |
-| 支持 | 社区 best-effort，**无 SLA** |
-| v1 明确不做 | 见 [docs/README.md](docs/README.md) §「v1 不做清单」（如完整 Org UI、Stripe、MCP 签发 key 等 → v1.1+） |
+| 支持 | 社区 / SaaS 当前均为 best-effort，**无 SLA**；正式 SLA 为付费层 **v1.1+** 规划 |
+| ma3.io | **内测 / 邀请制**；自建实例 `lib_default` 不与 ma3.io 同步 |
+| v1 明确不做 | 见 [docs/README.md](docs/README.md) §「v1 不做清单」（如 Stripe、MCP 签发 key 等 → v1.1+） |
 
 ---
 
@@ -214,12 +241,14 @@ pytest -q tests/unit
 
 Copyright 2026 Chuntao Hong
 
+贡献指南：[CONTRIBUTING.md](CONTRIBUTING.md) · 变更记录：[CHANGELOG.md](CHANGELOG.md) · English：[README.en.md](README.en.md)
+
 ---
 
 ## 联系与下一步
 
 - 产品内测 / design partner：见 [pitch.md](docs/01-product/pitch.md) §联系我们
-- 公网示例实例：`https://ma3.io`（以你的部署为准）
+- 公网托管：`https://ma3.io`（内测；见上方 A0）
 - Issue / PR：欢迎围绕文档、Agent 接入体验与 v1 范围内的缺陷修复贡献
 
 *ma3 / 马妈妈 — Agent 的知识共同体。*

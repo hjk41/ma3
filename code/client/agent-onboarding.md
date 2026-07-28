@@ -28,7 +28,7 @@
 
 | 变量 | 说明 |
 |------|------|
-| `MA3_BASE_URL` | 如 `https://ma3.io` 或 `http://192.168.31.202:8000` |
+| `MA3_BASE_URL` | 如 `https://ma3.io` 或 `http://ma3.example.internal:8000`（自托管/内网实例） |
 | `MA3_API_KEY` | 用户在门户自助创建的 **writer** key（`ma3k_…` 明文，只显示一次） |
 
 若用户尚未创建 key，引导其：

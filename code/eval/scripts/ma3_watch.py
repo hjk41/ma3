@@ -22,7 +22,7 @@ def find_log_dir(explicit: str | None) -> Path:
     if explicit:
         return Path(explicit)
     candidates = [
-        Path("/home/hct/ma3/data/ops"),
+        Path.home() / "ma3" / "data" / "ops",
         Path(__file__).resolve().parents[2] / "data" / "ops",
     ]
     for c in candidates:

@@ -11,7 +11,7 @@ Commit: `a80b280`
 Command:
 
 ```bash
-cd /home/hct/ma3/code/server && env -u MA3_PUBLIC_BASE_URL -u MA3_DATABASE_URL .venv/bin/pytest tests/integration/test_ui_i18n.py tests/integration/test_user_portal*.py tests/integration/test_portal_html_regression.py -q --tb=short
+cd <REPO_ROOT>/code/server && env -u MA3_PUBLIC_BASE_URL -u MA3_DATABASE_URL .venv/bin/pytest tests/integration/test_ui_i18n.py tests/integration/test_user_portal*.py tests/integration/test_portal_html_regression.py -q --tb=short
 ```
 
 Result: **PASS**
