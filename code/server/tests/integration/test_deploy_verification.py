@@ -210,7 +210,7 @@ def test_deploy_auth_login_friendly_when_oidc_off(deploy_http):
     for path in ("/auth/login", "/auth/login/start"):
         response = deploy_http.get(
             path,
-            params={"next": "http://192.168.31.202:8010/ui/me/"},
+            params={"next": "http://192.168.1.100:8010/ui/me/"},
         )
         assert response.status_code == 503, f"{path}: {response.text[:300]}"
         assert "text/html" in (response.headers.get("content-type") or ""), path

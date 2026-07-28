@@ -36,9 +36,12 @@ def authing_client(isolated_client, monkeypatch, session_user):
 
     import app.api.routes_keys as routes_keys
     import app.auth.session as session_mod
+    import app.services.portal_actor_service as portal_actor_service
 
-    monkeypatch.setattr(session_mod, "resolve_session_user", lambda _req: session_user)
-    monkeypatch.setattr(routes_keys, "resolve_session_user", lambda _req: session_user)
+    resolver = lambda _req: session_user
+    monkeypatch.setattr(session_mod, "resolve_session_user", resolver)
+    monkeypatch.setattr(routes_keys, "resolve_session_user", resolver)
+    monkeypatch.setattr(portal_actor_service, "resolve_session_user", resolver)
     db.upsert_user_principal(sso_user=session_user.sub, display_name=session_user.sub)
     complete_display_name_setup(session_user.principal_id, session_user.display_name)
     ensure_personal_library(session_user.principal_id, session_user.display_name)
@@ -76,6 +79,7 @@ def test_api_keys_require_session(isolated_client, monkeypatch):
 
 def test_authing_disabled_returns_503(isolated_client, monkeypatch):
     monkeypatch.setattr(settings, "authing_enabled", False)
+    monkeypatch.setattr(settings, "local_auth", False)
     resp = isolated_client.get("/api/keys")
     assert resp.status_code == 503
 
@@ -193,8 +197,10 @@ def test_delete_key_owner_only(authing_client, session_user, monkeypatch):
     db.upsert_user_principal(sso_user=other.sub, display_name=other.sub)
     complete_display_name_setup(other.principal_id, other.display_name)
     import app.api.routes_keys as routes_keys
+    import app.services.portal_actor_service as portal_actor_service
 
     monkeypatch.setattr(routes_keys, "resolve_session_user", lambda _req: other)
+    monkeypatch.setattr(portal_actor_service, "resolve_session_user", lambda _req: other)
     denied = client.delete(f"/api/keys/{key_id}", headers=_ORIGIN)
     assert denied.status_code == 404
 

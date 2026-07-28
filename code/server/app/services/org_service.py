@@ -15,6 +15,7 @@ OrgMemberRole = Literal["admin", "member"]
 DEFAULT_TEAM_LIBRARY_VISIBILITY = "private"
 
 _ORG_NAME_RE = re.compile(r"^[^\x00-\x1f\x7f]+$", re.UNICODE)
+_ALIAS_RE = re.compile(r"^[^\x00-\x1f\x7f]+$", re.UNICODE)
 
 
 def normalize_org_name(raw: str) -> str:
@@ -28,6 +29,38 @@ def normalize_org_name(raw: str) -> str:
     return name
 
 
+def normalize_org_alias(raw: str | None, *, allow_empty: bool = False) -> str | None:
+    """Normalize org-local alias. Empty clears when allow_empty=True; otherwise None means unset."""
+    if raw is None:
+        return None
+    name = " ".join(str(raw).strip().split())
+    if not name:
+        if allow_empty:
+            return None
+        raise HTTPException(status_code=400, detail="alias must not be empty")
+    if len(name) < 1 or len(name) > 32:
+        raise HTTPException(status_code=400, detail="alias must be 1–32 characters")
+    if not _ALIAS_RE.match(name):
+        raise HTTPException(status_code=400, detail="alias contains invalid characters")
+    return name
+
+
+def assert_org_alias_available(
+    org_id: str,
+    alias: str,
+    *,
+    exclude_principal_id: str | None = None,
+) -> None:
+    clash = db.find_active_org_member_by_alias(
+        org_id, alias, exclude_principal_id=exclude_principal_id
+    )
+    if clash:
+        raise HTTPException(
+            status_code=409,
+            detail={"error": "alias_taken", "message": "that org alias is already in use"},
+        )
+
+
 def search_members_by_display_name(query: str, *, limit: int = 10) -> list[dict[str, Any]]:
     """Member picker search: display name prefix/substring; optional user:… principal prefix."""
     return db.search_users_by_display_name(query, limit=limit)
@@ -37,19 +70,33 @@ def resolve_member_principal_id(
     *,
     principal_id: str | None = None,
     display_name: str | None = None,
+    username: str | None = None,
 ) -> str:
-    """Resolve add-member target from principal_id or exact display name."""
+    """Resolve add-member target from principal_id, local username, or exact display name."""
     pid = str(principal_id or "").strip()
     if pid:
         if not db.get_user_principal(pid):
             raise HTTPException(status_code=404, detail="principal not found")
         return pid
 
+    uname = str(username or "").strip().lower()
+    if uname:
+        account = db.get_local_account(uname)
+        if account is None:
+            raise HTTPException(
+                status_code=404,
+                detail={"error": "member_not_found", "message": "no local account with that username"},
+            )
+        return str(account["principal_id"])
+
     name = " ".join(str(display_name or "").strip().split())
     if not name:
         raise HTTPException(
             status_code=400,
-            detail={"error": "member_target_required", "message": "principal_id or display_name is required"},
+            detail={
+                "error": "member_target_required",
+                "message": "principal_id, username, or display_name is required",
+            },
         )
     row = db.find_user_by_display_name(name)
     if not row:
@@ -93,13 +140,59 @@ def add_org_member(
     actor_principal_id: str,
     principal_id: str | None = None,
     display_name: str | None = None,
+    username: str | None = None,
     role: OrgMemberRole = "member",
+    alias: str | None = None,
 ) -> dict[str, Any]:
     assert_org_admin(org_id, actor_principal_id)
     if not db.get_organization(org_id):
         raise HTTPException(status_code=404, detail="organization not found")
-    target_id = resolve_member_principal_id(principal_id=principal_id, display_name=display_name)
-    return db.add_org_member(org_id=org_id, principal_id=target_id, role=role)
+    target_id = resolve_member_principal_id(
+        principal_id=principal_id,
+        display_name=display_name,
+        username=username,
+    )
+    normalized_alias = normalize_org_alias(alias) if alias is not None else None
+    if normalized_alias:
+        assert_org_alias_available(org_id, normalized_alias, exclude_principal_id=target_id)
+    return db.add_org_member(
+        org_id=org_id,
+        principal_id=target_id,
+        role=role,
+        alias=normalized_alias,
+    )
+
+
+def update_org_member(
+    *,
+    org_id: str,
+    actor_principal_id: str,
+    target_principal_id: str,
+    role: OrgMemberRole | None = None,
+    alias: str | None = None,
+    alias_provided: bool = False,
+) -> dict[str, Any]:
+    assert_org_admin(org_id, actor_principal_id)
+    assert_active_org_member(org_id, target_principal_id)
+    row: dict[str, Any] | None = None
+    if role is not None:
+        if role != "admin":
+            _assert_not_last_admin(org_id, target_principal_id)
+        row = db.set_org_member_role(org_id=org_id, principal_id=target_principal_id, role=role)
+    if alias_provided:
+        normalized = normalize_org_alias(alias, allow_empty=True)
+        if normalized:
+            assert_org_alias_available(
+                org_id, normalized, exclude_principal_id=target_principal_id
+            )
+        row = db.set_org_member_alias(
+            org_id=org_id, principal_id=target_principal_id, alias=normalized
+        )
+    if row is None:
+        row = db.get_org_member(org_id, target_principal_id)
+        if row is None:
+            raise HTTPException(status_code=404, detail="organization not found")
+    return row
 
 
 def update_org_member_role(
@@ -109,11 +202,12 @@ def update_org_member_role(
     target_principal_id: str,
     role: OrgMemberRole,
 ) -> dict[str, Any]:
-    assert_org_admin(org_id, actor_principal_id)
-    assert_active_org_member(org_id, target_principal_id)
-    if role != "admin":
-        _assert_not_last_admin(org_id, target_principal_id)
-    return db.set_org_member_role(org_id=org_id, principal_id=target_principal_id, role=role)
+    return update_org_member(
+        org_id=org_id,
+        actor_principal_id=actor_principal_id,
+        target_principal_id=target_principal_id,
+        role=role,
+    )
 
 
 def remove_org_member(

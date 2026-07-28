@@ -9,12 +9,20 @@ if [[ ! -f .env ]]; then
   echo "Created .env from .env.example — edit secrets before production use."
 fi
 
+# shellcheck disable=SC1091
+set -a
+# Export MA3_PORT / compose vars for health check messaging
+source .env
+set +a
+
 docker compose up -d --build "$@"
 echo
 echo "Waiting for healthz..."
+PORT="${MA3_PORT:-8000}"
 for i in $(seq 1 60); do
-  if curl -fsS "http://127.0.0.1:${MA3_PORT:-8000}/healthz" >/dev/null 2>&1; then
-    echo "ma3 is up: http://127.0.0.1:${MA3_PORT:-8000}/healthz"
+  if curl -fsS "http://127.0.0.1:${PORT}/healthz" >/dev/null 2>&1; then
+    echo "ma3 is up: http://127.0.0.1:${PORT}/healthz"
+    echo "First-run setup (local auth): http://127.0.0.1:${PORT}/ui/setup/"
     echo "Bootstrap key (if OIDC off): docker compose exec ma3 cat /data/bootstrap_api_key.txt"
     exit 0
   fi

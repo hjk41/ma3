@@ -28,12 +28,14 @@ def _patch_session(monkeypatch, user) -> None:
     import app.api.ui_session as ui_session
     import app.auth.session as session_mod
     import app.services.feedback_service as feedback_service
+    import app.services.portal_actor_service as portal_actor_service
 
     resolver = lambda _req: user
     monkeypatch.setattr(session_mod, "resolve_session_user", resolver)
     monkeypatch.setattr(ui_session, "resolve_session_user", resolver)
     monkeypatch.setattr(routes_keys, "resolve_session_user", resolver)
     monkeypatch.setattr(feedback_service, "resolve_session_user", resolver)
+    monkeypatch.setattr(portal_actor_service, "resolve_session_user", resolver)
 
 
 def test_me_requires_login_when_authing_enabled(isolated_client, monkeypatch):
@@ -136,7 +138,9 @@ def test_libraries_list_requires_login_when_anonymous(isolated_client, monkeypat
     assert response.headers["location"].startswith("/auth/login")
 
 
-def test_observatory_record_redirects_to_portal(isolated_client):
+def test_observatory_record_redirects_to_portal(isolated_client, monkeypatch):
+    # Avoid NeedsOwnerSetupRedirectMiddleware (local-auth day-0) intercepting /ui/*.
+    monkeypatch.setattr(settings, "local_auth", False)
     response = isolated_client.get(
         "/ui/observatory/records/vk_test123",
         follow_redirects=False,

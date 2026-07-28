@@ -62,6 +62,7 @@ def test_home_dev_mode_cta(isolated_client, monkeypatch):
 def test_home_bootstrap_mode_cta(isolated_client, monkeypatch):
     monkeypatch.setattr(settings, "authing_enabled", False)
     monkeypatch.setattr(settings, "authing_issuer", None)
+    monkeypatch.setattr(settings, "local_auth", False)
     monkeypatch.setattr(settings, "bootstrap_selfhost", True)
     response = isolated_client.get("/ui/home/")
     assert response.status_code == 200
@@ -69,9 +70,27 @@ def test_home_bootstrap_mode_cta(isolated_client, monkeypatch):
     assert "bootstrap" in response.text.lower() or "API Key" in response.text
 
 
+def test_home_local_auth_mode_cta(isolated_client, monkeypatch):
+    monkeypatch.setattr(settings, "authing_enabled", False)
+    monkeypatch.setattr(settings, "authing_issuer", None)
+    monkeypatch.setattr(settings, "local_auth", True)
+    monkeypatch.setattr(settings, "bootstrap_selfhost", True)
+    response = isolated_client.get("/ui/home/")
+    assert response.status_code == 200
+    # Day-0 (no owner): primary CTA points at setup; after owner exists, login.
+    assert "/ui/setup/" in response.text or "/auth/login" in response.text
+    assert (
+        "local" in response.text.lower()
+        or "本地" in response.text
+        or "注册" in response.text
+        or "管理员" in response.text
+    )
+
+
 def test_me_without_oidc_returns_html_explain(isolated_client, monkeypatch):
     monkeypatch.setattr(settings, "authing_enabled", False)
     monkeypatch.setattr(settings, "authing_issuer", None)
+    monkeypatch.setattr(settings, "local_auth", False)
     monkeypatch.setattr(settings, "bootstrap_selfhost", True)
     response = isolated_client.get("/ui/me/")
     assert response.status_code == 503
@@ -83,11 +102,12 @@ def test_me_without_oidc_returns_html_explain(isolated_client, monkeypatch):
 def test_auth_login_without_oidc_returns_html_explain(isolated_client, monkeypatch):
     monkeypatch.setattr(settings, "authing_enabled", False)
     monkeypatch.setattr(settings, "authing_issuer", None)
+    monkeypatch.setattr(settings, "local_auth", False)
     monkeypatch.setattr(settings, "bootstrap_selfhost", True)
     for path in ("/auth/login", "/auth/login/start"):
         response = isolated_client.get(
             path,
-            params={"next": "http://192.168.31.202:8010/ui/me/"},
+            params={"next": "http://192.168.1.100:8010/ui/me/"},
         )
         assert response.status_code == 503, path
         assert "text/html" in response.headers.get("content-type", ""), path

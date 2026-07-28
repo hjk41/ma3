@@ -289,6 +289,8 @@ def initialize_database() -> None:
             _execute(conn, "ALTER TABLE records ADD COLUMN publish_at TEXT")
         if not _column_exists(conn, "principals", "display_name_locked"):
             _execute(conn, "ALTER TABLE principals ADD COLUMN display_name_locked INTEGER NOT NULL DEFAULT 0")
+        if not _column_exists(conn, "principals", "plan_code"):
+            _execute(conn, "ALTER TABLE principals ADD COLUMN plan_code TEXT NOT NULL DEFAULT 'free'")
         if _column_exists(conn, "principals", "sso_user") and _column_exists(conn, "principals", "display_name_locked"):
             _execute(
                 conn,
@@ -322,6 +324,31 @@ def initialize_database() -> None:
         _execute(
             conn,
             """
+            CREATE TABLE IF NOT EXISTS local_accounts (
+              username TEXT PRIMARY KEY,
+              password_hash TEXT NOT NULL,
+              principal_id TEXT NOT NULL UNIQUE,
+              is_admin INTEGER NOT NULL DEFAULT 0,
+              created_at TEXT NOT NULL
+            )
+            """,
+        )
+        _execute(conn, "CREATE INDEX IF NOT EXISTS idx_local_accounts_principal ON local_accounts(principal_id)")
+
+        _execute(
+            conn,
+            """
+            CREATE TABLE IF NOT EXISTS instance_settings (
+              key TEXT PRIMARY KEY,
+              value TEXT NOT NULL,
+              updated_at TEXT NOT NULL
+            )
+            """,
+        )
+
+        _execute(
+            conn,
+            """
             CREATE TABLE IF NOT EXISTS org_members (
               org_id TEXT NOT NULL,
               principal_id TEXT NOT NULL,
@@ -329,13 +356,55 @@ def initialize_database() -> None:
               seat_status TEXT NOT NULL DEFAULT 'active'
                 CHECK (seat_status IN ('active', 'pending', 'removed')),
               joined_at TEXT NOT NULL,
+              alias TEXT,
               PRIMARY KEY (org_id, principal_id)
             )
             """,
         )
+        if not _column_exists(conn, "org_members", "alias"):
+            _execute(conn, "ALTER TABLE org_members ADD COLUMN alias TEXT")
         _execute(
             conn,
             "CREATE INDEX IF NOT EXISTS idx_org_members_principal ON org_members (principal_id, seat_status)",
+        )
+
+        _execute(
+            conn,
+            """
+            CREATE TABLE IF NOT EXISTS org_invites (
+              id TEXT PRIMARY KEY,
+              org_id TEXT NOT NULL,
+              token_hash TEXT NOT NULL UNIQUE,
+              role TEXT NOT NULL DEFAULT 'member'
+                CHECK (role IN ('admin', 'member')),
+              member_alias TEXT,
+              max_uses INTEGER NOT NULL DEFAULT 1,
+              uses_count INTEGER NOT NULL DEFAULT 0,
+              created_by TEXT NOT NULL,
+              created_at TEXT NOT NULL,
+              expires_at TEXT,
+              revoked_at TEXT,
+              last_redeemed_at TEXT,
+              last_redeemed_by TEXT
+            )
+            """,
+        )
+        if not _column_exists(conn, "org_invites", "member_alias"):
+            _execute(conn, "ALTER TABLE org_invites ADD COLUMN member_alias TEXT")
+        _execute(
+            conn,
+            "CREATE INDEX IF NOT EXISTS idx_org_invites_org ON org_invites (org_id, revoked_at)",
+        )
+        _execute(
+            conn,
+            """
+            CREATE TABLE IF NOT EXISTS org_invite_redemptions (
+              invite_id TEXT NOT NULL,
+              principal_id TEXT NOT NULL,
+              redeemed_at TEXT NOT NULL,
+              PRIMARY KEY (invite_id, principal_id)
+            )
+            """,
         )
 
         _execute(
@@ -1437,12 +1506,319 @@ def get_user_principal(principal_id: str) -> dict[str, Any] | None:
             return None
         id_col = _principal_id_column(conn)
         locked_col = ", display_name_locked" if _column_exists(conn, "principals", "display_name_locked") else ""
+        plan_col = ", plan_code" if _column_exists(conn, "principals", "plan_code") else ""
         row = _fetchone(
             conn,
-            f"SELECT {id_col} AS principal_id, kind, display_name{locked_col}, created_at FROM principals WHERE {id_col} = ?",
+            f"SELECT {id_col} AS principal_id, kind, display_name{locked_col}{plan_col}, created_at FROM principals WHERE {id_col} = ?",
             (principal_id,),
         )
     return _row_dict(row) if row else None
+
+
+def get_principal_plan_code(principal_id: str) -> str:
+    row = get_user_principal(principal_id)
+    if not row:
+        return "free"
+    code = str(row.get("plan_code") or "free").strip().lower()
+    return code or "free"
+
+
+def set_principal_plan_code(principal_id: str, plan_code: str) -> dict[str, Any] | None:
+    """Set personal plan_code on a user principal ('free' | 'pro')."""
+    code = str(plan_code or "free").strip().lower()
+    if code not in {"free", "pro"}:
+        raise ValueError(f"unsupported plan_code: {plan_code}")
+    with connect() as conn:
+        if not _table_exists(conn, "principals"):
+            return None
+        if not _column_exists(conn, "principals", "plan_code"):
+            raise RuntimeError("principals.plan_code column missing; run initialize_database")
+        id_col = _principal_id_column(conn)
+        existing = _fetchone(
+            conn,
+            f"SELECT {id_col} AS principal_id, kind FROM principals WHERE {id_col} = ?",
+            (principal_id,),
+        )
+        if not existing:
+            return None
+        if str(existing["kind"]) != "user":
+            raise ValueError("plan_code can only be set on user principals")
+        _execute(
+            conn,
+            f"UPDATE principals SET plan_code = ? WHERE {id_col} = ?",
+            (code, principal_id),
+        )
+    return get_user_principal(principal_id)
+
+
+def list_user_principals_for_ops(
+    *,
+    query: str | None = None,
+    paid_only: bool = False,
+    limit: int = 100,
+    offset: int = 0,
+) -> tuple[int, list[dict[str, Any]]]:
+    """List user principals for Observatory billing ops (includes plan_code)."""
+    q = " ".join(str(query or "").strip().split())
+    capped = max(1, min(int(limit), 200))
+    off = max(0, int(offset))
+    with connect() as conn:
+        if not _table_exists(conn, "principals"):
+            return 0, []
+        id_col = _principal_id_column(conn)
+        has_plan = _column_exists(conn, "principals", "plan_code")
+        plan_select = "plan_code" if has_plan else "'free' AS plan_code"
+        where = ["kind = 'user'"]
+        params: list[Any] = []
+        if paid_only and has_plan:
+            where.append("lower(plan_code) = 'pro'")
+        if q:
+            where.append(f"(lower(display_name) LIKE ? OR {id_col} LIKE ?)")
+            like = f"%{q.lower()}%"
+            params.extend([like, f"%{q}%"])
+        where_sql = " AND ".join(where)
+        count_row = _fetchone(
+            conn,
+            f"SELECT COUNT(*) AS c FROM principals WHERE {where_sql}",
+            tuple(params),
+        )
+        rows = _fetchall(
+            conn,
+            f"""
+            SELECT {id_col} AS principal_id, kind, display_name, {plan_select}, created_at
+            FROM principals
+            WHERE {where_sql}
+            ORDER BY created_at DESC
+            LIMIT ? OFFSET ?
+            """,
+            tuple(params + [capped, off]),
+        )
+    return int(count_row["c"]) if count_row else 0, [_row_dict(r) for r in rows]
+
+
+def count_principals_by_plan_code(plan_code: str = "pro") -> int:
+    code = str(plan_code or "pro").strip().lower()
+    with connect() as conn:
+        if not _table_exists(conn, "principals") or not _column_exists(conn, "principals", "plan_code"):
+            return 0
+        row = _fetchone(
+            conn,
+            "SELECT COUNT(*) AS c FROM principals WHERE kind = 'user' AND lower(plan_code) = ?",
+            (code,),
+        )
+    return int(row["c"]) if row else 0
+
+
+def list_organizations_for_ops(*, limit: int = 200) -> list[dict[str, Any]]:
+    capped = max(1, min(int(limit), 500))
+    with connect() as conn:
+        if not _table_exists(conn, "organizations"):
+            return []
+        has_members = _table_exists(conn, "org_members")
+        if has_members:
+            rows = _fetchall(
+                conn,
+                """
+                SELECT o.id, o.name, o.kind, o.owner_principal_id, o.billing_account_id,
+                       COALESCE(m.member_count, 0) AS member_count
+                FROM organizations o
+                LEFT JOIN (
+                  SELECT org_id, COUNT(*) AS member_count
+                  FROM org_members
+                  WHERE seat_status = 'active'
+                  GROUP BY org_id
+                ) m ON m.org_id = o.id
+                ORDER BY o.kind, o.name
+                LIMIT ?
+                """,
+                (capped,),
+            )
+        else:
+            rows = _fetchall(
+                conn,
+                """
+                SELECT id, name, kind, owner_principal_id, billing_account_id, 0 AS member_count
+                FROM organizations
+                ORDER BY kind, name
+                LIMIT ?
+                """,
+                (capped,),
+            )
+    return [_row_dict(r) for r in rows]
+
+
+def set_organization_billing_account_id(org_id: str, billing_account_id: str | None) -> dict[str, Any] | None:
+    with connect() as conn:
+        if not _table_exists(conn, "organizations"):
+            return None
+        if not get_organization(org_id):
+            return None
+        _execute(
+            conn,
+            "UPDATE organizations SET billing_account_id = ? WHERE id = ?",
+            (billing_account_id, org_id),
+        )
+    return get_organization(org_id)
+
+
+def create_local_account(
+    *,
+    username: str,
+    password_hash: str,
+    principal_id: str,
+    is_admin: bool = False,
+) -> dict[str, Any]:
+    from datetime import datetime, timezone
+
+    now = datetime.now(timezone.utc).replace(microsecond=0).isoformat()
+    with connect() as conn:
+        if not _table_exists(conn, "local_accounts"):
+            raise RuntimeError("local_accounts table missing; run initialize_database")
+        _execute(
+            conn,
+            """
+            INSERT INTO local_accounts (username, password_hash, principal_id, is_admin, created_at)
+            VALUES (?, ?, ?, ?, ?)
+            """,
+            (username, password_hash, principal_id, 1 if is_admin else 0, now),
+        )
+    row = get_local_account(username)
+    assert row is not None
+    return row
+
+
+def get_local_account(username: str) -> dict[str, Any] | None:
+    with connect() as conn:
+        if not _table_exists(conn, "local_accounts"):
+            return None
+        row = _fetchone(
+            conn,
+            """
+            SELECT username, password_hash, principal_id, is_admin, created_at
+            FROM local_accounts WHERE username = ?
+            """,
+            (username,),
+        )
+    return _row_dict(row) if row else None
+
+
+def get_local_account_by_principal(principal_id: str) -> dict[str, Any] | None:
+    with connect() as conn:
+        if not _table_exists(conn, "local_accounts"):
+            return None
+        row = _fetchone(
+            conn,
+            """
+            SELECT username, password_hash, principal_id, is_admin, created_at
+            FROM local_accounts WHERE principal_id = ?
+            """,
+            (principal_id,),
+        )
+    return _row_dict(row) if row else None
+
+
+def count_local_accounts() -> int:
+    with connect() as conn:
+        if not _table_exists(conn, "local_accounts"):
+            return 0
+        row = _fetchone(conn, "SELECT COUNT(*) AS c FROM local_accounts")
+    return int(row["c"]) if row else 0
+
+
+def count_local_admins() -> int:
+    with connect() as conn:
+        if not _table_exists(conn, "local_accounts"):
+            return 0
+        row = _fetchone(conn, "SELECT COUNT(*) AS c FROM local_accounts WHERE is_admin = 1")
+    return int(row["c"]) if row else 0
+
+
+def list_local_accounts(*, limit: int = 200) -> list[dict[str, Any]]:
+    capped = max(1, min(int(limit), 500))
+    with connect() as conn:
+        if not _table_exists(conn, "local_accounts"):
+            return []
+        rows = _fetchall(
+            conn,
+            """
+            SELECT username, principal_id, is_admin, created_at
+            FROM local_accounts
+            ORDER BY created_at ASC
+            LIMIT ?
+            """,
+            (capped,),
+        )
+    return [_row_dict(r) for r in rows]
+
+
+def set_local_account_admin(username: str, *, is_admin: bool) -> dict[str, Any] | None:
+    with connect() as conn:
+        if not _table_exists(conn, "local_accounts"):
+            return None
+        _execute(
+            conn,
+            "UPDATE local_accounts SET is_admin = ? WHERE username = ?",
+            (1 if is_admin else 0, username),
+        )
+    return get_local_account(username)
+
+
+def get_instance_setting(key: str) -> str | None:
+    with connect() as conn:
+        if not _table_exists(conn, "instance_settings"):
+            return None
+        row = _fetchone(conn, "SELECT value FROM instance_settings WHERE key = ?", (key,))
+    if not row:
+        return None
+    return str(row["value"])
+
+
+def set_instance_setting(key: str, value: str) -> None:
+    from datetime import datetime, timezone
+
+    now = datetime.now(timezone.utc).replace(microsecond=0).isoformat()
+    with connect() as conn:
+        if not _table_exists(conn, "instance_settings"):
+            raise RuntimeError("instance_settings table missing; run initialize_database")
+        if is_postgres():
+            _execute(
+                conn,
+                """
+                INSERT INTO instance_settings (key, value, updated_at)
+                VALUES (?, ?, ?)
+                ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = EXCLUDED.updated_at
+                """,
+                (key, value, now),
+            )
+        else:
+            _execute(
+                conn,
+                """
+                INSERT INTO instance_settings (key, value, updated_at)
+                VALUES (?, ?, ?)
+                ON CONFLICT (key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at
+                """,
+                (key, value, now),
+            )
+
+
+def delete_instance_setting(key: str) -> None:
+    with connect() as conn:
+        if not _table_exists(conn, "instance_settings"):
+            return
+        _execute(conn, "DELETE FROM instance_settings WHERE key = ?", (key,))
+
+
+def count_api_keys_for_principal(principal_id: str) -> int:
+    with connect() as conn:
+        if not _table_exists(conn, "api_keys"):
+            return 0
+        row = _fetchone(
+            conn,
+            "SELECT COUNT(*) AS c FROM api_keys WHERE principal_id = ? AND revoked_at IS NULL",
+            (principal_id,),
+        )
+    return int(row["c"]) if row else 0
 
 
 def user_display_name_is_locked(principal_id: str) -> bool:
@@ -1961,10 +2337,14 @@ def get_org_member(org_id: str, principal_id: str) -> dict[str, Any] | None:
     with connect() as conn:
         if not _table_exists(conn, "org_members"):
             return None
+        has_alias = _column_exists(conn, "org_members", "alias")
+        cols = "org_id, principal_id, role, seat_status, joined_at"
+        if has_alias:
+            cols += ", alias"
         row = _fetchone(
             conn,
-            """
-            SELECT org_id, principal_id, role, seat_status, joined_at
+            f"""
+            SELECT {cols}
             FROM org_members
             WHERE org_id = ? AND principal_id = ?
             """,
@@ -1978,9 +2358,11 @@ def list_org_members(org_id: str, *, include_removed: bool = False) -> list[dict
         if not _table_exists(conn, "org_members"):
             return []
         id_col = _principal_id_column(conn) if _table_exists(conn, "principals") else "principal_id"
+        has_alias = _column_exists(conn, "org_members", "alias")
+        alias_col = ", m.alias" if has_alias else ", NULL AS alias"
         sql = (
             f"""
-            SELECT m.org_id, m.principal_id, m.role, m.seat_status, m.joined_at,
+            SELECT m.org_id, m.principal_id, m.role, m.seat_status, m.joined_at{alias_col},
                    p.display_name
             FROM org_members m
             LEFT JOIN principals p ON p.{id_col} = m.principal_id
@@ -1990,7 +2372,9 @@ def list_org_members(org_id: str, *, include_removed: bool = False) -> list[dict
         params: list[Any] = [org_id]
         if not include_removed:
             sql += " AND m.seat_status = 'active'"
-        sql += " ORDER BY m.role DESC, p.display_name, m.principal_id"
+        sql += " ORDER BY m.role DESC, COALESCE(m.alias, p.display_name), m.principal_id" if has_alias else (
+            " ORDER BY m.role DESC, p.display_name, m.principal_id"
+        )
         rows = _fetchall(conn, sql, tuple(params))
     return [_row_dict(row) for row in rows]
 
@@ -2010,37 +2394,254 @@ def count_active_org_admins(org_id: str) -> int:
     return int(row["c"]) if row else 0
 
 
+def find_active_org_member_by_alias(
+    org_id: str,
+    alias: str,
+    *,
+    exclude_principal_id: str | None = None,
+) -> dict[str, Any] | None:
+    needle = " ".join(str(alias or "").strip().split())
+    if not needle:
+        return None
+    with connect() as conn:
+        if not _table_exists(conn, "org_members") or not _column_exists(conn, "org_members", "alias"):
+            return None
+        rows = _fetchall(
+            conn,
+            """
+            SELECT org_id, principal_id, role, seat_status, joined_at, alias
+            FROM org_members
+            WHERE org_id = ? AND seat_status = 'active' AND alias IS NOT NULL
+            """,
+            (org_id,),
+        )
+    needle_l = needle.lower()
+    for row in rows:
+        if str(row["alias"] or "").strip().lower() != needle_l:
+            continue
+        if exclude_principal_id and str(row["principal_id"]) == exclude_principal_id:
+            continue
+        return _row_dict(row)
+    return None
+
+
 def add_org_member(
     *,
     org_id: str,
     principal_id: str,
     role: str = "member",
     joined_at: str | None = None,
+    alias: str | None = None,
 ) -> dict[str, Any]:
     from datetime import datetime, timezone
 
     now = joined_at or datetime.now(timezone.utc).replace(microsecond=0).isoformat()
-    if is_postgres():
-        upsert = """
-            INSERT INTO org_members (org_id, principal_id, role, seat_status, joined_at)
-            VALUES (?, ?, ?, 'active', ?)
-            ON CONFLICT (org_id, principal_id) DO UPDATE SET
-              role = EXCLUDED.role,
-              seat_status = 'active'
-            """
-    else:
-        upsert = """
-            INSERT INTO org_members (org_id, principal_id, role, seat_status, joined_at)
-            VALUES (?, ?, ?, 'active', ?)
-            ON CONFLICT(org_id, principal_id) DO UPDATE SET
-              role = excluded.role,
-              seat_status = 'active'
-            """
     with connect() as conn:
-        _execute(conn, upsert, (org_id, principal_id, role, now))
+        has_alias = _column_exists(conn, "org_members", "alias")
+        if has_alias:
+            if is_postgres():
+                upsert = """
+                    INSERT INTO org_members (org_id, principal_id, role, seat_status, joined_at, alias)
+                    VALUES (?, ?, ?, 'active', ?, ?)
+                    ON CONFLICT (org_id, principal_id) DO UPDATE SET
+                      role = EXCLUDED.role,
+                      seat_status = 'active',
+                      alias = COALESCE(EXCLUDED.alias, org_members.alias)
+                    """
+            else:
+                upsert = """
+                    INSERT INTO org_members (org_id, principal_id, role, seat_status, joined_at, alias)
+                    VALUES (?, ?, ?, 'active', ?, ?)
+                    ON CONFLICT(org_id, principal_id) DO UPDATE SET
+                      role = excluded.role,
+                      seat_status = 'active',
+                      alias = COALESCE(excluded.alias, org_members.alias)
+                    """
+            _execute(conn, upsert, (org_id, principal_id, role, now, alias))
+        else:
+            if is_postgres():
+                upsert = """
+                    INSERT INTO org_members (org_id, principal_id, role, seat_status, joined_at)
+                    VALUES (?, ?, ?, 'active', ?)
+                    ON CONFLICT (org_id, principal_id) DO UPDATE SET
+                      role = EXCLUDED.role,
+                      seat_status = 'active'
+                    """
+            else:
+                upsert = """
+                    INSERT INTO org_members (org_id, principal_id, role, seat_status, joined_at)
+                    VALUES (?, ?, ?, 'active', ?)
+                    ON CONFLICT(org_id, principal_id) DO UPDATE SET
+                      role = excluded.role,
+                      seat_status = 'active'
+                    """
+            _execute(conn, upsert, (org_id, principal_id, role, now))
     row = get_org_member(org_id, principal_id)
     assert row is not None
     return row
+
+
+def set_org_member_alias(*, org_id: str, principal_id: str, alias: str | None) -> dict[str, Any]:
+    with connect() as conn:
+        if not _column_exists(conn, "org_members", "alias"):
+            raise RuntimeError("org_members.alias column missing; run initialize_database")
+        _execute(
+            conn,
+            """
+            UPDATE org_members SET alias = ?
+            WHERE org_id = ? AND principal_id = ? AND seat_status = 'active'
+            """,
+            (alias, org_id, principal_id),
+        )
+    row = get_org_member(org_id, principal_id)
+    assert row is not None
+    return row
+
+
+def create_org_invite(
+    *,
+    invite_id: str,
+    org_id: str,
+    token_hash: str,
+    role: str,
+    created_by: str,
+    max_uses: int = 1,
+    expires_at: str | None = None,
+    created_at: str | None = None,
+    member_alias: str | None = None,
+) -> dict[str, Any]:
+    from datetime import datetime, timezone
+
+    now = created_at or datetime.now(timezone.utc).replace(microsecond=0).isoformat()
+    with connect() as conn:
+        if not _table_exists(conn, "org_invites"):
+            raise RuntimeError("org_invites table missing; run initialize_database")
+        has_alias = _column_exists(conn, "org_invites", "member_alias")
+        if has_alias:
+            _execute(
+                conn,
+                """
+                INSERT INTO org_invites (
+                  id, org_id, token_hash, role, member_alias, max_uses, uses_count,
+                  created_by, created_at, expires_at, revoked_at,
+                  last_redeemed_at, last_redeemed_by
+                ) VALUES (?, ?, ?, ?, ?, ?, 0, ?, ?, ?, NULL, NULL, NULL)
+                """,
+                (invite_id, org_id, token_hash, role, member_alias, int(max_uses), created_by, now, expires_at),
+            )
+        else:
+            _execute(
+                conn,
+                """
+                INSERT INTO org_invites (
+                  id, org_id, token_hash, role, max_uses, uses_count,
+                  created_by, created_at, expires_at, revoked_at,
+                  last_redeemed_at, last_redeemed_by
+                ) VALUES (?, ?, ?, ?, ?, 0, ?, ?, ?, NULL, NULL, NULL)
+                """,
+                (invite_id, org_id, token_hash, role, int(max_uses), created_by, now, expires_at),
+            )
+    row = get_org_invite(invite_id)
+    assert row is not None
+    return row
+
+
+def get_org_invite(invite_id: str) -> dict[str, Any] | None:
+    with connect() as conn:
+        if not _table_exists(conn, "org_invites"):
+            return None
+        row = _fetchone(conn, "SELECT * FROM org_invites WHERE id = ?", (invite_id,))
+    return _row_dict(row) if row else None
+
+
+def get_org_invite_by_token_hash(token_hash: str) -> dict[str, Any] | None:
+    with connect() as conn:
+        if not _table_exists(conn, "org_invites"):
+            return None
+        row = _fetchone(conn, "SELECT * FROM org_invites WHERE token_hash = ?", (token_hash,))
+    return _row_dict(row) if row else None
+
+
+def list_org_invites(org_id: str, *, include_revoked: bool = False) -> list[dict[str, Any]]:
+    with connect() as conn:
+        if not _table_exists(conn, "org_invites"):
+            return []
+        sql = "SELECT * FROM org_invites WHERE org_id = ?"
+        params: list[Any] = [org_id]
+        if not include_revoked:
+            sql += " AND revoked_at IS NULL"
+        sql += " ORDER BY created_at DESC"
+        rows = _fetchall(conn, sql, tuple(params))
+    return [_row_dict(r) for r in rows]
+
+
+def revoke_org_invite(invite_id: str, *, revoked_at: str | None = None) -> dict[str, Any] | None:
+    from datetime import datetime, timezone
+
+    now = revoked_at or datetime.now(timezone.utc).replace(microsecond=0).isoformat()
+    with connect() as conn:
+        if not _table_exists(conn, "org_invites"):
+            return None
+        _execute(
+            conn,
+            "UPDATE org_invites SET revoked_at = ? WHERE id = ? AND revoked_at IS NULL",
+            (now, invite_id),
+        )
+    return get_org_invite(invite_id)
+
+
+def try_consume_org_invite(
+    *,
+    invite_id: str,
+    principal_id: str,
+    now: str,
+) -> str:
+    """Atomically record redemption + increment uses.
+
+    Returns: 'ok' | 'already' | 'exhausted' | 'missing'
+    """
+    with connect() as conn:
+        if not _table_exists(conn, "org_invites"):
+            return "missing"
+        invite = _fetchone(conn, "SELECT * FROM org_invites WHERE id = ?", (invite_id,))
+        if not invite:
+            return "missing"
+        prior = _fetchone(
+            conn,
+            "SELECT 1 AS x FROM org_invite_redemptions WHERE invite_id = ? AND principal_id = ?",
+            (invite_id, principal_id),
+        )
+        if prior:
+            return "already"
+        if invite["revoked_at"] is not None:
+            return "exhausted"
+        if int(invite["uses_count"] or 0) >= int(invite["max_uses"] or 1):
+            return "exhausted"
+        expires = invite["expires_at"]
+        if expires and str(expires) <= now:
+            return "exhausted"
+        cur = _execute(
+            conn,
+            """
+            UPDATE org_invites
+            SET uses_count = uses_count + 1,
+                last_redeemed_at = ?,
+                last_redeemed_by = ?
+            WHERE id = ?
+              AND revoked_at IS NULL
+              AND uses_count < max_uses
+              AND (expires_at IS NULL OR expires_at > ?)
+            """,
+            (now, principal_id, invite_id, now),
+        )
+        if int(getattr(cur, "rowcount", 0) or 0) == 0:
+            return "exhausted"
+        _execute(
+            conn,
+            "INSERT INTO org_invite_redemptions (invite_id, principal_id, redeemed_at) VALUES (?, ?, ?)",
+            (invite_id, principal_id, now),
+        )
+    return "ok"
 
 
 def set_org_member_role(*, org_id: str, principal_id: str, role: str) -> dict[str, Any]:

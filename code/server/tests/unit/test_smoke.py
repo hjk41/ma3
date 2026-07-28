@@ -1,7 +1,13 @@
+"""Lightweight smoke checks.
+
+Uses a process-wide TestClient. Observatory open-read requires portal auth
+disabled for these two HTML/JSON checks; other smoke tests do not need that.
+"""
+
 from fastapi.testclient import TestClient
 
+from app.core.config import settings
 from app.main import app
-
 
 client = TestClient(app, raise_server_exceptions=True)
 
@@ -12,7 +18,10 @@ def test_healthz():
     assert r.json()["status"] == "ok"
 
 
-def test_observatory_stats_json():
+def test_observatory_stats_json(monkeypatch):
+    monkeypatch.setattr(settings, "local_auth", False)
+    monkeypatch.setattr(settings, "authing_enabled", False)
+    monkeypatch.setattr(settings, "authing_issuer", None)
     r = client.get("/ui/observatory/stats.json")
     assert r.status_code == 200
     stats = r.json()
@@ -25,7 +34,10 @@ def test_observatory_stats_json():
     assert stats["knowledge"]["records"]["total"] >= 0
 
 
-def test_observatory_home_shows_stats():
+def test_observatory_home_shows_stats(monkeypatch):
+    monkeypatch.setattr(settings, "local_auth", False)
+    monkeypatch.setattr(settings, "authing_enabled", False)
+    monkeypatch.setattr(settings, "authing_issuer", None)
     r = client.get("/ui/observatory/")
     assert r.status_code == 200
     text = r.text

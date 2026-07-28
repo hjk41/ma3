@@ -19,15 +19,15 @@ def ui_user_line(user: SessionUser | None) -> str:
 
 
 def resolve_ui_user(request: Request) -> SessionUser | None:
-    if not settings.authing_configured:
+    if not settings.portal_auth_enabled:
         return None
     return resolve_session_user(request)
 
 
 def require_ui_user(request: Request) -> SessionUser | None:
-    """Redirect to login when Authing is on and session missing."""
+    """Redirect to login when portal auth is on and session missing."""
     user = resolve_ui_user(request)
-    if settings.authing_configured and user is None:
+    if settings.portal_auth_enabled and user is None:
         return None  # caller checks redirect
     return user
 
@@ -48,7 +48,7 @@ def redirect_if_setup_required(request: Request, user: SessionUser) -> Response 
 
 
 def oidc_required_ui_response(request: Request) -> HTMLResponse:
-    """Friendly HTML when portal pages need OIDC but it is not configured."""
+    """Friendly HTML when portal pages need auth but neither OIDC nor local auth is on."""
     from app.api.ui_i18n import html_response, ui_locale
     from app.api.ui_theme import esc, render_page
 
@@ -96,7 +96,7 @@ def oidc_required_ui_response(request: Request) -> HTMLResponse:
 
 
 def require_authed_ui_user(request: Request, *, require_setup: bool = True) -> SessionUser | Response:
-    if not settings.authing_configured:
+    if not settings.portal_auth_enabled:
         return oidc_required_ui_response(request)
     user = resolve_ui_user(request)
     if user is None:

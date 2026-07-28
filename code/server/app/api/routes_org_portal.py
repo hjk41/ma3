@@ -29,6 +29,7 @@ from app.services.library_admin_service import (
     remove_library_grant,
 )
 from app.services.onboarding_service import ensure_personal_org, personal_org_id
+from app.services.org_invite_service import create_org_invite
 from app.services.org_quota_service import team_org_creation_summary
 from app.services.org_service import (
     DEFAULT_TEAM_LIBRARY_VISIBILITY,
@@ -350,6 +351,7 @@ def portal_org_members(
     org_id: str,
     q: str = Query(""),
     error: str = Query(""),
+    invite_url: str = Query(""),
 ) -> Response:
     auth = _require_user(request)
     if isinstance(auth, Response):
@@ -383,6 +385,7 @@ def portal_org_members(
             remove_btn = f'<span class="card-muted">{esc(t("portal.orgs.members.last_admin"))}</span>'
         rows.append(
             [
+                esc(m.get("alias") or "—"),
                 esc(m.get("display_name") or pid),
                 f'<code>{esc(pid)}</code>',
                 _org_role_badge(str(m.get("role") or "member"), locale=locale, t=t),
@@ -397,8 +400,46 @@ def portal_org_members(
             f'{esc(hit.get("display_name") or hit["principal_id"])} ({esc(hit["principal_id"])})</option>'
         )
     alert = f'<div class="alert error">{esc(error)}</div>' if error else ""
+    invite_flash = ""
+    if invite_url:
+        invite_flash = f"""
+  <div class="alert success" style="margin-bottom:16px;">
+    <p style="margin:0 0 8px;">{esc(t("portal.orgs.invites.created"))}</p>
+    <div class="copy-row">
+      <input class="copy-input" type="text" readonly value="{esc(invite_url)}" onclick="this.select();" style="width:100%;max-width:640px;" />
+      <button type="button" class="btn primary" onclick="ma3CopyFrom(this)">{esc(t("common.copy"))}</button>
+    </div>
+  </div>"""
     body = f"""
   {alert}
+  {invite_flash}
+  <div class="card" style="margin-bottom:16px;">
+    <div class="card-header"><h2>{esc(t("portal.orgs.invites.title"))}</h2></div>
+    <div class="card-body">
+      <p class="card-muted">{esc(t("portal.orgs.invites.help"))}</p>
+      <form method="post" action="{esc(base)}/ui/orgs/{esc(org_id)}/invites/">
+        <p>
+          <label>{esc(t("portal.orgs.invites.alias"))}<br>
+            <input name="member_alias" type="text" maxlength="32" placeholder="{esc(t("portal.orgs.invites.alias_hint"))}" style="width:100%;max-width:320px;">
+          </label>
+        </p>
+        <p style="margin-top:8px;">
+          <label>{esc(t("portal.orgs.members.role"))}
+            <select name="role"><option value="member" selected>member</option><option value="admin">admin</option></select>
+          </label>
+        </p>
+        <p style="margin-top:8px;">
+          <label>{esc(t("portal.orgs.invites.max_uses"))}
+            <input name="max_uses" type="number" min="1" max="100" value="1" style="width:80px;">
+          </label>
+          <label style="margin-left:12px;">{esc(t("portal.orgs.invites.expires_hours"))}
+            <input name="expires_in_hours" type="number" min="1" max="2160" value="168" style="width:100px;">
+          </label>
+        </p>
+        <button type="submit" class="btn primary">{esc(t("portal.orgs.invites.create"))}</button>
+      </form>
+    </div>
+  </div>
   <div class="card" style="margin-bottom:16px;">
     <div class="card-header"><h2>{esc(t("portal.orgs.members.add"))}</h2></div>
     <div class="card-body">
@@ -425,6 +466,11 @@ def portal_org_members(
           </label>
         </p>
         <p style="margin-top:8px;">
+          <label>{esc(t("portal.orgs.members.alias"))}<br>
+            <input name="alias" type="text" maxlength="32" placeholder="{esc(t("portal.orgs.invites.alias_hint"))}" style="width:100%;max-width:420px;">
+          </label>
+        </p>
+        <p style="margin-top:8px;">
           <label>{esc(t("portal.orgs.members.role"))}
             <select name="role"><option value="member">member</option><option value="admin">admin</option></select>
           </label>
@@ -436,7 +482,7 @@ def portal_org_members(
   <div class="card">
     <div class="card-body" style="padding:0;">
       {render_table(
-          [t("portal.orgs.members.display_name"), "Principal ID", t("portal.orgs.members.role"), t("common.created_at"), ""],
+          [t("portal.orgs.members.alias"), t("portal.orgs.members.display_name"), "Principal ID", t("portal.orgs.members.role"), t("common.created_at"), ""],
           rows,
           empty=t("portal.orgs.members.empty"),
       )}
@@ -473,6 +519,45 @@ def json_escape(text: str) -> str:
     return json.dumps(text, ensure_ascii=False)
 
 
+@router.post("/ui/orgs/{org_id}/invites/")
+async def portal_org_invite_create(request: Request, org_id: str) -> Response:
+    _assert_same_origin(request)
+    auth = _require_user(request)
+    if isinstance(auth, Response):
+        return auth
+    user = auth
+    base = _base(request)
+    form = await request.form()
+    role = str(form.get("role") or "member")
+    try:
+        max_uses = int(form.get("max_uses") or 1)
+        expires_in_hours = int(form.get("expires_in_hours") or 168)
+        created = create_org_invite(
+            org_id=org_id,
+            actor_principal_id=user.principal_id,
+            role=role,  # type: ignore[arg-type]
+            max_uses=max_uses,
+            expires_in_hours=expires_in_hours,
+            base_url=base,
+            member_alias=str(form.get("member_alias") or "").strip() or None,
+        )
+    except HTTPException as exc:
+        detail = exc.detail if isinstance(exc.detail, str) else str(exc.detail)
+        return RedirectResponse(
+            f"{base}/ui/orgs/{org_id}/members/?error={quote(detail)}",
+            status_code=303,
+        )
+    except (TypeError, ValueError) as exc:
+        return RedirectResponse(
+            f"{base}/ui/orgs/{org_id}/members/?error={quote(str(exc))}",
+            status_code=303,
+        )
+    return RedirectResponse(
+        f"{base}/ui/orgs/{org_id}/members/?invite_url={quote(str(created.get('invite_url') or ''), safe='')}",
+        status_code=303,
+    )
+
+
 @router.post("/ui/orgs/{org_id}/members/")
 async def portal_org_members_add(request: Request, org_id: str) -> Response:
     _assert_same_origin(request)
@@ -485,6 +570,7 @@ async def portal_org_members_add(request: Request, org_id: str) -> Response:
     pid = str(form.get("principal_id") or form.get("principal_id_manual") or "").strip()
     display_name = str(form.get("display_name") or "").strip()
     role = str(form.get("role") or "member")
+    alias = str(form.get("alias") or "").strip() or None
     try:
         add_org_member(
             org_id=org_id,
@@ -492,6 +578,7 @@ async def portal_org_members_add(request: Request, org_id: str) -> Response:
             principal_id=pid or None,
             display_name=display_name or None,
             role=role,  # type: ignore[arg-type]
+            alias=alias,
         )
     except HTTPException as exc:
         detail = exc.detail if isinstance(exc.detail, str) else str(exc.detail)

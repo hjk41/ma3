@@ -30,7 +30,34 @@ def personal_org_id(principal_id: str) -> str:
 
 
 def is_paid_principal(principal_id: str) -> bool:
-    return principal_id in settings.paid_principal_ids
+    """True if principal is Pro via env whitelist or DB plan_code=pro."""
+    if principal_id in settings.paid_principal_ids:
+        return True
+    try:
+        return db.get_principal_plan_code(principal_id) == "pro"
+    except Exception:
+        logger.exception("failed to read principal plan_code for %s", principal_id)
+        return False
+
+
+def set_user_paid(*, principal_id: str, paid: bool) -> dict[str, Any]:
+    """Ops helper: persist free/pro on the user principal (Observatory)."""
+    code = "pro" if paid else "free"
+    row = db.set_principal_plan_code(principal_id, code)
+    if row is None:
+        raise HTTPException(status_code=404, detail=f"principal not found: {principal_id}")
+    # Keep personal org billing label in sync when present.
+    org_id = personal_org_id(principal_id)
+    org = db.get_organization(org_id)
+    if org:
+        db.set_organization_billing_account_id(org_id, f"plan:{code}")
+    return {
+        "principal_id": principal_id,
+        "plan_code": code,
+        "paid": paid,
+        "effective_paid": is_paid_principal(principal_id),
+        "env_whitelist": principal_id in settings.paid_principal_ids,
+    }
 
 
 def ensure_personal_org(principal_id: str, display_name: str) -> dict[str, Any]:

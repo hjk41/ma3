@@ -50,6 +50,7 @@ def _patch_session_from_db(monkeypatch, user: SessionUser) -> None:
     import app.api.routes_keys as routes_keys
     import app.api.ui_session as ui_session
     import app.auth.session as session_mod
+    import app.services.portal_actor_service as portal_actor_service
 
     def _resolve(_req):
         row = db.get_user_principal(user.principal_id)
@@ -66,6 +67,7 @@ def _patch_session_from_db(monkeypatch, user: SessionUser) -> None:
     monkeypatch.setattr(session_mod, "resolve_session_user", _resolve)
     monkeypatch.setattr(ui_session, "resolve_session_user", _resolve)
     monkeypatch.setattr(routes_keys, "resolve_session_user", _resolve)
+    monkeypatch.setattr(portal_actor_service, "resolve_session_user", _resolve)
 
 
 @pytest.fixture()

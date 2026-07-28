@@ -9,3 +9,4 @@ numpy>=1.24.0,<3.0
 sentence-transformers>=2.7.0,<4.0
 pgvector>=0.3.0,<1.0
 cryptography>=42.0,<45.0
+argon2-cffi>=23.1,<26.0

@@ -38,6 +38,7 @@ def test_auth_login_start_redirects_when_configured(authing_client: TestClient):
 def test_auth_login_503_when_not_configured(monkeypatch):
     monkeypatch.setattr(settings, "authing_enabled", False)
     monkeypatch.setattr(settings, "authing_issuer", "")
+    monkeypatch.setattr(settings, "local_auth", False)
     monkeypatch.setattr(settings, "bootstrap_selfhost", True)
     client = TestClient(app, raise_server_exceptions=True)
     response = client.get("/auth/login", follow_redirects=False)

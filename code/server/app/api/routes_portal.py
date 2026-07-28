@@ -28,6 +28,8 @@ from app.api.ui_theme import (
     render_subnav,
     render_table,
 )
+from app.api.routes_setup import render_setup_banner
+from app.services import setup_service
 from app.auth.session import SessionUser
 from app.core.config import settings
 from app.services.feedback_service import apply_record_feedback, resolve_ui_feedback_principal
@@ -242,7 +244,9 @@ def _problem_summary(problem: str | None, *, width: int = 60) -> str:
 
 
 def _landing_primary_href(base: str) -> str:
-    if settings.authing_configured:
+    if setup_service.setup_needs_owner():
+        return f"{base}/ui/setup/"
+    if settings.portal_auth_enabled:
         return f"{base}/auth/login?next={base}/ui/me/"
     if settings.bootstrap_selfhost:
         return f"{base}/mcp/info"
@@ -250,13 +254,22 @@ def _landing_primary_href(base: str) -> str:
 
 
 def _render_public_landing(request: Request, *, locale: str, t: Callable[..., str]) -> str:
+    from app.services import local_auth_service
+
     base = _base(request)
     lib_id = settings.default_library_id
     lib_stats = db.get_library_stats(lib_id) or {}
     rec = lib_stats.get("records") or {}
     by_status = rec.get("by_status") or {}
     primary_href = _landing_primary_href(base)
-    if settings.authing_configured:
+    reg_open = local_auth_service.is_registration_open() if settings.local_auth_enabled else True
+    if setup_service.setup_needs_owner():
+        primary_label = t("setup.admin_title")
+    elif settings.local_auth_enabled and not reg_open:
+        primary_label = t("landing.hero.cta_signin")
+    elif settings.local_auth_enabled:
+        primary_label = t("landing.hero.cta_primary")
+    elif settings.portal_auth_enabled:
         primary_label = t("landing.hero.cta_primary")
     elif settings.bootstrap_selfhost:
         primary_label = t("landing.hero.cta_primary_bootstrap")
@@ -267,8 +280,13 @@ def _render_public_landing(request: Request, *, locale: str, t: Callable[..., st
     instance = settings.instance_id or "local"
     version = settings.service_version
 
+    setup_banner = render_setup_banner(request, locale=locale)
+
     dev_alert = ""
-    if not settings.authing_configured:
+    if settings.local_auth_enabled:
+        alert_key = "landing.local_auth_alert" if reg_open else "landing.local_auth_alert_closed"
+        dev_alert = f'<div class="alert info">{esc(t(alert_key))}</div>'
+    elif not settings.authing_configured:
         alert_key = "landing.bootstrap_alert" if settings.bootstrap_selfhost else "landing.dev_alert"
         dev_alert = f'<div class="alert info">{esc(t(alert_key))}</div>'
 
@@ -283,17 +301,31 @@ def _render_public_landing(request: Request, *, locale: str, t: Callable[..., st
         f'<p>{esc(t(f"landing.features.f{i}_body"))}</p></div></div>'
         for i in range(1, 4)
     )
-    getstarted_step3 = (
-        f'{esc(t("landing.getstarted.s3_prefix"))}'
-        f'<a href="{esc(docs_href)}">{esc(t("landing.getstarted.s3_link"))}</a>'
-        f'{esc(t("landing.getstarted.s3_suffix"))}'
-    )
-    getstarted_steps = (
-        f"<li>{esc(t('landing.getstarted.s1'))}</li>"
-        f"<li>{esc(t('landing.getstarted.s2'))}</li>"
-        f"<li>{getstarted_step3}</li>"
-        f"<li>{esc(t('landing.getstarted.s4'))}</li>"
-    )
+    if settings.local_auth_enabled:
+        if setup_service.setup_needs_owner():
+            prefix = "landing.getstarted.local"
+        elif not reg_open or setup_service.setup_complete():
+            prefix = "landing.getstarted.local_ready"
+        else:
+            prefix = "landing.getstarted.local_ramp"
+        getstarted_steps = (
+            f"<li>{esc(t(f'{prefix}.s1'))}</li>"
+            f"<li>{esc(t(f'{prefix}.s2'))}</li>"
+            f"<li>{esc(t(f'{prefix}.s3'))}</li>"
+            f"<li>{esc(t(f'{prefix}.s4'))}</li>"
+        )
+    else:
+        getstarted_step3 = (
+            f'{esc(t("landing.getstarted.s3_prefix"))}'
+            f'<a href="{esc(docs_href)}">{esc(t("landing.getstarted.s3_link"))}</a>'
+            f'{esc(t("landing.getstarted.s3_suffix"))}'
+        )
+        getstarted_steps = (
+            f"<li>{esc(t('landing.getstarted.s1'))}</li>"
+            f"<li>{esc(t('landing.getstarted.s2'))}</li>"
+            f"<li>{getstarted_step3}</li>"
+            f"<li>{esc(t('landing.getstarted.s4'))}</li>"
+        )
 
     stat_cards = render_stat_cards(
         [
@@ -320,6 +352,7 @@ def _render_public_landing(request: Request, *, locale: str, t: Callable[..., st
       <a class="btn subtle" href="{esc(docs_href)}">{esc(t("landing.hero.cta_docs"))}</a>
     </div>
   </div>
+  {setup_banner}
   {dev_alert}
   <section class="landing-section">
     <h2 class="landing-section-title">{esc(t("landing.problem.title"))}</h2>
@@ -377,6 +410,8 @@ def _render_public_landing(request: Request, *, locale: str, t: Callable[..., st
 @router.get("/ui")
 @router.get("/ui/")
 def portal_root(request: Request) -> Response:
+    if setup_service.setup_needs_owner():
+        return RedirectResponse("/ui/setup/", status_code=302)
     user = resolve_ui_user(request)
     target = "/ui/me/" if user is not None else "/ui/home/"
     return RedirectResponse(target, status_code=302)
@@ -385,9 +420,11 @@ def portal_root(request: Request) -> Response:
 @router.get("/ui/home", response_class=HTMLResponse)
 @router.get("/ui/home/", response_class=HTMLResponse)
 def portal_home(request: Request) -> Response:
-    user = resolve_ui_user(request)
-    if user is not None:
-        return RedirectResponse("/ui/me/", status_code=302)
+    # Day-0: keep marketing landing visible (primary CTA → /ui/setup/).
+    if not setup_service.setup_needs_owner():
+        user = resolve_ui_user(request)
+        if user is not None:
+            return RedirectResponse("/ui/me/", status_code=302)
     locale, t = ui_locale(request)
     base = _base(request)
     body = _render_public_landing(request, locale=locale, t=t)
@@ -474,6 +511,7 @@ def portal_me(request: Request) -> Response:
     )
 
     body = f"""
+  {render_setup_banner(request, locale=locale)}
   {_render_profile_header(user)}
   {render_subnav(base, active="overview", locale=locale)}
   {render_stat_cards([
@@ -914,7 +952,7 @@ async def portal_me_settings_save(request: Request) -> Response:
 @router.get("/ui/libraries/", response_class=HTMLResponse)
 def portal_libraries(request: Request) -> Response:
     user = resolve_ui_user(request)
-    if settings.authing_configured and user is None:
+    if settings.portal_auth_enabled and user is None:
         return login_redirect(request)
     base = _base(request)
     if user is None:

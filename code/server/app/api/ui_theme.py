@@ -263,11 +263,38 @@ table.data tr:hover td { background: #f6f8fa; }
 .key-detail-section { margin-bottom: 20px; }
 .key-detail-section h3 { font-size: 14px; margin: 0 0 8px; font-weight: 600; }
 label.field { display: grid; gap: 6px; font-size: 13px; font-weight: 600; color: var(--text); }
-input[type=text], .copy-input {
+input[type=text],
+input[type=password],
+input[type=email],
+input[type=search],
+input[type=number],
+.copy-input {
   min-width: 280px; padding: 8px 12px; border: 1px solid var(--border);
   border-radius: var(--radius); font: inherit; background: #fff;
 }
-input[type=text]:focus, .copy-input:focus {
+.password-field {
+  position: relative; max-width: 360px; width: 100%;
+}
+.password-field input[type=password],
+.password-field input[type=text] {
+  width: 100%; max-width: 100%; min-width: 0; box-sizing: border-box;
+  padding-right: 42px;
+}
+.password-toggle {
+  position: absolute; right: 4px; top: 50%; transform: translateY(-50%);
+  border: 0; background: transparent; color: var(--text-muted);
+  cursor: pointer; padding: 6px 8px; border-radius: var(--radius);
+  line-height: 0;
+}
+.password-toggle:hover { color: var(--text); background: var(--surface-muted); }
+.password-toggle:focus-visible { outline: 2px solid var(--accent-soft); }
+.password-toggle svg { width: 18px; height: 18px; display: block; }
+input[type=text]:focus,
+input[type=password]:focus,
+input[type=email]:focus,
+input[type=search]:focus,
+input[type=number]:focus,
+.copy-input:focus {
   outline: 2px solid var(--accent-soft); border-color: var(--accent);
 }
 .alert {
@@ -494,7 +521,87 @@ function ma3CopyExec(input) {
     return false;
   }
 }
+function ma3TogglePassword(btn) {
+  var wrap = btn.closest('.password-field');
+  if (!wrap) return;
+  var input = wrap.querySelector('input');
+  if (!input) return;
+  // revealing: password was masked → show plaintext; icon becomes open eye
+  var revealing = input.type === 'password';
+  input.type = revealing ? 'text' : 'password';
+  btn.setAttribute(
+    'aria-label',
+    revealing
+      ? (btn.getAttribute('data-hide-label') || 'Hide password')
+      : (btn.getAttribute('data-show-label') || 'Show password')
+  );
+  btn.setAttribute('aria-pressed', revealing ? 'true' : 'false');
+  var eye = btn.querySelector('.pw-eye');
+  var eyeOff = btn.querySelector('.pw-eye-off');
+  // Open eye = plaintext visible; closed/slashed eye = masked (default)
+  if (eye) eye.style.display = revealing ? '' : 'none';
+  if (eyeOff) eyeOff.style.display = revealing ? 'none' : '';
+}
+function ma3CheckPasswordConfirm(form) {
+  var pw = form.querySelector('input[name="password"]');
+  var conf = form.querySelector('input[name="password_confirm"]');
+  if (!pw || !conf) return true;
+  var msg = form.getAttribute('data-password-mismatch') || 'Passwords do not match';
+  var box = form.querySelector('.password-mismatch-alert');
+  if (!box) {
+    box = document.createElement('div');
+    box.className = 'alert error password-mismatch-alert';
+    form.insertBefore(box, form.firstChild);
+  }
+  if (pw.value !== conf.value) {
+    conf.setCustomValidity('');
+    box.textContent = msg;
+    box.hidden = false;
+    conf.focus();
+    return false;
+  }
+  box.hidden = true;
+  box.textContent = '';
+  conf.setCustomValidity('');
+  return true;
+}
 """
+
+
+_EYE_SVG = (
+    '<svg class="pw-eye" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" '
+    'stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="display:none">'
+    '<path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7S1 12 1 12z"/>'
+    '<circle cx="12" cy="12" r="3"/></svg>'
+)
+_EYE_OFF_SVG = (
+    '<svg class="pw-eye-off" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" '
+    'stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">'
+    '<path d="M17.94 17.94A10.94 10.94 0 0 1 12 19c-7 0-11-7-11-7a21.8 21.8 0 0 1 5.06-5.94"/>'
+    '<path d="M9.9 4.24A10.94 10.94 0 0 1 12 5c7 0 11 7 11 7a21.9 21.9 0 0 1-2.16 3.19"/>'
+    '<path d="M14.12 14.12a3 3 0 0 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>'
+)
+
+
+def render_password_input(
+    *,
+    name: str,
+    label: str,
+    autocomplete: str,
+    show_label: str,
+    hide_label: str,
+    required: bool = True,
+) -> str:
+    """Labeled password field with show/hide eye toggle."""
+    req = " required" if required else ""
+    return f"""
+        <label style="display:block;margin:12px 0 4px;">{esc(label)}</label>
+        <div class="password-field">
+          <input name="{esc(name)}" type="password"{req} autocomplete="{esc(autocomplete)}" />
+          <button type="button" class="password-toggle" aria-label="{esc(show_label)}" aria-pressed="false"
+                  data-show-label="{esc(show_label)}" data-hide-label="{esc(hide_label)}"
+                  onclick="ma3TogglePassword(this)">{_EYE_SVG}{_EYE_OFF_SVG}</button>
+        </div>"""
 
 
 def render_copy_js(locale: str = DEFAULT_LOCALE) -> str:
@@ -675,6 +782,7 @@ def render_page(
     breadcrumb_html: str = "",
     brand_href: str | None = None,
     show_minimal_header: bool = False,
+    show_login: bool = True,
     header_extra_html: str = "",
     meta_description: str = "",
     locale: str = DEFAULT_LOCALE,
@@ -686,7 +794,7 @@ def render_page(
     account = f'<a href="{esc(base)}/auth/account">{esc(tr(locale, "common.account"))}</a>' if show_logout else ""
     login_link = (
         f'<a href="{esc(base)}/auth/login?next={esc(base)}/ui/me/">{esc(tr(locale, "common.login"))}</a>'
-        if show_minimal_header
+        if show_minimal_header and show_login and not show_logout
         else ""
     )
     nav_items = [] if show_minimal_header else portal_nav_items(base, is_admin=is_admin, locale=locale)
@@ -748,6 +856,9 @@ def render_page(
         <a href="{esc(base)}/mcp/info">MCP</a>
         <a href="{esc(base)}/client/manifest.json">manifest</a>
         <a href="{esc(base)}/client/agent-onboarding.md">onboarding</a>
+        <a href="https://github.com/hjk41/ma3/blob/main/docs/07-commercial/legal/terms-of-service.md">Terms</a>
+        <a href="https://github.com/hjk41/ma3/blob/main/docs/07-commercial/legal/privacy-policy.md">Privacy</a>
+        <a href="https://github.com/hjk41/ma3/blob/main/docs/07-commercial/legal/data-retention-and-deletion.md">Data</a>
         <span>v{esc(settings.service_version)} · {esc(settings.instance_id or "local")}</span>
       </div>
     </footer>
@@ -772,7 +883,15 @@ def render_table(
 ) -> str:
     empty_text = empty if empty is not None else tr(locale, "common.empty")
     if not rows:
-        return f'<div class="empty"><div class="empty-icon">—</div><div>{esc(empty_text)}</div></div>'
+        # Callers may pass pre-escaped HTML snippets (e.g. keys empty hint).
+        if isinstance(empty_text, str) and empty_text.lstrip().startswith("<"):
+            empty_html = empty_text
+        elif isinstance(empty_text, str) and "<" in empty_text:
+            # Mixed text+tags from callers that already esc()'d text parts.
+            empty_html = empty_text
+        else:
+            empty_html = esc(empty_text)
+        return f'<div class="empty"><div class="empty-icon">—</div><div>{empty_html}</div></div>'
     head = "".join(f"<th>{_render_table_cell(h)}</th>" for h in headers)
     body_rows = []
     for row in rows:

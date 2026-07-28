@@ -66,12 +66,17 @@ def add_library_grant(
     actor_principal_id: str,
     principal_id: str | None = None,
     display_name: str | None = None,
+    username: str | None = None,
     role: GrantRole = "reader",
 ) -> dict[str, Any]:
     from app.services.org_service import resolve_member_principal_id
 
     assert_library_maintainer(library_id, actor_principal_id)
-    target_id = resolve_member_principal_id(principal_id=principal_id, display_name=display_name)
+    target_id = resolve_member_principal_id(
+        principal_id=principal_id,
+        display_name=display_name,
+        username=username,
+    )
     if role not in ("reader", "writer", "maintainer"):
         raise HTTPException(status_code=400, detail="invalid grant role")
     return db.upsert_library_grant(

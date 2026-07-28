@@ -25,10 +25,12 @@ def _create_buffered_record(client, portal_user, monkeypatch) -> str:
     def _patch_session(monkeypatch, u):
         import app.api.ui_session as ui_session
         import app.auth.session as session_mod
+        import app.services.portal_actor_service as portal_actor_service
 
         resolver = lambda _req: u
         monkeypatch.setattr(session_mod, "resolve_session_user", resolver)
         monkeypatch.setattr(ui_session, "resolve_session_user", resolver)
+        monkeypatch.setattr(portal_actor_service, "resolve_session_user", resolver)
 
     _patch_session(monkeypatch, user)
     monkeypatch.setattr(routes_keys, "resolve_session_user", lambda _req: user)

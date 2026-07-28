@@ -69,7 +69,12 @@ def _render_observatory_page(
             short = short[:12]
         pills.append(f'<span class="pill" title="{esc(settings.git_commit)}">{esc(short)}</span>')
     meta_pills = " ".join(pills)
-    actions = f'<a class="btn" href="{esc(base)}/ui/observatory/stats.json">stats.json</a>'
+    actions = (
+        f'<a class="btn" href="{esc(base)}/ui/observatory/billing/">付费概况</a> '
+        f'<a class="btn" href="{esc(base)}/ui/observatory/users/">用户 / 付费</a> '
+        f'<a class="btn" href="{esc(base)}/ui/observatory/orgs/">组织</a> '
+        f'<a class="btn" href="{esc(base)}/ui/observatory/stats.json">stats.json</a>'
+    )
     body = f"""
   <div class="pill-list" style="margin-bottom:16px;">{meta_pills}</div>
   {stat_cards}
@@ -136,8 +141,8 @@ def observatory_stats_json(request: Request) -> JSONResponse:
 
 
 def _observatory_user_line(request: Request) -> tuple[Any | None, str]:
-    if not settings.authing_configured:
-        return None, "未启用 Authing；Observatory 为开放只读（LAN dev）。"
+    if not settings.portal_auth_enabled:
+        return None, "未启用门户登录；Observatory 为开放只读（LAN / bootstrap）。"
     user = resolve_ui_user(request)
     if user is None:
         return None, ""
@@ -145,7 +150,7 @@ def _observatory_user_line(request: Request) -> tuple[Any | None, str]:
 
 
 def _require_observatory_admin(request: Request) -> Response | None:
-    if not settings.authing_configured:
+    if not settings.portal_auth_enabled:
         return None
     user = resolve_ui_user(request)
     if user is None:
@@ -165,7 +170,7 @@ def _require_observatory_admin(request: Request) -> Response | None:
 
 
 def _require_observatory_session(request: Request) -> Response | None:
-    if not settings.authing_configured:
+    if not settings.portal_auth_enabled:
         return None
     user = resolve_ui_user(request)
     if user is None:
@@ -250,11 +255,11 @@ def observatory_home(request: Request) -> Response:
         base,
         stats,
         user_line,
-        show_logout=settings.authing_configured,
+        show_logout=settings.portal_auth_enabled,
         is_admin=bool(user and user.is_admin),
     )
     response = HTMLResponse(html)
-    if not settings.authing_configured and not request.cookies.get("ma3_ui_session"):
+    if not settings.portal_auth_enabled and not request.cookies.get("ma3_ui_session"):
         response.set_cookie("ma3_ui_session", uuid.uuid4().hex, httponly=True, samesite="lax", max_age=86400 * 30)
     return response
 

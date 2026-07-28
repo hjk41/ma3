@@ -99,6 +99,11 @@ class Settings:
     oidc_authing_path_compat: bool = False
     # When OIDC is off: write/reuse a first-admin API key for self-host MCP.
     bootstrap_selfhost: bool = field(default_factory=lambda: _env_bool("MA3_BOOTSTRAP_SELFHOST", True))
+    # Local username/password portal auth when OIDC is off (self-host).
+    local_auth: bool = field(default_factory=lambda: _env_bool("MA3_LOCAL_AUTH", True))
+    local_auth_open_registration: bool = field(
+        default_factory=lambda: _env_bool("MA3_LOCAL_AUTH_OPEN_REGISTRATION", True)
+    )
     bootstrap_key_file: str = field(
         default_factory=lambda: _env_str("MA3_BOOTSTRAP_KEY_FILE", "./data/bootstrap_api_key.txt")
     )
@@ -268,6 +273,16 @@ class Settings:
         """Back-compat alias for oidc_configured (Authing is one OIDC provider)."""
         return self.oidc_configured
 
+    @property
+    def local_auth_enabled(self) -> bool:
+        """Username/password portal auth — only when OIDC is not configured."""
+        return bool(self.local_auth) and not self.oidc_configured
+
+    @property
+    def portal_auth_enabled(self) -> bool:
+        """Browser portal can authenticate (OIDC or local accounts)."""
+        return self.oidc_configured or self.local_auth_enabled
+
     def authing_issuer_base(self) -> str:
         return self.oidc_issuer_base()
 
@@ -322,6 +337,8 @@ class Settings:
             flags.append("oidc")
             if self.oidc_authing_path_compat:
                 flags.append("authing")
+        if self.local_auth_enabled:
+            flags.append("local_auth")
         if not self.oidc_configured and self.bootstrap_selfhost:
             flags.append("bootstrap_selfhost")
         return tuple(flags)

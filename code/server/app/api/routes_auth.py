@@ -4,12 +4,12 @@ import logging
 from urllib.parse import quote
 
 import httpx
-from fastapi import APIRouter, HTTPException, Query, Request, Response
+from fastapi import APIRouter, Form, HTTPException, Query, Request, Response
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 
 from app.api.ui_i18n import html_response, resolve_locale, tr, ui_locale
 from app.api.ui_session import oidc_required_ui_response
-from app.api.ui_theme import esc, render_page
+from app.api.ui_theme import esc, render_page, render_password_input
 from app.auth import authing_client
 from app.auth.session import (
     clear_session_cookie,
@@ -21,8 +21,12 @@ from app.auth.session import (
     validate_oauth_state,
 )
 from app.core.config import settings
+from app.core.security import assert_same_origin as _assert_same_origin
+from app.services import local_auth_service
+from app.services import setup_service
 from app.services.onboarding_service import ensure_personal_library
 from app.services.principal_service import display_name_setup_required, ensure_user_principal
+from app.storage import db as storage_db
 
 logger = logging.getLogger(__name__)
 
@@ -34,11 +38,11 @@ def _require_authing() -> None:
         raise HTTPException(status_code=503, detail="Authing auth is not configured")
 
 
-def _require_authing_html(request: Request) -> Response | None:
-    """Browser auth pages: friendly HTML when OIDC is off (bootstrap self-host)."""
-    if not settings.authing_configured:
-        return oidc_required_ui_response(request)
-    return None
+def _auth_unavailable_html(request: Request) -> Response | None:
+    """When neither OIDC nor local auth is available."""
+    if settings.portal_auth_enabled:
+        return None
+    return oidc_required_ui_response(request)
 
 
 def _normalize_next_path(next_path: str) -> str:
@@ -80,15 +84,148 @@ def _start_authing_login(request: Request, next_path: str) -> Response:
     return response
 
 
+def _password_fields_html(t, *, register: bool) -> str:
+    show = t("auth.local.show_password")
+    hide = t("auth.local.hide_password")
+    fields = render_password_input(
+        name="password",
+        label=t("auth.local.password"),
+        autocomplete="new-password" if register else "current-password",
+        show_label=show,
+        hide_label=hide,
+    )
+    if register:
+        fields += render_password_input(
+            name="password_confirm",
+            label=t("auth.local.password_confirm"),
+            autocomplete="new-password",
+            show_label=show,
+            hide_label=hide,
+        )
+    return fields
+
+
+def _local_auth_form_page(
+    request: Request,
+    *,
+    mode: str,
+    next_path: str,
+    error: str = "",
+    invite_token: str = "",
+    invite_banner: str = "",
+) -> HTMLResponse:
+    locale, t = ui_locale(request)
+    base = str(request.base_url).rstrip("/")
+    is_register = mode == "register"
+    needs_owner = is_register and setup_service.setup_needs_owner()
+    reg_open = local_auth_service.is_registration_open()
+    invite_ok = bool(invite_token) and is_register and not needs_owner
+    allow_register_form = (not is_register) or needs_owner or reg_open or invite_ok
+    if needs_owner:
+        title = t("setup.admin_title")
+        subtitle = t("setup.admin_lead")
+        submit = t("setup.admin_submit")
+    elif is_register and not reg_open and not invite_ok:
+        title = t("auth.local.register_title")
+        subtitle = t("auth.local.registration_closed")
+        submit = title
+    elif is_register and invite_ok:
+        title = t("auth.local.register_title")
+        subtitle = invite_banner or t("auth.local.invite_subtitle")
+        submit = title
+    elif is_register:
+        title = t("auth.local.register_title")
+        subtitle = t("auth.local.subtitle_member")
+        submit = title
+    else:
+        title = t("auth.local.login_title")
+        subtitle = t("auth.local.subtitle_login")
+        submit = title
+    action = "/auth/register" if is_register else "/auth/login"
+    switch = (
+        f'<p class="card-muted">{esc(t("auth.local.have_account"))} '
+        f'<a href="/auth/login?next={esc(next_path)}">{esc(t("auth.local.login_link"))}</a></p>'
+        if is_register and not needs_owner and (reg_open or invite_ok)
+        else (
+            ""
+            if needs_owner or (is_register and not allow_register_form)
+            else f'<p class="card-muted">{esc(t("auth.local.need_account"))} '
+            f'<a href="/auth/register?next={esc(next_path)}">{esc(t("auth.local.register_link"))}</a></p>'
+        )
+    )
+    err = f'<div class="alert error">{esc(error)}</div>' if error else ""
+    form_body = ""
+    if is_register and not allow_register_form:
+        form_body = f"""
+      <p class="card-muted">{esc(t("auth.local.registration_closed_help"))}</p>
+      <p><a class="btn primary" href="/auth/login?next={esc(next_path)}">{esc(t("auth.local.login_link"))}</a></p>
+"""
+    else:
+        display_field = ""
+        if is_register:
+            display_field = f"""
+        <label style="display:block;margin:12px 0 4px;">{esc(t("auth.local.display_name"))}</label>
+        <input name="display_name" type="text" maxlength="32" placeholder="{esc(t("auth.local.display_name_hint"))}" style="width:100%;max-width:360px;" />
+        """
+        invite_hidden = ""
+        if is_register and invite_token:
+            invite_hidden = f'<input type="hidden" name="invite" value="{esc(invite_token)}" />'
+        pw_fields = _password_fields_html(t, register=is_register)
+        mismatch = esc(t("auth.local.password_mismatch"))
+        onsubmit = ' onsubmit="return ma3CheckPasswordConfirm(this)"' if is_register else ""
+        form_attrs = f' method="post" action="{esc(action)}"{onsubmit}'
+        if is_register:
+            form_attrs += f' data-password-mismatch="{mismatch}"'
+        form_body = f"""
+      <form{form_attrs}>
+        <input type="hidden" name="next" value="{esc(next_path)}" />
+        {invite_hidden}
+        <label style="display:block;margin:12px 0 4px;">{esc(t("auth.local.username"))}</label>
+        <input name="username" type="text" required autocomplete="username" style="width:100%;max-width:360px;" />
+        {pw_fields}
+        {display_field}
+        <div class="actions" style="margin-top:16px;">
+          <button type="submit" class="btn primary">{esc(submit)}</button>
+        </div>
+      </form>
+      {switch}
+"""
+    body = f"""
+  <div class="card" style="margin-top:24px;max-width:480px;">
+    <div class="card-header"><h1 style="margin:0;font-size:20px;">{esc(title)}</h1></div>
+    <div class="card-body">
+      <p class="card-muted">{esc(subtitle)}</p>
+      {err}
+      {form_body}
+    </div>
+  </div>"""
+    return html_response(
+        request,
+        render_page(
+            title=title,
+            base=base,
+            active_nav="",
+            body=body,
+            show_minimal_header=True,
+            show_login=not needs_owner,
+            locale=locale,
+            request=request,
+        ),
+    )
+
+
 @router.get("/login")
 def auth_login(
     request: Request,
     next: str = Query("/ui/me/", alias="next"),
 ) -> Response:
-    denied = _require_authing_html(request)
+    denied = _auth_unavailable_html(request)
     if denied is not None:
         return denied
-    return _start_authing_login(request, _normalize_next_path(next))
+    next_path = _normalize_next_path(next)
+    if settings.authing_configured:
+        return _start_authing_login(request, next_path)
+    return _local_auth_form_page(request, mode="login", next_path=next_path)
 
 
 @router.get("/login/start")
@@ -96,10 +233,141 @@ def auth_login_start(
     request: Request,
     next: str = Query("/ui/me/", alias="next"),
 ) -> Response:
-    denied = _require_authing_html(request)
+    return auth_login(request, next=next)
+
+
+@router.post("/login")
+async def auth_login_post(
+    request: Request,
+    username: str = Form(...),
+    password: str = Form(...),
+    next: str = Form("/ui/me/"),
+) -> Response:
+    denied = _auth_unavailable_html(request)
     if denied is not None:
         return denied
-    return _start_authing_login(request, _normalize_next_path(next))
+    if settings.authing_configured:
+        return RedirectResponse(f"/auth/login?next={quote(_normalize_next_path(next), safe='')}", status_code=303)
+    _assert_same_origin(request)
+    next_path = _normalize_next_path(next)
+    try:
+        account = local_auth_service.authenticate_local_user(username=username, password=password)
+    except HTTPException as exc:
+        detail = exc.detail if isinstance(exc.detail, str) else str(exc.detail)
+        return _local_auth_form_page(request, mode="login", next_path=next_path, error=detail)
+    token = local_auth_service.issue_local_session_token(account)
+    response = RedirectResponse(next_path, status_code=303)
+    set_session_cookie(response, request, token)
+    return response
+
+
+@router.get("/register")
+def auth_register_get(
+    request: Request,
+    next: str = Query("/ui/me/", alias="next"),
+    invite: str = Query("", alias="invite"),
+) -> Response:
+    denied = _auth_unavailable_html(request)
+    if denied is not None:
+        return denied
+    if settings.authing_configured:
+        return RedirectResponse(f"/auth/login?next={quote(_normalize_next_path(next), safe='')}", status_code=302)
+    if not settings.local_auth_enabled:
+        return oidc_required_ui_response(request)
+    if setup_service.setup_needs_owner():
+        return RedirectResponse("/ui/setup/", status_code=302)
+    invite_token = (invite or "").strip()
+    invite_banner = ""
+    if invite_token:
+        from app.services import org_invite_service
+
+        try:
+            preview = org_invite_service.preview_invite(invite_token)
+            org_name = preview.get("org_name") or preview.get("org_id")
+            invite_banner = f"邀请加入组织：{org_name}（角色 {preview.get('role')}）"
+            alias = preview.get("member_alias")
+            if alias:
+                invite_banner += f"；组织内别名「{alias}」"
+        except HTTPException as exc:
+            detail = exc.detail if isinstance(exc.detail, str) else str(exc.detail)
+            return _local_auth_form_page(
+                request,
+                mode="register",
+                next_path=_normalize_next_path(next),
+                error=detail,
+            )
+    return _local_auth_form_page(
+        request,
+        mode="register",
+        next_path=_normalize_next_path(next),
+        invite_token=invite_token,
+        invite_banner=invite_banner,
+    )
+
+
+@router.post("/register")
+async def auth_register_post(
+    request: Request,
+    username: str = Form(...),
+    password: str = Form(...),
+    password_confirm: str = Form(""),
+    display_name: str = Form(""),
+    next: str = Form("/ui/me/"),
+    invite: str = Form(""),
+) -> Response:
+    denied = _auth_unavailable_html(request)
+    if denied is not None:
+        return denied
+    if not settings.local_auth_enabled:
+        return oidc_required_ui_response(request)
+    _assert_same_origin(request)
+    next_path = _normalize_next_path(next)
+    invite_token = (invite or "").strip()
+    was_first = setup_service.setup_needs_owner()
+    locale, t = ui_locale(request)
+    if password != password_confirm:
+        detail = t("auth.local.password_mismatch")
+        if was_first:
+            from app.api.routes_setup import _render_needs_owner
+
+            return _render_needs_owner(request, error=detail)
+        return _local_auth_form_page(
+            request,
+            mode="register",
+            next_path=next_path,
+            error=detail,
+            invite_token=invite_token,
+        )
+    try:
+        account = local_auth_service.register_local_user(
+            username=username,
+            password=password,
+            display_name=display_name or None,
+            invite_token=invite_token or None,
+        )
+    except HTTPException as exc:
+        detail = exc.detail if isinstance(exc.detail, str) else str(exc.detail)
+        if was_first:
+            from app.api.routes_setup import _render_needs_owner
+
+            return _render_needs_owner(request, error=detail)
+        return _local_auth_form_page(
+            request,
+            mode="register",
+            next_path=next_path,
+            error=detail,
+            invite_token=invite_token,
+        )
+    token = local_auth_service.issue_local_session_token(account)
+    if was_first and next_path in {"/ui/me/", "/ui/home/", "/"}:
+        next_path = "/ui/setup/"
+    elif account.get("org_membership") and next_path in {"/ui/me/", "/ui/home/", "/"}:
+        org_id = account["org_membership"].get("org_id")
+        if org_id:
+            next_path = f"/ui/orgs/{org_id}/"
+    response = RedirectResponse(next_path, status_code=303)
+    set_session_cookie(response, request, token)
+    return response
 
 
 @router.get("/callback")
@@ -109,9 +377,8 @@ def auth_callback(
     state: str | None = None,
     error: str | None = None,
 ) -> Response:
-    denied = _require_authing_html(request)
-    if denied is not None:
-        return denied
+    if not settings.authing_configured:
+        return oidc_required_ui_response(request)
     next_path = pop_oauth_next(request)
     if error:
         logger.warning("authing callback error=%s", error)
@@ -160,7 +427,8 @@ def auth_callback(
 
 @router.get("/whoami")
 def auth_whoami(request: Request) -> JSONResponse:
-    _require_authing()
+    if not settings.portal_auth_enabled:
+        raise HTTPException(status_code=503, detail="portal auth is not configured")
     user = resolve_session_user(request)
     if user is None:
         raise HTTPException(status_code=401, detail="not authenticated")
@@ -169,9 +437,10 @@ def auth_whoami(request: Request) -> JSONResponse:
 
 @router.get("/account")
 def auth_account(request: Request) -> Response:
-    denied = _require_authing_html(request)
-    if denied is not None:
-        return denied
+    if settings.local_auth_enabled:
+        return RedirectResponse("/ui/me/settings/", status_code=302)
+    if not settings.authing_configured:
+        return oidc_required_ui_response(request)
     if resolve_session_user(request) is None:
         return RedirectResponse("/auth/login?next=/auth/account", status_code=302)
     return RedirectResponse(settings.resolve_authing_account_url(), status_code=302)
@@ -180,9 +449,12 @@ def auth_account(request: Request) -> Response:
 @router.get("/logout")
 @router.post("/logout")
 def auth_logout(request: Request) -> Response:
-    denied = _require_authing_html(request)
-    if denied is not None:
-        return denied
+    if not settings.portal_auth_enabled:
+        return oidc_required_ui_response(request)
+    if settings.local_auth_enabled and not settings.authing_configured:
+        response = RedirectResponse("/ui/home/", status_code=302)
+        clear_session_cookie(response, request)
+        return response
     token = get_access_token(request)
     if token:
         authing_client.invalidate_userinfo_cache(token)

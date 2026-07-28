@@ -106,10 +106,27 @@ def get_access_token(request: Request) -> str | None:
 
 
 def resolve_session_user(request: Request) -> SessionUser | None:
-    if not settings.authing_configured:
-        return None
     token = get_access_token(request)
     if not token:
+        return None
+
+    if settings.local_auth_enabled and token.startswith("local.v1."):
+        from app.services.local_auth_service import parse_local_session_token
+
+        local = parse_local_session_token(token)
+        if not local:
+            return None
+        return SessionUser(
+            principal_id=local["principal_id"],
+            sub=local["sub"],
+            display_name=local["display_name"],
+            email=None,
+            phone=None,
+            is_admin=bool(local["is_admin"]),
+            via="local",
+        )
+
+    if not settings.authing_configured:
         return None
     try:
         authing_user = authing_client.resolve_user(token)
@@ -123,4 +140,5 @@ def resolve_session_user(request: Request) -> SessionUser | None:
         email=authing_user.email,
         phone=authing_user.phone,
         is_admin=authing_user.is_admin,
+        via="authing",
     )

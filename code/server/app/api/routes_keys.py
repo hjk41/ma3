@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import logging
 from typing import Any
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, Header, HTTPException, Request
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
 from pydantic import BaseModel, Field
 
@@ -22,6 +22,7 @@ from app.services.onboarding_service import (
     normalize_api_key_grants,
     resolve_key_grants,
 )
+from app.services.portal_actor_service import PortalActor, assert_mutating_auth, require_portal_actor
 from app.services.principal_service import display_name_setup_required
 from app.storage import db
 
@@ -46,14 +47,14 @@ class UpdateKeyBody(BaseModel):
 
 
 def _require_authing_configured() -> None:
-    if not settings.authing_configured:
+    if not settings.portal_auth_enabled:
         raise HTTPException(
             status_code=503,
             detail=(
-                "self-service key management requires Authing; "
-            "use MA3_DEV_AUTH break-glass, self-host bootstrap key "
-            "(scripts/bootstrap_selfhost.py), or configure OIDC and open /ui/keys/"
-        ),
+                "self-service key management requires portal auth (OIDC or MA3_LOCAL_AUTH); "
+                "use self-host bootstrap key (scripts/bootstrap_selfhost.py), "
+                "or enable local auth / OIDC and open /ui/keys/"
+            ),
         )
 
 
@@ -68,6 +69,22 @@ def _require_session_user(request: Request) -> SessionUser:
             detail="complete display name setup at /ui/me/setup/ before managing API keys",
         )
     return user
+
+
+def _require_keys_actor(
+    request: Request,
+    *,
+    x_api_key: str | None = None,
+    authorization: str | None = None,
+) -> PortalActor:
+    _require_authing_configured()
+    actor = require_portal_actor(request, x_api_key=x_api_key, authorization=authorization)
+    if display_name_setup_required(actor.principal_id):
+        raise HTTPException(
+            status_code=403,
+            detail="complete display name setup at /ui/me/setup/ before managing API keys",
+        )
+    return actor
 
 
 def _redirect_login(request: Request) -> Response:
@@ -281,8 +298,8 @@ def _render_keys_page(
     if personal_lib:
         grant_picker = _render_grant_picker(personal_lib=personal_lib, is_paid=is_paid, locale=locale)
     empty_keys = (
-        f'{esc(tr(locale, "keys.empty"))}<br/>'
-        f'<span class="grant-hint">{esc(tr(locale, "keys.empty_hint"))}</span>'
+        f'<div>{esc(tr(locale, "keys.empty"))}<br/>'
+        f'<span class="grant-hint">{esc(tr(locale, "keys.empty_hint"))}</span></div>'
     )
     body = f"""
   {err_html}
@@ -468,21 +485,30 @@ def _render_authing_disabled_page(base: str, *, locale: str = "zh-CN", request: 
 
 
 @router.get("/api/keys")
-def api_list_keys(request: Request) -> JSONResponse:
-    user = _require_session_user(request)
-    ensure_personal_library(user.principal_id, user.display_name)
-    keys = _enrich_keys_with_plaintext(db.list_api_keys_for_principal(user.principal_id))
+def api_list_keys(
+    request: Request,
+    x_api_key: str | None = Header(default=None, alias="X-API-Key"),
+    authorization: str | None = Header(default=None),
+) -> JSONResponse:
+    actor = _require_keys_actor(request, x_api_key=x_api_key, authorization=authorization)
+    ensure_personal_library(actor.principal_id, actor.display_name)
+    keys = _enrich_keys_with_plaintext(db.list_api_keys_for_principal(actor.principal_id))
     safe = [_public_key_payload(k) for k in keys]
     return JSONResponse({"keys": safe})
 
 
 @router.post("/api/keys")
-def api_create_key(request: Request, body: CreateKeyBody) -> JSONResponse:
-    _assert_same_origin(request)
-    user = _require_session_user(request)
+def api_create_key(
+    request: Request,
+    body: CreateKeyBody,
+    x_api_key: str | None = Header(default=None, alias="X-API-Key"),
+    authorization: str | None = Header(default=None),
+) -> JSONResponse:
+    actor = _require_keys_actor(request, x_api_key=x_api_key, authorization=authorization)
+    assert_mutating_auth(request, actor)
     created = create_personal_dev_key(
-        user.principal_id,
-        user.display_name,
+        actor.principal_id,
+        actor.display_name,
         label=body.label,
         grants=[g.model_dump() for g in body.grants] if body.grants else None,
     )
@@ -499,19 +525,25 @@ def api_create_key(request: Request, body: CreateKeyBody) -> JSONResponse:
 
 
 @router.patch("/api/keys/{key_id}")
-def api_update_key(request: Request, key_id: str, body: UpdateKeyBody) -> JSONResponse:
-    _assert_same_origin(request)
-    user = _require_session_user(request)
+def api_update_key(
+    request: Request,
+    key_id: str,
+    body: UpdateKeyBody,
+    x_api_key: str | None = Header(default=None, alias="X-API-Key"),
+    authorization: str | None = Header(default=None),
+) -> JSONResponse:
+    actor = _require_keys_actor(request, x_api_key=x_api_key, authorization=authorization)
+    assert_mutating_auth(request, actor)
     if body.label is None and body.grants is None:
         raise HTTPException(status_code=400, detail="label or grants required")
-    personal = ensure_personal_library(user.principal_id, user.display_name)
-    row = db.get_api_key_for_principal(key_id, principal_id=user.principal_id)
+    personal = ensure_personal_library(actor.principal_id, actor.display_name)
+    row = db.get_api_key_for_principal(key_id, principal_id=actor.principal_id)
     if row is None:
         raise HTTPException(status_code=404, detail="key not found")
     if body.label is not None:
         row = db.update_api_key_label(
             key_id,
-            principal_id=user.principal_id,
+            principal_id=actor.principal_id,
             label=normalize_key_label(body.label),
         )
         if row is None:
@@ -520,9 +552,9 @@ def api_update_key(request: Request, key_id: str, body: UpdateKeyBody) -> JSONRe
         resolved = _resolve_grants_payload(
             [g.model_dump() for g in body.grants],
             personal_lib_id=personal["library_id"],
-            principal_id=user.principal_id,
+            principal_id=actor.principal_id,
         )
-        row = db.replace_api_key_grants(key_id, principal_id=user.principal_id, grants=resolved)
+        row = db.replace_api_key_grants(key_id, principal_id=actor.principal_id, grants=resolved)
         if row is None:
             raise HTTPException(status_code=404, detail="key not found")
     enriched = _enrich_keys_with_plaintext([row])[0]
@@ -530,17 +562,24 @@ def api_update_key(request: Request, key_id: str, body: UpdateKeyBody) -> JSONRe
 
 
 @router.delete("/api/keys/{key_id}")
-def api_delete_key(request: Request, key_id: str) -> JSONResponse:
-    _assert_same_origin(request)
-    user = _require_session_user(request)
-    row = db.get_api_key_for_principal(key_id, principal_id=user.principal_id)
+def api_delete_key(
+    request: Request,
+    key_id: str,
+    x_api_key: str | None = Header(default=None, alias="X-API-Key"),
+    authorization: str | None = Header(default=None),
+) -> JSONResponse:
+    actor = _require_keys_actor(request, x_api_key=x_api_key, authorization=authorization)
+    assert_mutating_auth(request, actor)
+    if actor.api_key_id and actor.api_key_id == key_id:
+        raise HTTPException(status_code=400, detail="cannot delete the API key currently in use")
+    row = db.get_api_key_for_principal(key_id, principal_id=actor.principal_id)
     if row is None:
         raise HTTPException(status_code=404, detail="key not found")
-    if not db.delete_api_key(key_id, principal_id=user.principal_id):
+    if not db.delete_api_key(key_id, principal_id=actor.principal_id):
         raise HTTPException(status_code=404, detail="key not found")
     logger.info(
         "api_key_deleted principal_id=%s key_id=%s key_prefix=%s",
-        user.principal_id,
+        actor.principal_id,
         key_id,
         row.get("key_prefix"),
     )
@@ -550,7 +589,7 @@ def api_delete_key(request: Request, key_id: str) -> JSONResponse:
 @router.get("/ui/keys/{key_id}", response_class=HTMLResponse)
 def ui_keys_detail(request: Request, key_id: str) -> Response:
     locale, _t = ui_locale(request)
-    if not settings.authing_configured:
+    if not settings.portal_auth_enabled:
         base = str(request.base_url).rstrip("/")
         return html_response(request, _render_authing_disabled_page(base, locale=locale, request=request), status_code=503)
     user = _require_ui_keys_user(request)
@@ -570,7 +609,7 @@ def ui_keys_detail(request: Request, key_id: str) -> Response:
 @router.get("/ui/keys", response_class=HTMLResponse)
 def ui_keys_list(request: Request) -> Response:
     locale, _t = ui_locale(request)
-    if not settings.authing_configured:
+    if not settings.portal_auth_enabled:
         base = str(request.base_url).rstrip("/")
         return html_response(request, _render_authing_disabled_page(base, locale=locale, request=request), status_code=503)
     user = _require_ui_keys_user(request)
@@ -586,7 +625,7 @@ def ui_keys_list(request: Request) -> Response:
 async def ui_keys_create(request: Request) -> Response:
     _assert_same_origin(request)
     locale, _t = ui_locale(request)
-    if not settings.authing_configured:
+    if not settings.portal_auth_enabled:
         base = str(request.base_url).rstrip("/")
         return html_response(request, _render_authing_disabled_page(base, locale=locale, request=request), status_code=503)
     user = _require_ui_keys_user(request)
@@ -619,7 +658,7 @@ async def ui_keys_create(request: Request) -> Response:
 async def ui_keys_edit(request: Request, key_id: str) -> Response:
     _assert_same_origin(request)
     locale, _t = ui_locale(request)
-    if not settings.authing_configured:
+    if not settings.portal_auth_enabled:
         return RedirectResponse("/ui/keys/", status_code=303)
     user = _require_ui_keys_user(request)
     if isinstance(user, Response):
@@ -662,7 +701,7 @@ async def ui_keys_edit(request: Request, key_id: str) -> Response:
 @router.post("/ui/keys/{key_id}/delete")
 def ui_keys_delete(request: Request, key_id: str) -> Response:
     _assert_same_origin(request)
-    if not settings.authing_configured:
+    if not settings.portal_auth_enabled:
         return RedirectResponse("/ui/keys/", status_code=303)
     user = _require_ui_keys_user(request)
     if isinstance(user, Response):

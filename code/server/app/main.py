@@ -14,6 +14,17 @@ from app.api.routes_health import router as health_router
 from app.api.routes_keys import router as keys_router
 from app.api.routes_mcp import router as mcp_router
 from app.api.routes_ui import router as ui_router
+from app.api.routes_observatory_ops import router as observatory_ops_router
+from app.api.routes_setup import router as setup_router
+from app.api.routes_local_auth_api import router as local_auth_api_router
+from app.api.routes_setup_api import router as setup_api_router
+from app.api.routes_local_users_api import router as local_users_api_router
+from app.api.routes_me_api import router as me_api_router
+from app.api.routes_orgs_api import router as orgs_api_router
+from app.api.routes_libraries_api import router as libraries_api_router
+from app.api.routes_admin_api import router as admin_api_router
+from app.api.routes_org_invites_api import router as org_invites_api_router
+from app.api.setup_gate import NeedsOwnerSetupRedirectMiddleware
 from app.core.config import settings
 from app.services.portal_service import validate_authing_admin_config
 from app.storage.db import initialize_database
@@ -82,12 +93,23 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+app.add_middleware(NeedsOwnerSetupRedirectMiddleware)
 
 app.include_router(health_router)
 app.include_router(auth_router)
+app.include_router(setup_router)
+app.include_router(local_auth_api_router)
+app.include_router(setup_api_router)
+app.include_router(local_users_api_router)
+app.include_router(me_api_router)
+app.include_router(orgs_api_router)
+app.include_router(libraries_api_router)
+app.include_router(admin_api_router)
+app.include_router(org_invites_api_router)
 app.include_router(portal_router)
 app.include_router(org_portal_router)
 app.include_router(keys_router)
 app.include_router(mcp_router)
 app.include_router(client_router)
 app.include_router(ui_router)
+app.include_router(observatory_ops_router)

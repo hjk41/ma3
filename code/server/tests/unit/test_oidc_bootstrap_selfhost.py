@@ -51,12 +51,16 @@ def test_bootstrap_creates_key_file(tmp_path, monkeypatch):
     monkeypatch.setenv("MA3_BOOTSTRAP_SELFHOST", "1")
     monkeypatch.setenv("MA3_BOOTSTRAP_KEY_FILE", str(key_file))
     monkeypatch.setenv("MA3_DISABLE_EMBEDDINGS", "1")
-    # Reload settings fields used by bootstrap
+    # Reload settings from env for bootstrap; keep all module bindings in sync.
     from app.core import config as config_mod
+    from app.core import security as security_mod
 
-    config_mod.settings = Settings()
-    monkeypatch.setattr(bootstrap_selfhost, "settings", config_mod.settings)
-    monkeypatch.setattr(db, "settings", config_mod.settings) if hasattr(db, "settings") else None
+    fresh = Settings()
+    monkeypatch.setattr(config_mod, "settings", fresh)
+    monkeypatch.setattr(security_mod, "settings", fresh)
+    monkeypatch.setattr(bootstrap_selfhost, "settings", fresh)
+    if hasattr(db, "settings"):
+        monkeypatch.setattr(db, "settings", fresh)
 
     db.initialize_database()
     result = bootstrap_selfhost.ensure_bootstrap_key()
