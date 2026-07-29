@@ -1,0 +1,8 @@
+# Include inside the ma3.io site block so /metrics is not publicly scraped.
+# Scrape only via loopback on the app host (decision A).
+handle /metrics* {
+	respond "Not Found" 404
+}
+handle {
+	reverse_proxy 127.0.0.1:8000
+}
