@@ -1,0 +1,16 @@
+[Unit]
+Description=ma3 local webhook sink for probe alerts (127.0.0.1 only)
+After=network.target
+
+[Service]
+Type=simple
+Environment=MA3_ALERT_SINK_HOST=127.0.0.1
+Environment=MA3_ALERT_SINK_PORT=8787
+Environment=MA3_ALERT_SINK_LOG=/var/log/ma3/probe-alerts.jsonl
+ExecStart=/usr/bin/python3 /usr/local/lib/ma3/local_webhook_sink.py
+Restart=on-failure
+RestartSec=3
+Nice=10
+
+[Install]
+WantedBy=multi-user.target

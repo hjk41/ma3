@@ -64,6 +64,27 @@ sudo systemctl enable --now ma3-probe.timer
 3. Confirm webhook receives `ma3_probe_fail`.
 4. Restore URL; confirm `ma3_probe_recover`.
 
+### Host 202 (LAN operator laptop) — live install
+
+This machine (`192.168.31.202`) runs the off-host probe for SaaS `https://ma3.io`:
+
+| Unit | Role |
+|------|------|
+| `ma3-alert-sink.service` | Local webhook on `127.0.0.1:8787` → `/var/log/ma3/probe-alerts.jsonl` |
+| `ma3-probe.timer` | Every ~60s runs `ma3-probe.service` |
+| `/etc/ma3/probe.env` | Target URL / instance / webhook (not in git) |
+| `/usr/local/bin/ma3-probe.sh` | Installed copy of `probe_ma3.sh` |
+
+Useful commands:
+
+```bash
+systemctl status ma3-probe.timer ma3-alert-sink.service
+journalctl -u ma3-probe.service -n 50
+sudo tail -f /var/log/ma3/probe-alerts.jsonl
+```
+
+To switch the webhook to Slack/Discord/Feishu later, change only `MA3_PROBE_WEBHOOK_URL` in `/etc/ma3/probe.env`.
+
 ## Later phases (not in this directory yet)
 
 - Phase 1: `GET /metrics` (SaaS loopback; self-host `MA3_METRICS_ENABLED=0` by default) + Prometheus scrape compose
