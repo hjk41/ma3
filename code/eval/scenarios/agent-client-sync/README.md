@@ -1,47 +1,50 @@
-# agent-client-sync — Docker 多 Agent 安装/升级测试（真实 CLI）
+# agent-client-sync — Docker multi-agent install/upgrade tests (real CLIs)
 
-**ma3 跑在 host（LAN 测试主机 `:8000`），Docker 只装 agent 二进制并测 sync。**
+> Chinese version: [README.zh.md](README.zh.md)
 
-## 架构
+**ma3 runs on the host (LAN test host `:8000`); Docker only installs agent binaries and exercises sync.**
+
+## Architecture
 
 ```text
-LAN host (维护者内网测试主机)
-  ma3_v1 :8000          ← 真实服务；升级测试时 restart + MA3_SKILL_VERSION
+LAN host (maintainer intranet test host)
+  ma3_v1 :8000          ← real service; upgrade tests restart + MA3_SKILL_VERSION
   docker compose
-    runner              ← Claude / Codex / Cursor / Droid 真实 CLI
+    runner              ← Claude / Codex / Cursor / Droid real CLIs
       → MA3_BASE_URL=http://host.docker.internal:8000
-      → 各 agent 独立 HOME（volume agent-homes）
+      → per-agent HOME (volume agent-homes)
 ```
 
-原先 compose 里再跑一个 ma3 是为了 **隔离升级**（随意 bump skill version），但：
-- 与 LAN host 上已部署实例重复
-- 增加构建失败面（Docker 镜像层、proxy 等）
-- 测的不是你实际在用的 ma3
+The old compose also ran a ma3 container for **isolated upgrades** (freely bump skill version), but:
 
-**现方案**：升级阶段在 host 上 `restart_host_ma3.sh 2.0.0`，Docker 里 agent 再 sync；结束后 restore 回 `1.0.0`。
+- Duplicated the already-deployed instance on the LAN host
+- Increased build failure surface (Docker image layers, proxy, etc.)
+- Did not test the ma3 you actually use
 
-## 真实二进制（runner 镜像）
+**Current approach**: during the upgrade phase, run `restart_host_ma3.sh 2.0.0` on the host, then sync again from agents in Docker; restore to `1.0.0` when finished.
 
-| Agent | 安装 |
+## Real binaries (runner image)
+
+| Agent | Install |
 |-------|------|
 | Claude Code | `npm i -g @anthropic-ai/claude-code` |
 | Codex | `npm i -g @openai/codex` |
 | Cursor | `curl cursor.com/install` → `agent` / `cursor-agent` |
-| Droid | host 二进制 bundle 或 factory installer |
+| Droid | host binary bundle or factory installer |
 
-## 在 LAN host 上跑
+## Run on the LAN host
 
 ```bash
-# 先部署（通用脚本 + 本地 LAN 配置，见 deploy/README.md）
+# Deploy first (generic script + local LAN config; see deploy/README.md)
 ./deploy/deploy.sh deploy/deploy.<lan>.env
-# 再跑本 scenario
+# Then run this scenario
 cd code/eval/scenarios/agent-client-sync && bash run.sh
 ```
 
-## 环境变量
+## Environment variables
 
-| 变量 | 默认 | 说明 |
+| Variable | Default | Notes |
 |------|------|------|
-| `MA3_HOST_MA3_URL` | `http://host.docker.internal:8000` | runner 访问 host ma3 |
-| `MA3_RESTORE_VERSION` | `1.0.0` | 测试结束 restore 的 skill version |
-| `MA3_DIR` | `~/ma3_deploy` | host ma3 路径（restart 脚本） |
+| `MA3_HOST_MA3_URL` | `http://host.docker.internal:8000` | runner → host ma3 |
+| `MA3_RESTORE_VERSION` | `1.0.0` | skill version restored after the test |
+| `MA3_DIR` | `~/ma3_deploy` | host ma3 path (restart script) |
