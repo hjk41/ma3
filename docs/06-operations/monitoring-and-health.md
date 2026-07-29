@@ -43,6 +43,18 @@ Script and install notes: [`deploy/observability/`](../../deploy/observability/R
 
 Exact PromQL recording rules ship with Phase 1–3. **Deferred:** write-acceptance and publish-freshness SLOs until the required metrics exist.
 
+## Phase 1 — application metrics
+
+| Item | Policy |
+|------|--------|
+| Library | `prometheus-client` + hand-rolled middleware |
+| Endpoint | `GET /metrics` when `MA3_METRICS_ENABLED=1` |
+| Self-host default | **OFF** (`MA3_METRICS_ENABLED` unset/0) |
+| SaaS | Enable on loopback uvicorn; **do not** proxy `/metrics` via Caddy |
+| Series | `ma3_http_*`, `ma3_mcp_tool_*`, `ma3_build_info` |
+
+Prometheus scrapes `127.0.0.1:8000/metrics` on the app host (`--network host`). `verify_ma3_prod.sh` asserts the **public** URL does not serve Prometheus exposition text at `/metrics`.
+
 ## Phase 2 — alerting
 
 | Item | Location |
@@ -83,9 +95,9 @@ Do **not** put secrets or raw API keys in logs. Per-tenant detail stays in logs/
 | Phase | Status | Deliverable |
 |-------|--------|-------------|
 | 0 | **Done** (host 202) | Off-host probe + webhook/Feishu + docs |
-| 1 | **Landed in tree** | `prometheus-client`, `/metrics`, HTTP + MCP instrumentation, SaaS scrape compose |
-| 2 | Planned | Alertmanager minimal rules |
-| 3 | Planned | SLO-1–3 recording rules + Grafana; rewrite complete |
+| 1 | **Done** (ma3.io) | `/metrics`, HTTP + MCP series, Prometheus scrape |
+| 2 | **Done** | Alertmanager + Feishu webhook + starter alerts |
+| 3 | **Done** | SLO-1–3 recording rules + Grafana dashboard |
 
 ## Doctor target checks (unchanged intent)
 

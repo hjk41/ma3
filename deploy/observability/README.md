@@ -109,8 +109,29 @@ curl -s -X POST http://127.0.0.1:8787/ -H 'Content-Type: application/json' \
   -d '{"event":"ma3_probe_fail","base_url":"https://ma3.io","instance_id":"ma3-v1-hk","detail":"test","ts":"…"}'
 ```
 
-## Later phases
+## Phase 1 — application metrics (SaaS)
 
-- Phase 1: **landed** — `GET /metrics` (`MA3_METRICS_ENABLED`), HTTP + MCP series; SaaS scrape via `docker-compose.prometheus.yml`
-- Phase 2: Alertmanager rules
-- Phase 3: SLO-1–3 recording rules + Grafana
+Enable `MA3_METRICS_ENABLED=1` on the app host (loopback uvicorn). Public Caddy must **not** proxy `/metrics` (see `caddy-metrics-block.snippet`).
+
+Prometheus scrapes `127.0.0.1:8000/metrics` with `--network host` (bridge cannot reach loopback-bound uvicorn).
+
+## Phase 2 / 3 — Alertmanager, SLOs, Grafana
+
+On the **application host**:
+
+```bash
+# Install Feishu credentials (same as probe host), then:
+sudo mkdir -p /etc/ma3 /usr/local/lib/ma3 /var/log/ma3
+sudo cp deploy/observability/systemd/ma3-alert-sink.service /etc/systemd/system/
+# /etc/ma3/feishu.env: FEISHU_APP_ID / FEISHU_APP_SECRET / FEISHU_CHAT_ID
+bash deploy/observability/run_saas_stack.sh
+```
+
+| Loopback port | Service |
+|---------------|---------|
+| `:9090` | Prometheus (+ `alerts.yml`, `slo-rules.yml`) |
+| `:9093` | Alertmanager → `http://127.0.0.1:8787/alertmanager` |
+| `:3000` | Grafana (`admin` / set `GRAFANA_ADMIN_PASSWORD`) |
+| `:8787` | Webhook sink → Feishu |
+
+External reachability (SLO-2 true signal) remains the **off-host probe** on host 202; scrape `up` is co-located only.
