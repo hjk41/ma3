@@ -53,11 +53,34 @@
 | SaaS | loopback 开启；**不要**经 Caddy 反代 `/metrics` |
 | 指标（Phase 1） | `ma3_http_*`、`ma3_mcp_tool_*`、`ma3_build_info` |
 
-SaaS 主机 scrape：
+Prometheus 在应用主机用 `--network host` 抓取 `127.0.0.1:8000/metrics`。`verify_ma3_prod.sh` 断言公网 `/metrics` 不是 Prometheus 文本。
 
-```bash
-cd deploy/observability && docker compose -f docker-compose.prometheus.yml up -d
-```
+## Phase 2 — 告警
+
+| 项 | 位置 |
+|------|----------|
+| 规则 | `deploy/observability/prometheus/alerts.yml` |
+| Alertmanager | `deploy/observability/alertmanager/alertmanager.yml` → `http://127.0.0.1:8787/alertmanager` |
+| 通道 | 飞书 via local sink（`/etc/ma3/feishu.env`）；ticket 跟进仍 **人工** |
+
+起步告警：`Ma3ScrapeDown`、`Ma3High5xx`、`Ma3ContextSlow`、`Ma3AvailabilityFastBurn`。
+
+## Phase 3 — 内部 SLO + Grafana
+
+| SLO | Recording rules | 目标 |
+|-----|-----------------|------|
+| SLO-1 API 可用性 | `ma3:slo1:*` | ≥ 99.5% 非 5xx |
+| SLO-2 可达 | `ma3:slo2:up:*`（scrape）；**外网**仍以 202 站外探活为准 | ≥ 99.5% |
+| SLO-3 检索延迟 | `ma3:slo3:context_p95:*` | p95 ≤ 2.5s |
+
+Dashboard：Grafana `ma3 SLO overview`。启动：`bash deploy/observability/run_saas_stack.sh`（应用主机）。
+
+| 端口（仅 loopback） | 服务 |
+|----------------------|---------|
+| `:9090` | Prometheus |
+| `:9093` | Alertmanager |
+| `:3000` | Grafana |
+| `:8787` | 飞书 webhook sink |
 
 ## 日志字段约定（先文档化）
 
