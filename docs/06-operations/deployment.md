@@ -1,75 +1,77 @@
-# 部署总览
+# Deployment Overview
 
-> Authing 详细步骤：[deployment-authing.md](deployment-authing.md)
+> Chinese version: [deployment.zh.md](deployment.zh.md)
 
-## 部署 Profile
+> Detailed Authing steps: [deployment-authing.md](deployment-authing.md)
 
-| Profile | 用途 | Auth | 数据库 |
+## Deployment Profiles
+
+| Profile | Purpose | Auth | Database |
 |---------|------|------|--------|
-| **profile-saas** | 公网 SaaS / staging **首要** | OIDC（如 Authing）+ API Key | PostgreSQL |
-| **profile-lan** | dev / 内网 staging（自选 LAN 主机） | 可选 `MA3_DEV_AUTH=1`（仅限内网） | Postgres 或 SQLite |
-| **profile-selfhost** | 社区自托管（Docker Compose） | bootstrap key / 本地账号 / 可选 OIDC | PostgreSQL（compose 内置） |
-| profile-ltp | legacy | — | 非 v1 core |
+| **profile-saas** | Public SaaS / staging — **primary** | OIDC (e.g. Authing) + API Key | PostgreSQL |
+| **profile-lan** | dev / intranet staging (any LAN host) | optional `MA3_DEV_AUTH=1` (intranet only) | Postgres or SQLite |
+| **profile-selfhost** | Community self-hosting (Docker Compose) | bootstrap key / local accounts / optional OIDC | PostgreSQL (bundled in compose) |
+| profile-ltp | legacy | — | not v1 core |
 
-**同一 binary**；通过环境变量切换 profile 行为。文档不绑定具体主机——
-LAN staging 主机由维护者在本地 deploy env 文件（不进 git）中配置。
+**Same binary**; profile behavior switches via environment variables. Docs are not tied to a specific host —
+the LAN staging host is configured by the maintainer in a local deploy env file (not committed to git).
 
-## 必备环境变量（SaaS）
+## Required Environment Variables (SaaS)
 
 ```bash
-# 数据库
+# Database
 MA3_DATABASE_URL=postgresql://...
 
-# OIDC（推荐 MA3_OIDC_*；Authing 可用 MA3_AUTHING_* 别名）
+# OIDC (prefer MA3_OIDC_*; Authing can use the MA3_AUTHING_* aliases)
 MA3_OIDC_ENABLED=1
 MA3_OIDC_ISSUER=...
 MA3_OIDC_CLIENT_ID=...
 MA3_OIDC_CLIENT_SECRET=...
 MA3_PUBLIC_BASE_URL=https://...
 
-# 管理员（OIDC 开启时非空，否则拒绝启动）
+# Admins (must be non-empty when OIDC is on, otherwise startup is refused)
 MA3_AUTH_ADMIN_USERS=admin@example.com
 
-# 搜索（默认开 vector）
+# Search (vector on by default)
 # MA3_DISABLE_EMBEDDINGS=1
 
-# HF 缓存（生产 offline）
+# HF cache (offline in production)
 HF_HUB_OFFLINE=1
 HF_HOME=/path/to/hf
 ```
 
-## 社区自托管（Compose）
+## Community Self-Hosting (Compose)
 
-见 **[self-hosting.md](self-hosting.md)** 与仓库 `deploy/self-host/`（bootstrap key / 可选 OIDC）。
+See **[self-hosting.md](self-hosting.md)** and `deploy/self-host/` in the repo (bootstrap key / optional OIDC).
 
-## 目录与数据
+## Directories and Data
 
-- 运行时 `data/` **不可** rsync `--delete`
-- prewarm embedding → `HF_HOME/hub/`
-- deploy bundle 含 `server/scripts/`（seed 兜底）
+- Runtime `data/` must **not** be rsynced with `--delete`
+- Prewarm embeddings → `HF_HOME/hub/`
+- The deploy bundle includes `server/scripts/` (seed fallback)
 
-## 健康检查
+## Health Checks
 
 ```bash
 curl -s "$BASE/healthz"
-curl -s "$BASE/doctor"   # 或 MCP ma3_doctor
+curl -s "$BASE/doctor"   # or MCP ma3_doctor
 ```
 
-## 部署后验收（强制）
+## Post-Deploy Acceptance (mandatory)
 
-每次线上部署（`ENV_MODE=preserve`）必须按 **[deploy/README.md](../../deploy/README.md)** 的标准流程验收：
+Every production deploy (`ENV_MODE=preserve`) must be accepted per the standard procedure in **[deploy/README.md](../../deploy/README.md)**:
 
-1. `./deploy/deploy.sh deploy/deploy.<prod>.env`（本地配置文件，不进 git；自动含远端 smoke + 公网 `verify_ma3_prod.sh`）
-2. 或单独：`MA3_BASE_URL=$MA3_BASE_URL bash deploy/common/verify_ma3_prod.sh`（对生产公网 URL）
+1. `./deploy/deploy.sh deploy/deploy.<prod>.env` (local config file, not in git; automatically includes remote smoke + public `verify_ma3_prod.sh`)
+2. Or standalone: `MA3_BASE_URL=$MA3_BASE_URL bash deploy/common/verify_ma3_prod.sh` (against the production public URL)
 
-清单摘要：healthz / UI·Auth / client bundle / 匿名 MCP 拒绝 / `ma3dev` 拒绝 / pytest。  
-未设 `VERIFY_API_KEY` 时跳过需 API key 的 MCP 测例，汇报时须注明。
+Checklist summary: healthz / UI & Auth / client bundle / anonymous MCP rejection / `ma3dev` rejection / pytest.  
+When `VERIFY_API_KEY` is unset, MCP test cases requiring an API key are skipped; this must be noted when reporting.
 
-LAN（`regenerate`）用 `deploy/common/verify_ma3.sh`，勿与生产清单混用。
+LAN (`regenerate`) uses `deploy/common/verify_ma3.sh`; do not mix it with the production checklist.
 
-## 待补充
+## To Be Added
 
-- [x] `deploy/self-host` docker compose 示例（见 [self-hosting.md](self-hosting.md)）
-- [ ] systemd 示例
-- [x] 密钥管理（`MA3_API_KEY_ENCRYPTION_SECRET`、bootstrap key 文件）
-- [ ] 备份恢复 procedure（摘要已写入 self-hosting.md）
+- [x] `deploy/self-host` docker compose example (see [self-hosting.md](self-hosting.md))
+- [ ] systemd example
+- [x] Secret management (`MA3_API_KEY_ENCRYPTION_SECRET`, bootstrap key file)
+- [ ] Backup/restore procedure (summary already written into self-hosting.md)

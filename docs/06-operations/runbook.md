@@ -1,22 +1,24 @@
-# 运维 Runbook
+# Operations Runbook
 
-> TODO(v1.1): 补全发版/回滚/migration 步骤（见文末清单）；当前仅覆盖常见操作速查。
+> Chinese version: [runbook.zh.md](runbook.zh.md)
 
-## 常见操作（占位）
+> TODO(v1.1): complete release/rollback/migration steps (see checklist at the end); currently covers only a quick reference of common operations.
 
-| 场景 | 步骤 | 文档 |
+## Common Operations (placeholder)
+
+| Scenario | Steps | Doc |
 |------|------|------|
-| 首次部署 Authing | 控制台 + env + 验证 curl | [deployment-authing.md](deployment-authing.md) |
-| 添加产品管理员 | 更新 `MA3_AUTH_ADMIN_USERS` + 重启 | [authentication.md](../03-backend/authentication.md) |
-| 用户无法登录 | 检查 callback URL、issuer、cookie | deployment-authing |
-| MCP 401 | key 是否删除/过期；`ma3_doctor` | [getting-started.md](../05-agent/getting-started.md) |
-| 搜索无 vector | `MA3_DISABLE_EMBEDDINGS`、HF 缓存 | [system-overview.md](../02-architecture/system-overview.md) |
-| 启动失败 admin 白名单 | 设置 `MA3_AUTH_ADMIN_USERS` | portal-permissions |
+| First Authing deployment | console + env + verification curl | [deployment-authing.md](deployment-authing.md) |
+| Add a product admin | update `MA3_AUTH_ADMIN_USERS` + restart | [authentication.md](../03-backend/authentication.md) |
+| User cannot log in | check callback URL, issuer, cookies | deployment-authing |
+| MCP 401 | key deleted/expired? `ma3_doctor` | [getting-started.md](../05-agent/getting-started.md) |
+| Search has no vector | `MA3_DISABLE_EMBEDDINGS`, HF cache | [system-overview.md](../02-architecture/system-overview.md) |
+| Startup fails on admin allowlist | set `MA3_AUTH_ADMIN_USERS` | portal-permissions |
 
-> TODO(v1.1)：
+> TODO(v1.1):
 >
-> - 发版步骤（rsync、migrate、restart、smoke test）
-> - 回滚 procedure
-> - 数据库 migration 执行与验证
-> - 日志位置与常用 grep
-> - 值班/on-call 联系人
+> - Release steps (rsync, migrate, restart, smoke test)
+> - Rollback procedure
+> - Database migration execution and verification
+> - Log locations and common greps
+> - On-call contacts

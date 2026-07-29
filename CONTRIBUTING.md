@@ -2,14 +2,18 @@
 
 Thanks for helping. This document covers **how to contribute**; product intent lives in `docs/`.
 
+> Chinese version: [CONTRIBUTING.zh.md](CONTRIBUTING.zh.md) (if present)
+
 ## Language policy
 
 | Surface | Language |
 |---------|----------|
 | Source code & comments | English |
-| Primary docs (`docs/`, root `README.md`) | Chinese (source of truth) |
-| English entry | `README.en.md` (gateway only; docs tree is not fully translated) |
-| Legal / security policy | English or bilingual as noted in each file |
+| **Default docs** (`README.md`, `docs/**/*.md`) | **English** (source of truth for links & PRs) |
+| Chinese docs | Sibling `*.zh.md` next to the English file (e.g. `pitch.zh.md`) |
+| Legal / security | English default; Chinese siblings where applicable |
+
+When you change behavior documented in `docs/`, update the **English** file. Update the `.zh.md` sibling when you can; do not leave English stale.
 
 ## Development setup
 
@@ -25,12 +29,12 @@ export MA3_DATABASE_URL=sqlite:///./data/ma3.db
 pytest -q tests/unit
 ```
 
-CI runs unit + integration tests and builds the self-host Docker image (see `.github/workflows/ci.yml`).
+CI runs unit + integration (+ Postgres smoke) and builds the self-host Docker image (see `.github/workflows/ci.yml`).
 
 ## Pull requests
 
 1. Keep changes focused; prefer small PRs.
-2. Behavior / API changes must update the matching doc under `docs/` (and README links when entry points change).
+2. Behavior / API changes must update the matching **English** doc under `docs/` (and README links when entry points change). Prefer updating `.zh.md` in the same PR when practical.
 3. Architecture changes need an ADR under `docs/02-architecture/decisions/`.
 4. Do not commit secrets, `deploy.*.env`, or local `tmp-*/` scratch trees.
 5. Fill the PR template; link issues when applicable.

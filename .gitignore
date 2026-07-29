@@ -41,3 +41,6 @@ code/server/data/
 
 # Local UX walkthrough scratch (never commit)
 tmp-*/
+
+# Generated bilingual scratch under eval workers (if any)
+code/eval/results/**/*.zh.md

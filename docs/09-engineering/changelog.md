@@ -1,32 +1,36 @@
-# 变更日志（Changelog）
+# Changelog (docs index)
 
-> **状态**：待建立 — 从首次公网发布起按 semver 记录
+> Chinese version: [changelog.zh.md](changelog.zh.md)
 
-## 格式
+> **Status**: to be established — record by semver starting from the first public release.
+>
+> Project-level changelog: [../../CHANGELOG.md](../../CHANGELOG.md).
 
-遵循 [Keep a Changelog](https://keepachangelog.com/)：
+## Format
+
+Follow [Keep a Changelog](https://keepachangelog.com/):
 
 - **Added** / **Changed** / **Fixed** / **Removed** / **Security**
-- 链接到 ADR 或 docs 规格（如有 breaking）
+- Link ADR or docs specs when there is a breaking change
 
-## 未发布（Unreleased）
+## Unreleased
 
 ### Added
 
-- 用户门户统一 IA（顶栏：库·记录·投票·API Keys）
-- Write buffer（24h 默认，作者可见）
-- API Key 硬删除替代撤销
-- Display name 一次性 setup
-- MCP 错误 message 自纠（ADR-014）
-- 搜索 GTN 排序（lexical 路径统一）
+- Unified user-portal IA (top bar: Libraries · Records · Votes · API Keys)
+- Write buffer (24h default; author-visible)
+- API key hard delete instead of revoke
+- One-time display-name setup
+- MCP error message self-correction (ADR-014)
+- Search GTN ranking (unified lexical path)
 
 ### Changed
 
-- 默认落地页 `/ui/me/`
-- Observatory 非 admin → 403
-- Principal ID 移至 settings 只读
+- Default landing page `/ui/me/`
+- Observatory for non-admin → 403
+- Principal ID moved to settings (read-only)
 
-## 待补充
+## Still to fill in
 
-- [ ] 版本号与 git tag 对应关系
-- [ ] 历史版本回填（202 部署里程碑）
+- [ ] Version number ↔ git tag mapping
+- [ ] Backfill historical versions (202 deployment milestones)

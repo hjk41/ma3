@@ -1,103 +1,105 @@
-# ADR-011 — 知识库访问与组织隔离
+# ADR-011 — Knowledge Base Access and Organization Isolation
 
-## 状态
+> Chinese version: [011-kb-access-and-org-isolation.zh.md](011-kb-access-and-org-isolation.zh.md)
 
-Accepted（2026-07-02）
+## Status
 
-## 背景
+Accepted (2026-07-02)
 
-v1 已实现 MCP 读写闭环、混合检索、Authing 登录与 Observatory，但授权模型仍是 **env-var 密钥列表 + 单 library 硬编码**：
+## Context
 
-- 匿名可读 `lib_default`（`security.py` 中 `readable_library_ids` 对 anonymous 返回 default library）
-- `MA3_WRITER_API_KEYS` / `MA3_MAINTAINER_API_KEYS` 全局列表，无 per-key ACL
-- `organizations` / `libraries` 表存在但无成员关系、无 visibility  enforcement
-- `ma3_report` 写路径固定 `lib_default`
+v1 already implemented the MCP read/write loop, hybrid retrieval, Authing login, and Observatory, but the authorization model was still **env-var key lists + a single hardcoded library**:
 
-产品方向已明确：
+- Anonymous reads of `lib_default` (`readable_library_ids` in `security.py` returned the default library for anonymous)
+- `MA3_WRITER_API_KEYS` / `MA3_MAINTAINER_API_KEYS` global lists, no per-key ACL
+- `organizations` / `libraries` tables existed but had no membership relations and no visibility enforcement
+- The `ma3_report` write path was pinned to `lib_default`
 
-1. **所有 Agent 必须有 key 才能访问**，包括公共知识库
-2. **鼓励贡献而非只读汲取**：对某 library 要么无权限，要么读写都有；**read-only key 仅付费用户或付费 org 成员**可创建
-3. **Organization**：多成员、成员可属多 org；org 管理员可建 org library；默认 org 内可见，可公开或显式授权外部 principal
+Product direction was clear:
 
-需在不 fork 产品的前提下，将授权从「凭证推导」改为「数据驱动」。
+1. **Every agent must have a key to access anything**, including the public knowledge base
+2. **Encourage contribution over read-only extraction**: for a given library you either have no access or both read and write; **read-only keys can only be created by paid users or members of a paid org**
+3. **Organization**: multiple members, members may belong to multiple orgs; org admins can create org libraries; visible within the org by default, can be made public or explicitly granted to external principals
 
-## 决策
+Authorization needed to move from "derived from credentials" to "data-driven", without forking the product.
 
-### 1. 双层授权模型
+## Decision
 
-**Layer 1 — Entitlement（谁 *可以* 访问某 library）**
+### 1. Two-layer authorization model
 
-| visibility | 谁可被授予 entitlement |
+**Layer 1 — Entitlement (who *may* access a library)**
+
+| visibility | Who can be granted entitlement |
 |------------|------------------------|
-| `public` | 任意已认证 principal（仍须 key 显式 grant） |
-| `org` | 所属 org 的 `org_members` |
-| `private` | 仅 `library_grants` 显式行 |
+| `public` | Any authenticated principal (key still needs an explicit grant) |
+| `org` | `org_members` of the owning org |
+| `private` | Only explicit `library_grants` rows |
 
-Org 管理员可将 org library 提升为 `public`，或对非成员 principal 添加 `library_grants`。
+Org admins can promote an org library to `public`, or add `library_grants` for non-member principals.
 
-**Layer 2 — Key capability（某 key *实际* 能做什么）**
+**Layer 2 — Key capability (what a key can *actually* do)**
 
-- 每个 API key 通过 `key_grants` 绑定一个或多个 library
-- 每行 grant：**read 隐含**；`can_write` 默认 **true**；`can_maintain` 可选
-- **Read + Write 耦合**：创建 `can_write=false` 的 grant 要求 key 所有者 `entitlement=paid`，或属于任一 `entitlement=paid` 的 org
-- 公共 library（`lib_default`，`visibility=public`）**不自动**出现在 key 上；用户创建 key 时必须**显式勾选**该 library
+- Each API key binds to one or more libraries via `key_grants`
+- Per grant row: **read is implied**; `can_write` defaults to **true**; `can_maintain` optional
+- **Read + write coupling**: creating a grant with `can_write=false` requires the key owner to have `entitlement=paid`, or belong to any org with `entitlement=paid`
+- The public library (`lib_default`, `visibility=public`) does **not automatically** appear on keys; users must **explicitly select** it when creating a key
 
-### 2. 强制 API Key；移除匿名 MCP 读
+### 2. Mandatory API keys; anonymous MCP reads removed
 
-- 所有 MCP **数据工具**（context / report / case / feedback / review 等）要求有效 `X-API-Key`
-- 无 key 或无效 key → **401** / JSON-RPC `-32001`
-- **Authing Bearer** 仅用于 Observatory 人类登录与 key 管理 UI/API，**不**作为 MCP 数据路径凭证
-- 保留 `MA3_DEV_AUTH=1` + dev key 作为 **break-glass admin bypass**（LAN/dev only）
+- All MCP **data tools** (context / report / case / feedback / review, etc.) require a valid `X-API-Key`
+- No key or invalid key → **401** / JSON-RPC `-32001`
+- **Authing Bearer** is only for Observatory human login and the key management UI/API; it is **not** a credential for the MCP data path
+- `MA3_DEV_AUTH=1` + dev key retained as a **break-glass admin bypass** (LAN/dev only)
 
-### 3. API Key 存储与签发
+### 3. API key storage and issuance
 
-- Key 存 DB 表 `api_keys`：`key_hash`（SHA-256）、`prefix`（展示用）、`owner_principal_id`、可选 `org_id`（计费/覆盖上下文）、`label`、生命周期字段
-- **Observatory**（Authing session）：创建 / 列表 / 撤销 key，配置 per-library grants
-- **MCP 工具**：`ma3_create_key` / `ma3_list_keys` / `ma3_revoke_key`；新 key grants 必须是 owner entitlement 的**子集**
-- 废弃 `MA3_WRITER_API_KEYS` / `MA3_MAINTAINER_API_KEYS`（迁移期可并存，见 Phase 6）
+- Keys stored in DB table `api_keys`: `key_hash` (SHA-256), `prefix` (for display), `owner_principal_id`, optional `org_id` (billing/override context), `label`, lifecycle fields
+- **Observatory** (Authing session): create / list / revoke keys, configure per-library grants
+- **MCP tools**: `ma3_create_key` / `ma3_list_keys` / `ma3_revoke_key`; new key grants must be a **subset** of the owner's entitlement
+- `MA3_WRITER_API_KEYS` / `MA3_MAINTAINER_API_KEYS` deprecated (may coexist during migration, see Phase 6)
 
-### 4. Organization 与成员
+### 4. Organization and membership
 
-- `org_members(org_id, principal_id, role)`：`role ∈ {admin, member}`；**多对多**（一 principal 可属多 org）
-- Org 管理员：创建 org library、设置 visibility、管理成员、对外 grant
-- `organizations.entitlement ∈ {free, paid}`；`principals.entitlement` 同理
-- **Read-only key 资格**：owner `paid` **或** owner 是任一 `paid` org 的成员（v1 不区分 org admin vs member 的覆盖范围）
+- `org_members(org_id, principal_id, role)`: `role ∈ {admin, member}`; **many-to-many** (one principal may belong to multiple orgs)
+- Org admins: create org libraries, set visibility, manage members, grant externally
+- `organizations.entitlement ∈ {free, paid}`; likewise `principals.entitlement`
+- **Read-only key eligibility**: owner is `paid` **or** owner is a member of any `paid` org (v1 does not distinguish org admin vs member scope)
 
-### 5. 计费
+### 5. Billing
 
-- v1 **不接入**支付网关；`entitlement` 由平台管理员或 org 管理员手动设置
-- 字段与规则预留，便于 v1.1 接 Stripe / 企业合同
+- v1 does **not** integrate a payment gateway; `entitlement` is set manually by platform admins or org admins
+- Fields and rules reserved to ease Stripe / enterprise contracts in v1.1
 
-### 6. 公共库
+### 6. Public library
 
-- `lib_default` 重定义为 **community public library**（`visibility=public`）
-- 现有 record 保留；访问仍须 key + 显式 `key_grants` 行
+- `lib_default` redefined as the **community public library** (`visibility=public`)
+- Existing records retained; access still requires a key + explicit `key_grants` rows
 
-### 7. Key 与 library/org 的绑定粒度（不强隔离）
+### 7. Key-to-library/org binding granularity (no hard isolation)
 
-- **不强制** 一把 key 只对应一个 library 或单一 org context：一把 key 可同时持有 **跨库、跨 org** 的 grants（如个人库 + 公共库 + 公司库）
-- entitlement 解析对该 key 的授权取 **并集**；ma3 **不** 在服务端强制「单一 org 上下文」隔离
-- 由此产生的「串味」风险（如员工用同一把 key 同时接触多家 org 库）**由企业行政手段解决**：org 签发专用 key、设备/账号管理、内部策略；ma3 提供 **可审计**（每次读写关联 principal + key + library）作为支撑，而非服务端强绑定
+- We do **not force** one key per library or per single org context: one key may hold grants **across libraries and orgs** (e.g. personal library + public library + company library)
+- Entitlement resolution takes the **union** of the key's grants; ma3 does **not** enforce "single org context" isolation server-side
+- The resulting "cross-contamination" risk (e.g. an employee touching multiple orgs' libraries with the same key) is **handled by corporate administrative means**: org-issued dedicated keys, device/account management, internal policy; ma3 supports this with **auditability** (every read/write is associated with principal + key + library), not server-side hard binding
 
-## 后果
+## Consequences
 
-### 正面
+### Positive
 
-- 与「Agent 验证经验沉淀、鼓励贡献」产品叙事一致
-- 团队隔离可落地：org library + ACL + key grants
-- 授权可审计：谁创建了哪个 key、对哪些 library 有何能力
-- 为 SaaS 订阅（read-only seat / org 统一付费）预留清晰扩展点
+- Consistent with the "agents deposit verified experience, contribution encouraged" product narrative
+- Team isolation is achievable: org libraries + ACL + key grants
+- Authorization is auditable: who created which key, with what capabilities on which libraries
+- Clean extension points reserved for SaaS subscriptions (read-only seats / org-wide billing)
 
-### 负面
+### Negative
 
-- **Breaking change**：匿名 MCP 读消失；现有集成须配 key
-- 实现量显著大于 env-var keys；需 migration、UI、测试
-- Org 多对多与 visibility 组合增加 support 与文档成本
+- **Breaking change**: anonymous MCP reads disappear; existing integrations must configure keys
+- Implementation effort significantly larger than env-var keys; requires migration, UI, tests
+- Org many-to-many combined with visibility raises support and documentation cost
 
-### 关联
+### Related
 
-- ADR-001（SaaS 多租户）、ADR-008（维护者分层）、ADR-010（Authing）
-- [ADR-013](013-write-confirmation-audit-delete.md) — 写入确认、审计、owner 硬删除
-- [authorization-and-libraries.md](../../03-backend/authorization-and-libraries.md) — 完整 schema 与分阶段实现
-- [system-overview.md](../system-overview.md) §2 auth 模块
-- Pitch：[pitch.md](../../01-product/pitch.md)
+- ADR-001 (SaaS multi-tenancy), ADR-008 (maintainer tiering), ADR-010 (Authing)
+- [ADR-013](013-write-confirmation-audit-delete.md) — write confirmation, audit, owner hard delete
+- [authorization-and-libraries.md](../../03-backend/authorization-and-libraries.md) — full schema and phased implementation
+- [system-overview.md](../system-overview.md) §2 auth module
+- Pitch: [pitch.md](../../01-product/pitch.md)

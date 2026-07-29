@@ -1,5 +1,9 @@
 # v1 UI i18n Acceptance
 
+> Chinese version: [v1-ui-i18n-acceptance-gpt55.zh.md](v1-ui-i18n-acceptance-gpt55.zh.md)
+
+> Note: the zh-CN UI copy asserted during acceptance below (Home = *wǒ de zhǔyè*, Libraries = *kù*, Records = *jìlù*, Votes = *tóupiào*, Sign out = *tuìchū*) is spelled out in pinyin plus its English gloss rather than reproducing the CJK glyphs.
+
 Verdict: **PASS-WITH-NITS**
 
 Date: 2026-07-06
@@ -38,7 +42,7 @@ Manual smoke used a temporary local uvicorn instance on `127.0.0.1:8765` with an
 - `GET /ui/me/?lang=zh-CN`: **PASS**
   - `HTTP/1.1 200 OK`
   - `<html lang="zh-CN">`
-  - Chinese shell/page text present: `我的主页`, `库`, `记录`, `投票`, `退出`
+  - Chinese shell/page text present (zh-CN strings for): `Home`, `Libraries`, `Records`, `Votes`, `Sign out`
   - `set-cookie: ma3_locale=zh-CN; Max-Age=31536000; Path=/; SameSite=lax`
 
 ## I18N Checklist

@@ -1,84 +1,86 @@
-# 12 — 搜索排序：内容相关度 × 正确性（投票）
+# 12 — Search Ranking: Content Relevance × Correctness (Votes)
 
-> **状态**：定稿并实现（2026-07-03，方案 B GTN）  
-> **实现**：`code/server/app/storage/ranking.py`、`code/server/app/storage/search.py`
+> Chinese version: [search-and-ranking.zh.md](search-and-ranking.zh.md)
+
+> **Status**: Finalized and implemented (2026-07-03, Plan B GTN)
+> **Implementation**: `code/server/app/storage/ranking.py`, `code/server/app/storage/search.py`
 
 ---
 
-## 1. 目标
+## 1. Goals
 
-`ma3_context` 是 **query 检索**，不是「库里最好的事实」：
+`ma3_context` is **query retrieval**, not "the best facts in the library":
 
 ```text
-相关 且 正确/未知     >   相关 但 可能不正确（争议/冷启动）
-                      >   不相关 但 正确（verified 也仍是噪声）
-clearly-wrong         →   沉底 / 默认不出现在 agent top-k
+relevant AND correct/unknown       >   relevant BUT possibly incorrect (contested/cold-start)
+                                    >   irrelevant BUT correct (even verified is still noise)
+clearly-wrong                      →   sinks / does not appear in agent top-k by default
 ```
 
-**explain 为内部接口**：排序分解**只经内部 / Observatory 暴露**，**不**作为 MCP 工具或 `ma3_context` 字段返回给 agent（防刷榜/SEO）。
+**`explain` is an internal-only interface**: the ranking breakdown is exposed **only internally / via Observatory**, and is **not** returned to the agent as an MCP tool or `ma3_context` field (to prevent gaming/SEO).
 
 ---
 
-## 2. 设计原则
+## 2. Design principles
 
-1. **相关度优先（主排序轴）**：对当前 query 不相关的 record，即使 crowd 已验证正确，也不应占 top slot。
-2. **唯一硬边界 = clearly-wrong**：Wilson 上界 `U ≤ t_floor` 或 superseded/refute → **沉底或过滤**。
-3. **中间档软加权**：unknown / contested / leaning-wrong 在**相关度相近时**用 Wilson `L` 微调。
-4. **反馈闭环**：相关但可能错误的 record 必须能被 agent **看见**，才能触发 rank-based downvote。
-5. **统一管线**：embedding 开/关只变 relevance 子分数；correctness 信号与 explain **共用**。
-6. **禁止** lexical 路径用 `created_at DESC` 作主排序。
+1. **Relevance first (primary sort axis)**: a record irrelevant to the current query should not occupy a top slot even if the crowd has verified it as correct.
+2. **The only hard boundary = clearly-wrong**: Wilson upper bound `U ≤ t_floor` or superseded/refute → **sinks or gets filtered**.
+3. **Soft weighting for middle tiers**: unknown / contested / leaning-wrong are nudged with Wilson `L` **only when relevance is close**.
+4. **Feedback loop**: a record that is relevant but possibly incorrect must remain **visible** to the agent, so it can trigger a rank-based downvote.
+5. **Unified pipeline**: toggling embeddings only changes the relevance sub-score; correctness signals and `explain` are **shared**.
+6. **Prohibited**: using `created_at DESC` as the primary sort on the lexical path.
 
 ---
 
-## 3. 信号定义
+## 3. Signal definitions
 
-### 3.1 投票 → Wilson 区间
+### 3.1 Votes → Wilson interval
 
 ```text
-L = wilson_lower(up, down)   # 正向下界
-U = wilson_upper(up, down)   # 负向上界
+L = wilson_lower(up, down)   # positive lower bound
+U = wilson_upper(up, down)   # negative upper bound
 n = up + down
 ```
 
-| label | 条件 | 含义 |
+| label | condition | meaning |
 |-------|------|------|
-| `clearly_wrong` | `U ≤ t_floor` 或 superseded/refute | 明显错误，硬地板 |
-| `leaning_wrong` | `U < t_mid` 且非 clearly_wrong | 倾向错，软惩罚 |
-| `verified` | `L ≥ t_high` | 高置信正确 |
-| `unknown` | 其余（含 n=0、争议、票少） | 未知 / 争议 / 冷启动 |
+| `clearly_wrong` | `U ≤ t_floor` or superseded/refute | Clearly wrong, hard floor |
+| `leaning_wrong` | `U < t_mid` and not clearly_wrong | Leaning wrong, soft penalty |
+| `verified` | `L ≥ t_high` | High-confidence correct |
+| `unknown` | Everything else (including n=0, contested, few votes) | Unknown / contested / cold-start |
 
-verify/refute 边：refute target → `clearly_wrong`；verify target → 至少 `verified`（若 Wilson 未达标也 bump）。**follow-up**：显式 refute/verify bump 需持久化 `target_record_id` 关系（当前部分由 superseded + Wilson 驱动）。
+verify/refute edges: a refute target → `clearly_wrong`; a verify target → at least `verified` (bumped even if the Wilson score doesn't otherwise qualify). **Follow-up**: explicit refute/verify bumps need to persist the `target_record_id` relationship (currently partially driven by superseded + Wilson).
 
-### 3.2 相关度 `relevance` ∈ [0, 1]
+### 3.2 Relevance `relevance` ∈ [0, 1]
 
 ```text
 relevance = normalize(raw_relevance) × min(context_boost, cap)
 ```
 
-| 模式 | `raw_relevance` |
+| Mode | `raw_relevance` |
 |------|-----------------|
-| **Hybrid** | `max(vec, 0.4·fts_norm + 0.6·vec)`；无 vec 时 `0.5·fts_norm` |
-| **Lexical-only** | Postgres `ts_rank_cd`；SQLite/dev 加权 token 命中 |
-| **Fallback** | token overlap |
+| **Hybrid** | `max(vec, 0.4·fts_norm + 0.6·vec)`; `0.5·fts_norm` when no vec |
+| **Lexical-only** | Postgres `ts_rank_cd`; SQLite/dev uses weighted token hits |
+| **Fallback** | Token overlap |
 
-Lexical-only 打分（SQLite/dev）：
+Lexical-only scoring (SQLite/dev):
 
 ```text
 score_lex = Σ_t [ 2·1[problem∋t] + 1·1[summary∋t] ] / (|T|·3)
 ```
 
-### 3.3 时效 tie-break
+### 3.3 Recency tie-break
 
 ```text
-recency = exp(−age_days / τ)    # τ 默认 180，仅 unknown 且 relevance 接近时
+recency = exp(−age_days / τ)    # τ defaults to 180, only for unknown with close relevance
 ```
 
 ---
 
-## 4. 排序模型（方案 B — Gate-Then-Nudge，已定稿）
+## 4. Ranking model (Plan B — Gate-Then-Nudge, finalized)
 
 ```text
-# 超参（config）
+# hyperparameters (config)
 rel_min    = 0.35
 epsilon    = 0.05
 delta      = 0.10
@@ -86,7 +88,7 @@ cap        = rel_min − delta = 0.25
 q_verified = 0.02
 q_lean     = 0.02
 L_verified = 0.65          # = t_high
-# 不变量：2·max(q_verified, q_lean) = 0.04 < epsilon = 0.05 < delta = 0.10
+# invariant: 2·max(q_verified, q_lean) = 0.04 < epsilon = 0.05 < delta = 0.10
 
 is_wrong(r)  = r.superseded or r.refuted or (r.wilson_U ≤ t_floor)   # t_floor=0.25
 
@@ -103,11 +105,11 @@ wrong_tier(r)  = 1 if is_wrong(r) else 0
 sort_key(r)    = ( wrong_tier(r) ASC , final_score(r) DESC , recency(r) DESC , record_id ASC )
 ```
 
-`MA3_SEARCH_HIDE_CLEARLY_WRONG=1` 时把 `is_wrong` 记录从 agent top-k 过滤（explain 仍可见）。
+When `MA3_SEARCH_HIDE_CLEARLY_WRONG=1`, records where `is_wrong` is true are filtered out of the agent top-k (still visible in `explain`).
 
 ---
 
-## 5. 统一搜索管线
+## 5. Unified search pipeline
 
 ```text
 search_records(..., explain=<internal only>)
@@ -118,47 +120,47 @@ search_records(..., explain=<internal only>)
 ├─ 5. sort by (wrong_tier ASC, final_score DESC, recency DESC, record_id ASC)
 ├─ 6. hide is_wrong if MA3_SEARCH_HIDE_CLEARLY_WRONG, truncate
 └─ 7. explain._rank { relevance, rel_eff, capped, label, L, U, Q, final_score }
-       # explain 仅内部 / Observatory；不经 MCP 返回 agent
+       # explain is internal / Observatory only; not returned to the agent via MCP
 ```
 
 ---
 
-## 6. 配置
+## 6. Configuration
 
-| 变量 | 默认 | 说明 |
+| Variable | Default | Description |
 |------|------|------|
-| `MA3_DISABLE_EMBEDDINGS` | `0` | 关→hybrid；开→lexical（仍打分） |
+| `MA3_DISABLE_EMBEDDINGS` | `0` | Off → hybrid; on → lexical (still scored) |
 | `MA3_SEARCH_WILSON_Z` | `1.96` | Wilson z |
 | `MA3_SEARCH_T_HIGH` | `0.65` | `L ≥` → verified |
 | `MA3_SEARCH_T_MID` | `0.5` | `U <` → leaning_wrong |
 | `MA3_SEARCH_T_FLOOR` | `0.25` | `U ≤` → clearly_wrong |
-| `MA3_SEARCH_REL_MIN` | `0.35` | 相关度「有效」阈值 |
-| `MA3_SEARCH_EPSILON` | `0.05` | 相关度「接近」带宽 |
+| `MA3_SEARCH_REL_MIN` | `0.35` | "Effective" relevance threshold |
+| `MA3_SEARCH_EPSILON` | `0.05` | Relevance "closeness" bandwidth |
 | `MA3_SEARCH_Q_VERIFIED` | `0.02` | verified nudge |
 | `MA3_SEARCH_Q_LEAN` | `0.02` | leaning_wrong nudge |
-| `MA3_SEARCH_HIDE_CLEARLY_WRONG` | `1` | 默认不出现在 agent 结果 |
-| `MA3_SEARCH_RECENCY_TAU_DAYS` | `180` | 时效 tie-break |
+| `MA3_SEARCH_HIDE_CLEARLY_WRONG` | `1` | Does not appear in agent results by default |
+| `MA3_SEARCH_RECENCY_TAU_DAYS` | `180` | Recency tie-break |
 
-启动时 `validate_ranking_config()` 断言不变量（`2·max(q) < ε < δ` 等）。
+`validate_ranking_config()` asserts invariants at startup (e.g. `2·max(q) < ε < δ`).
 
 ---
 
-## 7. 实现状态
+## 7. Implementation status
 
-| 切片 | 状态 |
+| Slice | Status |
 |------|------|
-| relevance 统一 + lexical 修复 + GTN 管线 | ✅ |
-| Wilson label + explain（仅内部） | ✅ |
-| 方案 B + wrong_tier + HIDE 尊重 limit | ✅ |
-| hybrid golden / Postgres parity | ⏳ v1.1 |
-| refute/verify 显式 bump（需持久化 target 关系） | ⏳ follow-up |
+| Unified relevance + lexical fix + GTN pipeline | ✅ |
+| Wilson label + explain (internal only) | ✅ |
+| Plan B + wrong_tier + HIDE respects limit | ✅ |
+| Hybrid golden / Postgres parity | ⏳ v1.1 |
+| Explicit refute/verify bump (needs persisted target relationship) | ⏳ follow-up |
 
-测试：`tests/unit/test_ranking.py`、`tests/integration/test_search_ranking.py`；MCP 边界断言 explain keys 与 mcp keys 不相交。
+Tests: `tests/unit/test_ranking.py`, `tests/integration/test_search_ranking.py`; MCP boundary asserts that `explain` keys and MCP keys are disjoint.
 
 ---
 
-## 8. 相关文档
+## 8. Related documents
 
-- [04-target-architecture.md](../02-architecture/system-overview.md)（Q9 vector 默认开）
+- [04-target-architecture.md](../02-architecture/system-overview.md) (Q9 vector on by default)
 - [11-mcp-error-contract.md](../05-agent/error-handling.md)
-- ADR-005（Observatory explain 范围）
+- ADR-005 (Observatory explain scope)

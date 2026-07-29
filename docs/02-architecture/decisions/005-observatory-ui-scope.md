@@ -1,52 +1,54 @@
-# ADR-005 — Observatory 只读 UI 进入 v1
+# ADR-005 — Observatory read-only UI ships in v1
 
-## 状态
+> Chinese version: [005-observatory-ui-scope.zh.md](005-observatory-ui-scope.zh.md)
 
-Accepted（2026-07-01）
+## Status
 
-## 背景
+Accepted (2026-07-01)
 
-Q11：v1 是否需要 UI。**维护者**（人或 Agent）需「看库里有什么、为何命中」，与 P4 explainable search 一致。
+## Context
 
-## 决策
+Q11: does v1 need a UI. **Maintainers** (human or agent) need to "see what's in the library and why it matched," consistent with P4 explainable search.
 
-**v1 包含 Observatory（只读）**，路由 `/ui/observatory/*`：
+## Decision
 
-| 页面 | 功能 |
+**v1 includes Observatory (read-only)**, routed at `/ui/observatory/*`:
+
+| Page | Function |
 |------|------|
-| Overview | deploy banner、library 统计、doctor 摘要 |
-| Cases | case 列表与详情 |
-| Records | record 详情、relations |
-| Search | 查询 + explain 面板（内部排名分解逻辑；explain **不**经 MCP 暴露，防刷榜/SEO） |
+| Overview | Deploy banner, library statistics, doctor summary |
+| Cases | Case list and detail |
+| Records | Record detail, relations |
+| Search | Query + explain panel (internal ranking breakdown logic; explain is **not** exposed via MCP, to prevent ranking manipulation/SEO abuse) |
 
-**v1 以只读浏览为主**；**人 — 维护者** 另有写动作（与 ADR-007/008 一致，对齐 Pitch §维护分层）：
+**v1 is primarily read-only browsing**; **human maintainers** additionally have write actions (consistent with ADR-007/008, aligned with Pitch §Maintenance layers):
 
-| 写动作 | 说明 |
+| Write action | Description |
 |--------|------|
-| Mark record **invalid** | 纠正过时或错误条目 |
-| **撤销 / 覆盖** Agent 维护者动作 | 恢复误标、误删 |
-| 清除隐私 / 价值观不合规内容 | 最终裁量 |
+| Mark record **invalid** | Corrects stale or erroneous entries |
+| **Revoke / override** an agent maintainer's action | Restores mistakenly flagged/deleted items |
+| Clear content that violates privacy/values policy | Final judgment call |
 
-**v1 不含：**
+**Not included in v1:**
 
-- 完整 review queue UI（draft 审批走 MCP 或 v1.1）
-- Org/seat/billing 管理
+- The full review queue UI (draft approval goes through MCP or ships in v1.1)
+- Org/seat/billing management
 
-Observatory 使用 OIDC session（SaaS）或 dev_auth 下的 **人 — 维护者** cookie/API（LAN profile）。**Agent — 维护者** 使用 library_maintainer/admin API key + MCP，不依赖 UI。
+Observatory uses the OIDC session (SaaS) or **human maintainer** cookie/API under dev_auth (LAN profile). **Agent maintainers** use a library_maintainer/admin API key + MCP, and do not depend on the UI.
 
-## 后果
+## Consequences
 
-### 正面
+### Positive
 
-- 人类可验证 agent 写回与搜索行为
-- 与 North Star「维护者能回答库里有什么」一致；Agent 可经 MCP 参与同等维护动作
+- Humans can verify agent write-backs and search behavior
+- Consistent with the North Star that "maintainers can answer what's in the library"; agents can participate in equivalent maintenance actions via MCP
 
-### 负面
+### Negative
 
-- 需维护 HTML/JS 或 server template 层
-- 需 auth 与 library ACL 在 UI 路径复用
+- Requires maintaining an HTML/JS or server-template layer
+- Requires reusing auth and library ACL on the UI path
 
-### 关联
+### Related
 
 - Q11=B
-- 旧 `server/app/api/routes_ui.py` 部分可复用
+- Portions of the old `server/app/api/routes_ui.py` can be reused

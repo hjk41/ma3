@@ -1,12 +1,14 @@
-# 外部系统集成
+# External System Integrations
 
-> **状态**：部分定稿 — 部署细节见 [../06-operations/deployment-authing.md](../06-operations/deployment-authing.md)
+> Chinese version: [external-integrations.zh.md](external-integrations.zh.md)
 
-## 系统上下文
+> **Status**: Partially finalized — deployment details in [../06-operations/deployment-authing.md](../06-operations/deployment-authing.md)
+
+## System Context
 
 ```text
                     ┌─────────────┐
-  Agent (MCP) ─────►│             │◄───── Authing OIDC（人登录）
+  Agent (MCP) ─────►│             │◄───── Authing OIDC (human login)
   X-API-Key         │  ma3 server │       session cookie
                     │             │
                     └──────┬──────┘
@@ -17,27 +19,27 @@
          (or SQLite)   (optional off)   manifest/policy/sync
 ```
 
-## 集成清单
+## Integration Inventory
 
-| 外部系统 | 用途 | 协议 | 文档 |
+| External system | Purpose | Protocol | Docs |
 |----------|------|------|------|
-| **Authing** | 用户注册/登录；Observatory/门户 session | OIDC authorization_code | [deployment-authing.md](../06-operations/deployment-authing.md) |
-| **PostgreSQL** | 生产数据、FTS、pgvector | SQL | [deployment.md](../06-operations/deployment.md) |
-| **SQLite** | 测试 / 本地 dev | SQL | — |
-| **Hugging Face** | sentence-transformers 缓存 | 本地 HF_HOME；生产 offline | [system-overview.md](system-overview.md) §7 |
-| **Agent IDE** | Cursor / Claude Code / Codex 等 | MCP JSON-RPC over HTTP | [../05-agent/getting-started.md](../05-agent/getting-started.md) |
-| **Stripe** | 支付（v1.1） | Webhook stub | [../03-backend/billing-and-quotas.md](../03-backend/billing-and-quotas.md) §8 |
+| **Authing** | User signup/login; Observatory/portal session | OIDC authorization_code | [deployment-authing.md](../06-operations/deployment-authing.md) |
+| **PostgreSQL** | Production data, FTS, pgvector | SQL | [deployment.md](../06-operations/deployment.md) |
+| **SQLite** | Testing / local dev | SQL | — |
+| **Hugging Face** | sentence-transformers cache | Local HF_HOME; offline in production | [system-overview.md](system-overview.md) §7 |
+| **Agent IDE** | Cursor / Claude Code / Codex, etc. | MCP JSON-RPC over HTTP | [../05-agent/getting-started.md](../05-agent/getting-started.md) |
+| **Stripe** | Payments (v1.1) | Webhook stub | [../03-backend/billing-and-quotas.md](../03-backend/billing-and-quotas.md) §8 |
 
-## 边界约定
+## Boundary Conventions
 
-| 面 | 凭证 | 能力 |
+| Surface | Credential | Capabilities |
 |----|------|------|
-| **MCP 数据路径** | `X-API-Key` only | 读/写 record、search、feedback |
-| **Web UI** | Authing session cookie | 门户、key 管理、Observatory（admin） |
-| **Bearer on MCP** | — | **不授予**数据访问（已废止匿名/ bearer 读） |
+| **MCP data path** | `X-API-Key` only | Read/write records, search, feedback |
+| **Web UI** | Authing session cookie | Portal, key management, Observatory (admin) |
+| **Bearer on MCP** | — | Grants **no** data access (anonymous / bearer reads abolished) |
 
-## 待补充
+## To Be Added
 
-- [ ] 生产域名 / TLS / 反向代理拓扑图
-- [ ] 备份与恢复（Postgres）
-- [ ] 多实例部署与会话粘性（若需要）
+- [ ] Production domain / TLS / reverse proxy topology diagram
+- [ ] Backup and restore (Postgres)
+- [ ] Multi-instance deployment and session stickiness (if needed)

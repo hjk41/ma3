@@ -1,5 +1,7 @@
 # Self-host first-run guide — design
 
+> Chinese version: [self-host-first-run-guide.zh.md](self-host-first-run-guide.zh.md)
+
 > **Status**: Implemented  
 > **Date**: 2026-07-28  
 > **Scope**: Compose / self-host when **OIDC is off** and **`MA3_LOCAL_AUTH=1`** (default).  
@@ -13,7 +15,7 @@ Fresh self-host today is technically runnable, but the **human path is under-gui
 
 | Gap | Today | Risk |
 |-----|--------|------|
-| First admin | Buried behind generic「注册 / 登录」; first registrant is admin only by convention | Operator creates a throwaway account first, then their real account has no Observatory |
+| First admin | Buried behind generic "Sign up / Sign in"; first registrant is admin only by convention | Operator creates a throwaway account first, then their real account has no Observatory |
 | Landing copy | Still mixes SaaS Authing get-started with bootstrap/local alerts | Confused CTAs (MCP vs portal) |
 | Dual credentials | Bootstrap API key + local portal coexist with little sequencing | People skip portal or skip MCP |
 | After admin | No checklist for key mint / close registration / agent wire-up | Instance stays open-registration forever on LAN/public |
@@ -66,7 +68,7 @@ v1 completeness rule: **C1 + C3 + (C4 done or C4 explicitly skipped)**.
 ./up.sh → open MA3_PUBLIC_BASE_URL
         → /  and /ui/home/ redirect to /ui/setup/  (or render setup as home)
         → Step 1: Create admin account (username + password + display name)
-        → POST /auth/register (same backend; UI framed as “创建管理员”)
+        → POST /auth/register (same backend; UI framed as "Create admin")
         → auto sign-in → /ui/setup/?step=keys  (state B)
 ```
 
@@ -78,18 +80,18 @@ Wizard / banner steps:
 
 1. **API Key** — deep link `/ui/keys/` with highlight; copy one-liner for Cursor MCP (`MA3_BASE_URL`, `X-API-Key`).
 2. **Optional: bootstrap key** — secondary card: “Agents can also use the bootstrap key from the container” + command snippet (not primary).
-3. **Harden** — recommend closing registration; button “关闭开放注册” → either:
+3. **Harden** — recommend closing registration; button "Close open registration" → either:
    - **v1**: show instructions to set env + restart, **or**
    - **v1.1**: persist `open_registration=false` in DB overriding env (preferred later).
-4. **Done** — “完成引导” → state C; landing returns to normal product home with local-auth CTA.
+4. **Done** — "Finish setup" → state C; landing returns to normal product home with local-auth CTA.
 
 ### 4.3 Returning visitor (state C)
 
-Normal `/ui/home/` product landing; primary CTA = 登录 / 进入门户. No forced wizard.
+Normal `/ui/home/` product landing; primary CTA = Sign in / Enter portal. No forced wizard.
 
 ### 4.4 Second human user
 
-Register still works if open registration is on; copy warns “你不是首个用户，默认无 Observatory；请联系管理员提权”. Admin uses `/ui/observatory/local-users/`.
+Register still works if open registration is on; copy warns "You are not the first user; no Observatory by default — contact the admin for elevation". Admin uses `/ui/observatory/local-users/`.
 
 ---
 
@@ -100,38 +102,39 @@ Register still works if open registration is on; copy warns “你不是首个�
 | `GET /ui/setup/` | Wizard shell (state A/B). Auth: none for A; admin session preferred for B. |
 | `GET /ui/home/` | If state A → **302** `/ui/setup/`. If B → home **plus** top checklist banner. If C → current landing (copy fixed for self-host). |
 | `GET /` | Same as home (already redirects). |
-| `/auth/register` | If state A → title/copy = **创建管理员账号**; hide “已有账号？登录” or demote it. If B/C → normal register. |
+| `/auth/register` | If state A → title/copy = **Create admin account**; hide "Already have an account? Sign in" or demote it. If B/C → normal register. |
 | `/auth/login` | Unchanged; secondary from setup. |
 | Portal `/ui/me/` | After first login from setup, soft banner until checklist complete. |
-| Observatory | Unchanged ACL; setup links “管理用户” only when admin. |
+| Observatory | Unchanged ACL; setup links "Manage users" only when admin. |
 
 ### 5.1 Setup page wireframe (state A)
 
 ```text
 [ ma3 self-host ]
-创建管理员账号
-这是本实例的第一个用户，将自动获得管理员权限（Observatory、用户管理）。
+Create admin account
+This is the first user of this instance and will automatically get admin
+privileges (Observatory, user management).
 
-[ 用户名 ]
-[ 密码 ]
-[ 显示名 可选 ]
+[ Username ]
+[ Password ]
+[ Display name (optional) ]
 
-[ 创建并进入 ]
+[ Create and enter ]
 
-次要：仅用 Agent？查看 MCP bootstrap key → /mcp/info
+Secondary: Agent only? View the MCP bootstrap key → /mcp/info
 ```
 
 ### 5.2 Setup page wireframe (state B)
 
 ```text
-实例已有管理员。完成下面几步即可日常使用：
+This instance already has an admin. Finish the steps below for daily use:
 
-☑ 管理员账号
-☐ 签发 API Key     [去签发]
-☐ 关闭开放注册     [去处理] / [稍后再说]
-☐ 配置 Agent MCP   [查看说明]
+☑ Admin account
+☐ Issue an API Key        [Issue]
+☐ Close open registration [Handle] / [Later]
+☐ Configure Agent MCP     [View instructions]
 
-[ 完成引导 ]
+[ Finish setup ]
 ```
 
 ---
@@ -246,7 +249,7 @@ Bootstrap API key remains for MCP knowledge access only; a **user** API key (adm
 - New operator can go from healthy `/healthz` to **admin session + API key** without reading ADR.
 - Agent can go from healthy `/healthz` to **admin API key + org + member grant + MCP** via REST + MCP only.
 - No accidental “second account is not admin” surprise when they followed the wizard (only one create-admin screen in state A).
-- Landing no longer tells self-host users to “注册 Authing”.
+- Landing no longer tells self-host users to "register with Authing".
 
 ---
 
@@ -254,4 +257,4 @@ Bootstrap API key remains for MCP knowledge access only; a **user** API key (adm
 
 1. **Registration close in-app (DB)** vs **env-only instructions** for I2/I3? → Prefer DB override (P1) if low cost. **Done (DB).**
 2. Should `/mcp/info` stay public in state A? → **Yes**, secondary rail.
-3. Root URL when state B and user logged out — show banner on public home or only after login? → Banner on home for admins after login; logged-out home shows “登录继续完成设置” if `setup_in_progress`.
+3. Root URL when state B and user logged out — show banner on public home or only after login? → Banner on home for admins after login; logged-out home shows "Sign in to continue setup" if `setup_in_progress`.

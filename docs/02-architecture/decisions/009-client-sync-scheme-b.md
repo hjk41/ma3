@@ -1,109 +1,111 @@
-# ADR-009 — Client sync（Scheme B）：agent 自填 env + manifest 自更新
+# ADR-009 — Client sync (Scheme B): agent self-fills env + self-updating manifest
 
-## 状态
+> Chinese version: [009-client-sync-scheme-b.zh.md](009-client-sync-scheme-b.zh.md)
 
-Accepted（2026-07-01）
+## Status
 
-## 背景
+Accepted (2026-07-01)
 
-ADR-003 定稿「MCP + policy，无 CLI」，但未规定：
+## Context
 
-1. **多 agent runtime**（Cursor、Codex、Claude Code、Droid…）各自 policy/MCP 路径不同，若在 repo 维护 per-runtime 预设无法扩展。
-2. **两层客户端版本**：policy/onboarding（skill bundle）与 MCP `tools/list` schema（tool schema）升级节奏不同。
-3. **sync 脚本本身**会随服务端演进；不能要求用户 clone repo 或手工替换脚本。
+ADR-003 settled on "MCP + policy, no CLI," but did not specify:
 
-旧 repo 的 `install.sh` / `ma3_client.py` CLI 已删除；需要轻量、HTTP 可 bootstrap 的替代物。
+1. **Multiple agent runtimes** (Cursor, Codex, Claude Code, Droid…) each have different policy/MCP paths; maintaining per-runtime presets in the repo does not scale.
+2. **Two client version layers**: policy/onboarding (skill bundle) and the MCP `tools/list` schema (tool schema) upgrade on different cadences.
+3. **The sync scripts themselves** will evolve alongside the server; users cannot be required to clone the repo or manually replace scripts.
 
-## 决策
+The old repo's `install.sh` / `ma3_client.py` CLI has been removed; a lightweight, HTTP-bootstrappable replacement is needed.
 
-### 1. 不是 CLI，是 HTTP 提供的 sync 工具链
+## Decision
 
-v1 **不恢复** `ma3_client.py` 子命令或 `install.sh`。提供：
+### 1. Not a CLI — an HTTP-served sync toolchain
 
-| HTTP 路径 | 用途 |
+v1 **does not reintroduce** `ma3_client.py` subcommands or `install.sh`. Instead it provides:
+
+| HTTP path | Purpose |
 |-----------|------|
-| `GET /client/manifest.json` | 版本 + 全部 bundle 文件 sha256/url |
-| `GET /client/templates/ma3-client.env.example` | **agent 自填**本地路径模板 |
-| `GET /client/scripts/sync_ma3_client.{sh,py}` | 同步入口（stdlib + 薄 wrapper） |
-| `GET /client/lib/ma3_sync_core.py` | 同步核心（stdlib only，可单独拷贝） |
-| `GET /client/templates/ma3-agent-policy.mdc` | 行为策略 bundle |
-| `GET /client/agent-onboarding.md` | 操作说明 |
-| `GET /client/mcp-tools.json` | MCP tools/list 快照 |
+| `GET /client/manifest.json` | Version + sha256/url for every bundle file |
+| `GET /client/templates/ma3-client.env.example` | **Agent-filled** local path template |
+| `GET /client/scripts/sync_ma3_client.{sh,py}` | Sync entry point (stdlib + thin wrapper) |
+| `GET /client/lib/ma3_sync_core.py` | Sync core (stdlib only, can be copied standalone) |
+| `GET /client/templates/ma3-agent-policy.mdc` | Behavior policy bundle |
+| `GET /client/agent-onboarding.md` | Operational instructions |
+| `GET /client/mcp-tools.json` | MCP tools/list snapshot |
 
-实现：`code/client/lib/ma3_sync_core.py`（真源）；`server/app/services/client_sync.py` 仅测试适配 re-export。
+Implementation: `code/client/lib/ma3_sync_core.py` (source of truth); `server/app/services/client_sync.py` only re-exports for test adaptation.
 
-### 2. Agent 自填 env，repo 不维护 runtime 预设
+### 2. Agent self-fills the env; the repo does not maintain runtime presets
 
-- 模板：`ma3-client.env.example`（HTTP 提供）
-- Agent onboarding 时复制为 `~/.ma3/ma3-client.env` 并编辑：
+- Template: `ma3-client.env.example` (served over HTTP)
+- During onboarding, the agent copies it to `~/.ma3/ma3-client.env` and edits:
   - `MA3_BASE_URL`
-  - 安装目录（默认 `~/.ma3`）
-  - bundle 落盘相对路径（`MA3_POLICY_REL` 等）
-  - **注释示例**：如何把 policy 复制到 Cursor/Codex/Claude/Droid（由 agent 执行，非 ma3 硬编码）
+  - Install directory (default `~/.ma3`)
+  - Relative paths for bundle files on disk (`MA3_POLICY_REL`, etc.)
+  - **Example comments**: how to copy the policy to Cursor/Codex/Claude/Droid (executed by the agent, not hardcoded by ma3)
 
-`sync_ma3_client.sh` 启动时 **source 该 env**；各 runtime 差异留在 agent 侧一次性配置。
+`sync_ma3_client.sh` **sources this env** at startup; per-runtime differences are handled as a one-time configuration step on the agent side.
 
-### 3. Scheme B — 本地 state 为版本真相源
+### 3. Scheme B — local state is the source of truth for versions
 
-| 本地文件 | 作用 |
+| Local file | Purpose |
 |----------|------|
-| `~/.ma3/ma3-client.env` | 路径与 base URL（agent 维护） |
-| `~/.ma3/ma3-client.json` | 已同步版本 + 文件 sha256 + 标志 |
-| `~/.ma3/policy/ma3-agent-policy.mdc` | skill bundle（需复制到 runtime） |
-| `~/.ma3/mcp-tools.json` | tools/list 缓存 |
+| `~/.ma3/ma3-client.env` | Paths and base URL (agent-maintained) |
+| `~/.ma3/ma3-client.json` | Synced versions + file sha256 + flags |
+| `~/.ma3/policy/ma3-agent-policy.mdc` | Skill bundle (must be copied to the runtime) |
+| `~/.ma3/mcp-tools.json` | tools/list cache |
 
-Agent **每次 MCP 调用**传：
+On **every MCP call**, the agent passes:
 
-- `client_version` ← state 的 `skill_bundle_version`
-- `tool_schema_version` ← state 的 `tool_schema_version`
+- `client_version` ← state's `skill_bundle_version`
+- `tool_schema_version` ← state's `tool_schema_version`
 
-服务端在 `structuredContent.server` 返回：
+The server returns in `structuredContent.server`:
 
 - `policy_refresh_required`
 - `mcp_reload_required`
-- `client_update_required`（任一层 breaking → **禁止写路径**）
+- `client_update_required` (either layer breaking → **write paths forbidden**)
 
-### 4. 同步与 tooling 自更新
+### 4. Sync and self-updating tooling
 
 ```bash
-bash ~/.ma3/bin/sync_ma3_client.sh sync   # 或 check（exit 2 = 有更新）
+bash ~/.ma3/bin/sync_ma3_client.sh sync   # or check (exit 2 = updates available)
 ```
 
-`sync` 流程：
+`sync` flow:
 
 1. `GET /client/manifest.json`
-2. 若 manifest 中 scripts/lib 的 sha256 与本地不符 → 下载覆盖 `~/.ma3/bin`、`~/.ma3/lib`（**tooling self-update**）
-3. 下载变更的 policy / onboarding / mcp-tools 到 `MA3_CLIENT_INSTALL_DIR`
-4. 写入 `ma3-client.json`；若 `mcp_reload_required` → agent 在 IDE 内 reload MCP
+2. If the manifest's scripts/lib sha256 differs from local → download and overwrite `~/.ma3/bin`, `~/.ma3/lib` (**tooling self-update**)
+3. Download changed policy / onboarding / mcp-tools to `MA3_CLIENT_INSTALL_DIR`
+4. Write `ma3-client.json`; if `mcp_reload_required` → the agent reloads MCP in the IDE
 
-Manifest 另含 `sync_tooling_version`（服务端 `settings.sync_tooling_version`），便于提示「同步工具本身已变」。
+The manifest also includes `sync_tooling_version` (server-side `settings.sync_tooling_version`), useful for signaling "the sync tooling itself has changed."
 
-若 mid-run 更新了 tooling，stderr 提示 **再跑一次 sync**（当前进程可能仍执行旧脚本）。
+If tooling was updated mid-run, stderr prompts to **re-run sync** (the current process may still be executing the old script).
 
-### 5. 与 ADR-003 的关系
+### 5. Relationship to ADR-003
 
-- ADR-003 禁止的是 **ma3 写路径 CLI**（report/context 等）和 **install.sh**。
-- ADR-009 的 sync 脚本是 **只读 HTTP 拉取 + 本地文件写入**，不替代 MCP；无 ma3 服务端写权限。
-- 最小 bootstrap 仍可用纯 `curl`（env 模板 + 三个脚本）；sync 是推荐路径。
+- ADR-003 forbids **a CLI for the ma3 write path** (report/context etc.) and **install.sh**.
+- ADR-009's sync scripts are **read-only HTTP pulls + local file writes**; they do not replace MCP and have no write access to the ma3 server.
+- Minimal bootstrap can still use plain `curl` (env template + three scripts); sync is the recommended path.
 
-## 后果
+## Consequences
 
-### 正面
+### Positive
 
-- 支持任意 agent runtime，无需 ma3 repo 维护 N 套路径
-- 双版本（skill + tool schema）可独立升级；MCP reload 与 policy 刷新分离
-- 服务端发新 sync 脚本 → manifest hash 变 → agent 下次 sync 自动更新
+- Supports any agent runtime without the ma3 repo maintaining N sets of paths
+- Dual versions (skill + tool schema) can upgrade independently; MCP reload is decoupled from policy refresh
+- When the server ships new sync scripts → the manifest hash changes → the agent auto-updates on its next sync
 
-### 负面
+### Negative
 
-- MCP `tools/list` 缓存仍依赖 **IDE reload**；sync 无法替 Cursor 刷新 MCP 连接
-- 首次 onboarding 步骤多于「只 curl policy」；需 agent 理解 env + 复制 policy
-- `ma3_sync_core.py` 与 server 测试共用一份源码，部署时需保证 HTTP 提供的内容与 repo 一致
+- The MCP `tools/list` cache still depends on an **IDE reload**; sync cannot substitute for Cursor refreshing the MCP connection
+- The first onboarding has more steps than "just curl the policy"; the agent must understand the env and copy the policy itself
+- `ma3_sync_core.py` shares source code with server tests; deployment must ensure the HTTP-served content matches the repo
 
-### 关联
+### Related
 
-- ADR-003（MCP-only agent 面）
-- `04-target-architecture-draft.md` §3、§10
-- `code/client/agent-onboarding.md`（操作真源）
-- `code/eval/scenarios/agent-client-sync/`（Docker 多 agent 安装/升级测试）
+- ADR-003 (MCP-only agent surface)
+- `04-target-architecture-draft.md` §3, §10
+- `code/client/agent-onboarding.md` (operational source of truth)
+- `code/eval/scenarios/agent-client-sync/` (Docker multi-agent install/upgrade tests)
 - `tests/integration/test_client_sync.py`

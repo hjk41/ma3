@@ -1,5 +1,7 @@
 # v1 Acceptance — Self-Service Onboarding (design/13)
 
+> Chinese version: [v1-self-service-onboarding.zh.md](v1-self-service-onboarding.zh.md)
+
 - **Tester**: fable (QA acceptance)
 - **Date**: 2026-07-04 (03:39–03:50 UTC)
 - **Target**: LAN staging host, ma3 `http://127.0.0.1:8000`, `skill_bundle_version 1.5.1`, Postgres, Authing enabled (`features: [... "dev_auth", "authing"]`)
@@ -15,7 +17,7 @@
 | Artifact | Value | End state |
 |---|---|---|
 | Principal 1 | `user:accept-onboard-1783136399` | kept (12 api_keys rows, **0 active**) |
-| Personal lib 1 | `lib_personal_226e1656f855` ("AcceptOnboard1783136399 的个人库", private, kind=personal) | kept |
+| Personal lib 1 | `lib_personal_226e1656f855` ("AcceptOnboard1783136399's personal library", private, kind=personal) | kept |
 | Main key | `key_13a556c894c1` (`ma3k_0ce8de6…`, label `acceptance-key`) | revoked (A7) |
 | Principal 2 (isolation) | `user:accept-isolation-probe` / `lib_personal_8bd65771f4b5` / `key_fb3875f748d8` | key revoked |
 | Probe records | `vk_14de67faf957` (personal lib, A5), `vk_1d105a1d4ae4` (`lib_default`, A6) — tagged `acceptance-probe` | left in DB as evidence |
@@ -37,7 +39,7 @@
 
 **A-tests spot-check (task item 3)**: on 202, `pytest tests/unit/test_onboarding_service.py tests/integration/test_self_service_onboarding.py` → **11 passed** in 2.46s (covers the UI/session paths not automatable here: 302/401 without session, plaintext-once, list-without-plaintext, 503 when Authing unconfigured).
 
-**Docs (§11.1)**: deployed `client/agent-onboarding.md` contains the self-service section — `/ui/keys/` referenced at L221/L228 and the "给用户的简短说明" at L260 ("在 `/ui/keys/` 自助创建 API key … 无需 clone 仓库").
+**Docs (§11.1)**: deployed `client/agent-onboarding.md` contains the self-service section — `/ui/keys/` referenced at L221/L228 and the "brief note for users" section at L260 (literal doc copy: "self-service create an API key at `/ui/keys/` … no need to clone the repo").
 
 ## Friction closure vs v1-personal-developer-journey.md
 

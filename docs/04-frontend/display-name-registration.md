@@ -1,69 +1,71 @@
-# 17 — 显示名注册设定（display name registration）
+# 17 — Display Name Registration Setup (display name registration)
 
-> **状态**：已实现（2026-07-05）  
-> **实现**：`principal_service.py`、`routes_auth.py`、`routes_portal.py`、`db.py`  
-> **验收**：[acceptance-criteria.md](../08-quality/acceptance-criteria.md)（`v1-display-name-registration` 待迁入）
+> Chinese version: [display-name-registration.zh.md](display-name-registration.zh.md)
 
-用户在 Authing 注册/首次登录后，必须在 **`/ui/me/setup/`** 一次性选定 **显示名**（门户可见昵称）。显示名与 Authing 账户昵称、Principal ID 不同。
+> **Status**: Implemented (2026-07-05)  
+> **Implementation**: `principal_service.py`, `routes_auth.py`, `routes_portal.py`, `db.py`  
+> **Acceptance**: [acceptance-criteria.md](../08-quality/acceptance-criteria.md) (`v1-display-name-registration` to be migrated in)
+
+After a user registers/logs in with Authing for the first time, they must choose a **display name** (the portal-visible nickname) once at **`/ui/me/setup/`**. The display name is distinct from the Authing account nickname and the Principal ID.
 
 ---
 
-## 1. 产品约束
+## 1. Product Constraints
 
-| ID | 约束 | 说明 |
+| ID | Constraint | Description |
 |----|------|------|
-| **C1** | **注册时提示设定** | Authing `/auth/callback` 完成后，若 `display_name_locked=0`，302 到 `/ui/me/setup/?next=…`；门户其他页与 API Keys 在此之前不可用 |
-| **C2** | **只能设定一次** | 用户通过 setup 表单提交成功后 `display_name_locked=1`；此后 setup POST、settings POST 均返回 400「显示名已设定，不可修改」；settings 页只读展示 |
-| **C3** | **全局唯一** | 所有 `kind=user` 的显示名在 ma3 内唯一；比较时 **不区分大小写**（`lower(display_name)`）；冲突时返回「显示名已被使用，请换一个」 |
+| **C1** | **Prompted at registration** | After Authing's `/auth/callback` completes, if `display_name_locked=0`, redirect (302) to `/ui/me/setup/?next=…`; other portal pages and API Keys are unavailable until this is done |
+| **C2** | **Can only be set once** | Once the user successfully submits the setup form, `display_name_locked=1`; after that, both setup POST and settings POST return 400 "Display name is already set and cannot be changed"; the settings page shows it read-only |
+| **C3** | **Globally unique** | Display names for all `kind=user` principals are unique within ma3; comparison is **case-insensitive** (`lower(display_name)`); on conflict, returns "This display name is already taken, please choose another" |
 
-### 1.1 格式规则（setup 校验）
+### 1.1 Format Rules (setup validation)
 
-- 长度 2–32 字符（trim + 折叠空白）
-- 不可为 uuid / Authing sub 风格（`[0-9a-f]{20,}`）
-- 不可含控制字符
+- Length 2–32 characters (trim + collapse whitespace)
+- Must not look like a uuid / Authing sub (`[0-9a-f]{20,}`)
+- Must not contain control characters
 
-### 1.2 与 Principal ID 的关系
+### 1.2 Relationship with Principal ID
 
-- **Principal ID**（`user:{sso_sub}`）永久不变，在 **设置页** 只读展示（无复制按钮）
-- **显示名**用于顶栏、个人库名（`{显示名} 的个人库`）、MCP `whoami.display_name`
-- **概览页**只展示 avatar + 显示名，**不**展示 Principal ID，**不**提供编辑入口
-
----
-
-## 2. 用户流程
-
-```
-Authing 注册/登录
-    → /auth/callback（upsert principal，display_name=sso_sub，locked=0）
-    → /ui/me/setup/（欢迎 + 表单）
-    → POST 设定显示名（校验唯一 + 格式）
-    → display_name_locked=1，重命名个人库
-    → next（默认 /ui/me/）
-```
-
-未完成 setup 时访问 `/ui/me/`、`/ui/keys/` 等 → 302 `/ui/me/setup/`。  
-`GET /api/keys` → 403，detail 提示先完成 setup。
+- **Principal ID** (`user:{sso_sub}`) is permanent and shown read-only on the **settings page** (no copy button)
+- **Display name** is used in the top bar, personal library name (`{display_name}'s personal library`), and MCP `whoami.display_name`
+- The **overview page** only shows the avatar + display name, **does not** show the Principal ID, and provides **no** edit entry point
 
 ---
 
-## 3. 数据与实现
+## 2. User Flow
 
-| 项 | 说明 |
+```
+Authing register/login
+    → /auth/callback (upsert principal, display_name=sso_sub, locked=0)
+    → /ui/me/setup/ (welcome + form)
+    → POST to set display name (validate uniqueness + format)
+    → display_name_locked=1, rename personal library
+    → next (default /ui/me/)
+```
+
+Visiting `/ui/me/`, `/ui/keys/`, etc. before completing setup → 302 to `/ui/me/setup/`.  
+`GET /api/keys` → 403, with a detail message prompting to complete setup first.
+
+---
+
+## 3. Data and Implementation
+
+| Item | Description |
 |----|------|
-| `principals.display_name` | 用户可见昵称 |
-| `principals.display_name_locked` | `0`=待设定；`1`=已锁定 |
-| `idx_principals_user_display_name` | 部分唯一索引 `lower(display_name) WHERE kind='user'` |
-| `complete_display_name_setup()` | 首次设定 + 锁 + 个人库重命名 |
-| 启动迁移 | 已有 `display_name <> sso_user` 且长度≥2 的老用户自动 `locked=1` |
+| `principals.display_name` | The user-visible nickname |
+| `principals.display_name_locked` | `0` = pending; `1` = locked |
+| `idx_principals_user_display_name` | Partial unique index `lower(display_name) WHERE kind='user'` |
+| `complete_display_name_setup()` | First-time set + lock + personal library rename |
+| Startup migration | Existing users with `display_name <> sso_user` and length ≥ 2 are automatically set to `locked=1` |
 
-Authing 再次登录 **不会** 覆盖已锁定的显示名；未锁定用户 upsert 时 display_name 保持 `sso_sub` 占位。
+Logging in again via Authing **does not** overwrite an already-locked display name; for unlocked users, upsert keeps `display_name` as the `sso_sub` placeholder.
 
 ---
 
-## 4. 页面职责
+## 4. Page Responsibilities
 
-| 路由 | 职责 |
+| Route | Responsibility |
 |------|------|
-| `/ui/me/setup/` | 注册后一次性设定（表单 + 约束说明） |
-| `/ui/me/settings/` | 只读显示名 + Principal ID（`.id-block`，mono，无复制） |
-| `/ui/me/` | 概览（仅 avatar + 显示名，无编辑链接） |
+| `/ui/me/setup/` | One-time setup after registration (form + constraint explanation) |
+| `/ui/me/settings/` | Read-only display name + Principal ID (`.id-block`, mono, no copy) |
+| `/ui/me/` | Overview (avatar + display name only, no edit link) |

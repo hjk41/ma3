@@ -1,25 +1,27 @@
-# 设计 Backlog（design backlog）
+# Design backlog
 
-> 来源：原仓库根 `todo.md`（2026-07-03 pitch vs PITCH.md 缺口评审）迁移至此。
-> 这些是**计划中的设计议题（planned design issues），不是承诺（not commitments）**——
-> 无排期、无交付承诺，讨论定稿后才会转为 ADR / design 文档。
+> Chinese version: [design-backlog.zh.md](design-backlog.zh.md)
+
+> Migrated from the former repo-root `todo.md` (2026-07-03 pitch vs PITCH.md gap review).
+> These are **planned design issues, not commitments** —
+> no schedule, no delivery promise; they become ADRs / design docs only after discussion is settled.
 >
-> **真源**：以下 GitHub Issues（本文件仅作索引）。
+> **Source of truth**: the GitHub Issues below (this file is an index only).
 
-## 待设计议题
+## Open design topics
 
-| ID | Issue | 摘要 |
+| ID | Issue | Summary |
 |----|-------|------|
-| B1 | https://github.com/hjk41/ma3/issues/1 | 维护者/合规删除他人内容 |
-| B2 | https://github.com/hjk41/ma3/issues/2 | 自动维护者 Agent |
-| B3 | https://github.com/hjk41/ma3/issues/3 | Org 成员 / SSO / SCIM / seats |
-| B4 | https://github.com/hjk41/ma3/issues/4 | Integrator / 委托子身份（B2B2C） |
+| B1 | https://github.com/hjk41/ma3/issues/1 | Maintainer / compliance deletion of others' content |
+| B2 | https://github.com/hjk41/ma3/issues/2 | Automated maintainer agent |
+| B3 | https://github.com/hjk41/ma3/issues/3 | Org members / SSO / SCIM / seats |
+| B4 | https://github.com/hjk41/ma3/issues/4 | Integrator / delegated sub-identities (B2B2C) |
 
-重新建 Issue：`bash scripts/file_design_backlog_issues.sh`（会新建而非去重，慎用）。
+Recreate issues: `bash scripts/file_design_backlog_issues.sh` (creates new issues without dedup — use carefully).
 
-## 已决策（追溯用，已落文档）
+## Already decided (for traceability; documented elsewhere)
 
-- **防误删 = 付费功能**：仅付费 org 可对其**拥有**的库开启（回收站/恢复）；默认硬删不可恢复。→ ADR-013 / design-10
-- **所有读写都需 key**：移除匿名读表述，全文档同步。→ ADR-011 + pitch/design 同步
-- **不强制一把 key 只对应一个库**：跨库/跨 org 由企业行政手段解决，服务端不强隔离。→ ADR-011 备注
-- **库容量超额 → 只读**：超 cap 后该库禁写、可读。→ ADR-012 / design-09
+- **Anti-deletion as a paid feature**: only paid orgs may enable recycle/restore on libraries they **own**; default is hard delete with no restore. → ADR-013 / design-10
+- **All reads and writes require a key**: remove anonymous-read wording; sync across docs. → ADR-011 + pitch/design sync
+- **Do not force one key ↔ one library**: cross-library / cross-org isolation is an enterprise admin concern; the server does not hard-isolate. → ADR-011 notes
+- **Library over capacity → read-only**: past the cap, that library forbids writes but stays readable. → ADR-012 / design-09

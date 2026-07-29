@@ -1,5 +1,7 @@
 # UI i18n Design for ma3 User Portal
 
+> Chinese version: [ui-i18n-design-gpt55.zh.md](ui-i18n-design-gpt55.zh.md)
+
 > Scope: SSR FastAPI user-facing portal UI implemented with Python HTML strings.
 > Target v1 languages: `zh-CN` default and `en-US`.
 > Current state: no existing i18n layer; `ui_theme.py` hardcodes `<html lang="zh-CN">`, navigation copy, pagination copy, login/logout labels, and copy button feedback. Portal/key/auth routes embed most page copy inline.
@@ -73,7 +75,7 @@ Implementation rules:
 Header switcher behavior:
 
 - Current `zh-CN`: show `EN` link to same URL with `lang=en-US`.
-- Current `en-US`: show `中文` link to same URL with `lang=zh-CN`.
+- Current `en-US`: show a link labeled *Zhōngwén* ("Chinese") pointing to the same URL with `lang=zh-CN`.
 - Render inside `.topbar-meta` before account/logout links.
 - Minimal header pages should render the switcher when possible, especially auth error/login pages, but Phase 1 can start with `render_page(...)` pages.
 
@@ -86,14 +88,16 @@ Header switcher behavior:
 Current hardcoded strings:
 
 - HTML language: `<html lang="zh-CN">`
-- Brand aria label: `ma3 首页`
-- Top nav: `我的主页`, `库`, `记录`, `投票`, `API Keys`, `Observatory`
-- Account subnav: `概览`, `设置`
-- Meta links: `登录`, `账户`, `退出`
-- Pagination/list footer: `上一页`, `下一页`, `第 {page} / {total_pages} 页`, `每页 ... 条`, `共 {total_items} 条`
-- Copy JS feedback: `已复制`
-- Table default empty state: `暂无数据`
+- Brand aria label: the zh-CN string for "ma3 home"
+- Top nav: the zh-CN strings for Home, Libraries, Records, Votes, `API Keys`, `Observatory`
+- Account subnav: the zh-CN strings for Overview, Settings
+- Meta links: the zh-CN strings for Sign in, Account, Sign out
+- Pagination/list footer: the zh-CN strings for "Previous page", "Next page", "Page {page} of {total_pages}", "{sizes} per page", "{total_items} total"
+- Copy JS feedback: the zh-CN string for "Copied"
+- Table default empty state: the zh-CN string for "No data"
 - 403 helper title/back labels passed by callers
+
+(See `ui-i18n-design-gpt55.zh.md` for the exact zh-CN characters behind each string above.)
 
 Design changes:
 
@@ -166,8 +170,8 @@ Mostly non-goal for v1 because this is admin Observatory internals. Trivial shar
 
 The non-admin 403 page is visible to regular users. If touched by shared `render_page_403(...)`, translate:
 
-- `Observatory 仅产品管理员可访问。`
-- `返回我的主页`
+- the zh-CN sentence for "Observatory is accessible to product administrators only."
+- the zh-CN string for "Back to Home"
 
 ---
 
@@ -197,143 +201,145 @@ Key naming:
 
 Sample v1 catalog keys (more than 30) follow. Implementation should start with these and add keys as pages migrate.
 
-| Key | zh-CN | en-US |
-|---|---|---|
-| `common.save` | 保存 | Save |
-| `common.delete` | 删除 | Delete |
-| `common.copy` | 复制 | Copy |
-| `common.back` | 返回 | Back |
-| `common.login` | 登录 | Sign in |
-| `common.logout` | 退出 | Sign out |
-| `common.account` | 账户 | Account |
-| `common.none` | 无 | None |
-| `common.not_available` | 不可用 | Unavailable |
-| `common.empty` | 暂无数据 | No data |
-| `common.created_at` | 创建时间 | Created |
-| `common.last_used_at` | 最后使用 | Last used |
-| `shell.brand_aria` | ma3 首页 | ma3 home |
-| `shell.copied` | 已复制 | Copied |
-| `shell.pagination.prev` | ← 上一页 | ← Previous |
-| `shell.pagination.next` | 下一页 → | Next → |
-| `shell.pagination.current` | 第 {page} / {total_pages} 页 | Page {page} of {total_pages} |
-| `shell.list.total` | 共 {count} 条 | {count} total |
-| `shell.list.per_page` | 每页 {sizes} 条 | {sizes} per page |
-| `nav.me` | 我的主页 | Home |
-| `nav.libraries` | 库 | Libraries |
-| `nav.records` | 记录 | Records |
-| `nav.votes` | 投票 | Votes |
-| `nav.keys` | API Keys | API Keys |
-| `nav.observatory` | Observatory | Observatory |
-| `nav.overview` | 概览 | Overview |
-| `nav.settings` | 设置 | Settings |
-| `auth.error.title` | 登录失败 | Sign-in failed |
-| `auth.error.retry` | 重新登录 | Try signing in again |
-| `auth.error.missing_code` | 缺少 authorization code | Missing authorization code |
-| `portal.me.title` | 我的主页 | Home |
-| `portal.me.subtitle` | 你在 ma3 的贡献与权限概览。 | Your ma3 contributions and access overview. |
-| `portal.me.stats.records` | 记录 | Records |
-| `portal.me.stats.buffered` | 待发布 | Pending |
-| `portal.me.stats.libraries` | 可访问库 | Accessible libraries |
-| `portal.me.stats.votes` | 投票 | Votes |
-| `portal.me.stats.keys` | API Keys | API Keys |
-| `portal.me.my_libraries` | 我的库 | My libraries |
-| `portal.me.recent_contributions` | 最近贡献 | Recent contributions |
-| `portal.me.view_all` | 查看全部 → | View all → |
-| `portal.me.no_contributions` | 还没有贡献。 | No contributions yet. |
-| `portal.me.create_key` | 创建 API key | Create API key |
-| `portal.me.onboarding_docs` | 接入文档 | Onboarding docs |
-| `portal.settings.title` | 账户设置 | Account settings |
-| `portal.settings.subtitle` | 账户与身份信息 | Account and identity |
-| `portal.settings.display_name` | 显示名 | Display name |
-| `portal.settings.display_name_help` | 注册时设定，之后不可修改。用于门户顶部、个人库名称（「{personal_library_name}」）等。 | Set during registration and cannot be changed later. Used in the portal header, personal library name ("{personal_library_name}"), and more. |
-| `portal.settings.principal_help` | ma3 内部身份标识，创建 API key 或排查权限时可能需要。显示名在注册时设定，之后不可修改。 | Internal ma3 identity. You may need it when creating API keys or debugging access. Display name is set during registration and cannot be changed later. |
-| `portal.setup.title` | 设定显示名 | Set display name |
-| `portal.setup.subtitle` | 注册后一次性设定，之后不可更改。 | Set once after registration. It cannot be changed later. |
-| `portal.setup.welcome` | 欢迎加入 ma3。请选择一个显示名：它将出现在门户顶部、个人库名称等位置。 | Welcome to ma3. Choose a display name: it appears in the portal header, personal library name, and more. |
-| `portal.setup.unique` | 显示名在 ma3 内全局唯一（不区分大小写） | Display names are globally unique in ma3 (case-insensitive). |
-| `portal.setup.immutable` | 设定后不可修改，请谨慎选择 | It cannot be changed after setup, so choose carefully. |
-| `portal.setup.input_label` | 显示名（2–32 字符） | Display name (2-32 characters) |
-| `portal.setup.submit` | 确认并继续 | Confirm and continue |
-| `portal.writes.title` | 记录 | Records |
-| `portal.writes.subtitle` | 来自写审计日志；含 API key 写入记录。 | From the write audit log, including API-key writes. |
-| `portal.writes.deleted_record` | 记录内容已完全删除，不可显示 | The record content has been fully deleted and cannot be shown |
-| `portal.writes.batch_label` | 批量操作 | Batch actions |
-| `portal.writes.batch_publish` | 批量发布 | Publish selected |
-| `portal.writes.batch_delete` | 批量删除 | Delete selected |
-| `portal.writes.select_required` | 请先选择至少一条记录 | Select at least one record first |
-| `portal.writes.empty` | 暂无记录 | No records |
-| `portal.writes.select_all_page` | 全选本页 | Select all on this page |
-| `portal.writes.filter.all` | 全部 | All |
-| `portal.writes.filter.active` | 已发布 | Published |
-| `portal.writes.filter.buffered` | 待发布 | Pending |
-| `portal.writes.filter.deleted` | 已删除 | Deleted |
-| `portal.writes.table.time` | 时间 | Time |
-| `portal.writes.table.record` | 记录 | Record |
-| `portal.writes.table.status` | 状态 | Status |
-| `portal.writes.table.library` | 库 | Library |
-| `portal.writes.table.kind` | 类型 | Type |
-| `portal.votes.title` | 投票 | Votes |
-| `portal.votes.subtitle` | 只读列表；改票请进入 record 详情页。 | Read-only list. Open the record detail page to change a vote. |
-| `portal.votes.empty` | 还没有投过票 | No votes yet |
-| `portal.votes.filter.all` | 全部 | All |
-| `portal.votes.filter.up` | 👍 赞同 | 👍 Upvote |
-| `portal.votes.filter.down` | 👎 反对 | 👎 Downvote |
-| `portal.libraries.title` | 库 | Libraries |
-| `portal.libraries.subtitle` | 你有读权限的知识库；仅展示统计，不提供 record 枚举。 | Knowledge libraries you can read. Shows statistics only; record enumeration is not available. |
-| `portal.libraries.table.name` | 库名 | Library name |
-| `portal.libraries.table.visibility` | 可见性 | Visibility |
-| `portal.libraries.table.kind` | 类型 | Type |
-| `portal.libraries.table.access` | 我的权限 | My access |
-| `portal.libraries.empty` | 暂无库 | No libraries |
-| `portal.library.access_title` | 我的访问 | My access |
-| `portal.library.permission` | 权限 | Permission |
-| `portal.library.bound_keys` | 绑定 key | Bound keys |
-| `portal.library.settings` | 库设置 | Library settings |
-| `portal.library.buffer_hours` | 写入缓冲期 {hours}h | Write buffer {hours}h |
-| `portal.library.login_cta` | 登录以贡献知识、管理 API key 与投票。 | Sign in to contribute knowledge, manage API keys, and vote. |
-| `portal.library.distribution` | 分布 | Distribution |
-| `portal.library.stats_only_note` | 库内 record 列表仅管理员可枚举；此处仅展示聚合统计。 | Only administrators can enumerate records in this library; this page shows aggregate statistics only. |
-| `portal.library.settings_title` | 库设置 | Library settings |
-| `portal.library.settings_subtitle` | 写入缓冲期配置 | Write buffer configuration |
-| `portal.library.buffer_label` | 写入缓冲期（小时，0 = 关闭） | Write buffer period (hours, 0 = off) |
-| `portal.library.buffer_help` | 默认 24。设为 0 时新写入立即发布（active）。 | Default is 24. Set to 0 to publish new writes immediately as active. |
-| `portal.library.back_to_detail` | ← 返回库详情 | ← Back to library detail |
-| `portal.records.title_prefix` | Record | Record |
-| `portal.records.subtitle` | 单条 record 详情。 | Record detail. |
-| `portal.records.pending_title` | 待发布 | Pending |
-| `portal.records.pending_help` | 仅你可见；到期自动发布，或立即发布 / 修改 / 删除。 | Visible only to you. It will publish automatically when due, or you can publish, edit, or delete it now. |
-| `portal.records.publish_now` | 立即发布 | Publish now |
-| `portal.records.confirm_delete` | 确定删除？ | Delete this record? |
-| `portal.records.save_changes` | 保存修改 | Save changes |
-| `portal.records.knowledge_entry` | 知识条目 | Knowledge entry |
-| `portal.records.feedback` | Feedback | Feedback |
-| `portal.records.clear_vote` | 清除我的投票 | Clear my vote |
-| `portal.records.one_vote_help` | 同一用户对同一 record 只能保留一票。 | Each user can keep only one vote per record. |
-| `portal.records.back_home` | ← 我的主页 | ← Home |
-| `keys.title` | API Keys | API Keys |
-| `keys.subtitle` | 管理 MCP 调用用的 API key；点击名称进入详情页修改权限。 | Manage API keys for MCP calls. Click a name to edit grants on the detail page. |
-| `keys.management` | Key 管理 | Key management |
-| `keys.personal_library` | 个人库 | Personal library |
-| `keys.create_new` | 创建新 key | Create new key |
-| `keys.empty` | 暂无 API key | No API keys |
-| `keys.empty_hint` | 创建第一把 key 后，把它填入 agent MCP 配置的 X-API-Key。 | After creating your first key, put it in the agent MCP configuration as X-API-Key. |
-| `keys.grants` | 知识库权限 | Library grants |
-| `keys.saved` | 已保存 | Saved |
-| `keys.back_to_list` | ← 返回列表 | ← Back to list |
-| `keys.delete_key` | 删除 key | Delete key |
-| `keys.delete_confirm` | 删除后 key 立即失效，无法恢复。确定？ | This key will stop working immediately and cannot be recovered. Continue? |
-| `keys.delete_help` | 删除后此 key 立即失效，无法恢复。历史写入记录仍保留。 | Deleting this key disables it immediately and cannot be undone. Historical writes are retained. |
-| `keys.old_key_hint` | 旧 key 无存储副本；如需复制完整 key，请创建新 key 后删除旧 key | Old keys do not have stored plaintext. Create a new key and delete the old one if you need to copy a full key. |
-| `keys.authing_disabled.title` | API Keys | API Keys |
-| `keys.authing_disabled.subtitle` | 自助注册未启用 | Self-service registration is disabled |
-| `keys.authing_disabled.alert` | 本实例未配置 Authing，自助注册/API key 管理不可用。 | Authing is not configured for this instance. Self-service registration and API key management are unavailable. |
-| `keys.authing_disabled.observatory` | 前往 Observatory | Go to Observatory |
-| `role.reader` | 只读 | Read-only |
-| `role.writer` | 读写 | Read/write |
-| `role.none` | 无 | None |
-| `status.deleted` | 已删除 | Deleted |
-| `status.buffered` | 待发布 | Pending |
-| `status.active` | active | active |
+> The `zh-CN` column is intentionally omitted from this table so the English document contains no CJK glyphs. For the corresponding zh-CN catalog value of every key below, see the same table in `ui-i18n-design-gpt55.zh.md`.
+
+| Key | en-US |
+|---|---|
+| `common.save` | Save |
+| `common.delete` | Delete |
+| `common.copy` | Copy |
+| `common.back` | Back |
+| `common.login` | Sign in |
+| `common.logout` | Sign out |
+| `common.account` | Account |
+| `common.none` | None |
+| `common.not_available` | Unavailable |
+| `common.empty` | No data |
+| `common.created_at` | Created |
+| `common.last_used_at` | Last used |
+| `shell.brand_aria` | ma3 home |
+| `shell.copied` | Copied |
+| `shell.pagination.prev` | ← Previous |
+| `shell.pagination.next` | Next → |
+| `shell.pagination.current` | Page {page} of {total_pages} |
+| `shell.list.total` | {count} total |
+| `shell.list.per_page` | {sizes} per page |
+| `nav.me` | Home |
+| `nav.libraries` | Libraries |
+| `nav.records` | Records |
+| `nav.votes` | Votes |
+| `nav.keys` | API Keys |
+| `nav.observatory` | Observatory |
+| `nav.overview` | Overview |
+| `nav.settings` | Settings |
+| `auth.error.title` | Sign-in failed |
+| `auth.error.retry` | Try signing in again |
+| `auth.error.missing_code` | Missing authorization code |
+| `portal.me.title` | Home |
+| `portal.me.subtitle` | Your ma3 contributions and access overview. |
+| `portal.me.stats.records` | Records |
+| `portal.me.stats.buffered` | Pending |
+| `portal.me.stats.libraries` | Accessible libraries |
+| `portal.me.stats.votes` | Votes |
+| `portal.me.stats.keys` | API Keys |
+| `portal.me.my_libraries` | My libraries |
+| `portal.me.recent_contributions` | Recent contributions |
+| `portal.me.view_all` | View all → |
+| `portal.me.no_contributions` | No contributions yet. |
+| `portal.me.create_key` | Create API key |
+| `portal.me.onboarding_docs` | Onboarding docs |
+| `portal.settings.title` | Account settings |
+| `portal.settings.subtitle` | Account and identity |
+| `portal.settings.display_name` | Display name |
+| `portal.settings.display_name_help` | Set during registration and cannot be changed later. Used in the portal header, personal library name ("{personal_library_name}"), and more. |
+| `portal.settings.principal_help` | Internal ma3 identity. You may need it when creating API keys or debugging access. Display name is set during registration and cannot be changed later. |
+| `portal.setup.title` | Set display name |
+| `portal.setup.subtitle` | Set once after registration. It cannot be changed later. |
+| `portal.setup.welcome` | Welcome to ma3. Choose a display name: it appears in the portal header, personal library name, and more. |
+| `portal.setup.unique` | Display names are globally unique in ma3 (case-insensitive). |
+| `portal.setup.immutable` | It cannot be changed after setup, so choose carefully. |
+| `portal.setup.input_label` | Display name (2-32 characters) |
+| `portal.setup.submit` | Confirm and continue |
+| `portal.writes.title` | Records |
+| `portal.writes.subtitle` | From the write audit log, including API-key writes. |
+| `portal.writes.deleted_record` | The record content has been fully deleted and cannot be shown |
+| `portal.writes.batch_label` | Batch actions |
+| `portal.writes.batch_publish` | Publish selected |
+| `portal.writes.batch_delete` | Delete selected |
+| `portal.writes.select_required` | Select at least one record first |
+| `portal.writes.empty` | No records |
+| `portal.writes.select_all_page` | Select all on this page |
+| `portal.writes.filter.all` | All |
+| `portal.writes.filter.active` | Published |
+| `portal.writes.filter.buffered` | Pending |
+| `portal.writes.filter.deleted` | Deleted |
+| `portal.writes.table.time` | Time |
+| `portal.writes.table.record` | Record |
+| `portal.writes.table.status` | Status |
+| `portal.writes.table.library` | Library |
+| `portal.writes.table.kind` | Type |
+| `portal.votes.title` | Votes |
+| `portal.votes.subtitle` | Read-only list. Open the record detail page to change a vote. |
+| `portal.votes.empty` | No votes yet |
+| `portal.votes.filter.all` | All |
+| `portal.votes.filter.up` | 👍 Upvote |
+| `portal.votes.filter.down` | 👎 Downvote |
+| `portal.libraries.title` | Libraries |
+| `portal.libraries.subtitle` | Knowledge libraries you can read. Shows statistics only; record enumeration is not available. |
+| `portal.libraries.table.name` | Library name |
+| `portal.libraries.table.visibility` | Visibility |
+| `portal.libraries.table.kind` | Type |
+| `portal.libraries.table.access` | My access |
+| `portal.libraries.empty` | No libraries |
+| `portal.library.access_title` | My access |
+| `portal.library.permission` | Permission |
+| `portal.library.bound_keys` | Bound keys |
+| `portal.library.settings` | Library settings |
+| `portal.library.buffer_hours` | Write buffer {hours}h |
+| `portal.library.login_cta` | Sign in to contribute knowledge, manage API keys, and vote. |
+| `portal.library.distribution` | Distribution |
+| `portal.library.stats_only_note` | Only administrators can enumerate records in this library; this page shows aggregate statistics only. |
+| `portal.library.settings_title` | Library settings |
+| `portal.library.settings_subtitle` | Write buffer configuration |
+| `portal.library.buffer_label` | Write buffer period (hours, 0 = off) |
+| `portal.library.buffer_help` | Default is 24. Set to 0 to publish new writes immediately as active. |
+| `portal.library.back_to_detail` | ← Back to library detail |
+| `portal.records.title_prefix` | Record |
+| `portal.records.subtitle` | Record detail. |
+| `portal.records.pending_title` | Pending |
+| `portal.records.pending_help` | Visible only to you. It will publish automatically when due, or you can publish, edit, or delete it now. |
+| `portal.records.publish_now` | Publish now |
+| `portal.records.confirm_delete` | Delete this record? |
+| `portal.records.save_changes` | Save changes |
+| `portal.records.knowledge_entry` | Knowledge entry |
+| `portal.records.feedback` | Feedback |
+| `portal.records.clear_vote` | Clear my vote |
+| `portal.records.one_vote_help` | Each user can keep only one vote per record. |
+| `portal.records.back_home` | ← Home |
+| `keys.title` | API Keys |
+| `keys.subtitle` | Manage API keys for MCP calls. Click a name to edit grants on the detail page. |
+| `keys.management` | Key management |
+| `keys.personal_library` | Personal library |
+| `keys.create_new` | Create new key |
+| `keys.empty` | No API keys |
+| `keys.empty_hint` | After creating your first key, put it in the agent MCP configuration as X-API-Key. |
+| `keys.grants` | Library grants |
+| `keys.saved` | Saved |
+| `keys.back_to_list` | ← Back to list |
+| `keys.delete_key` | Delete key |
+| `keys.delete_confirm` | This key will stop working immediately and cannot be recovered. Continue? |
+| `keys.delete_help` | Deleting this key disables it immediately and cannot be undone. Historical writes are retained. |
+| `keys.old_key_hint` | Old keys do not have stored plaintext. Create a new key and delete the old one if you need to copy a full key. |
+| `keys.authing_disabled.title` | API Keys |
+| `keys.authing_disabled.subtitle` | Self-service registration is disabled |
+| `keys.authing_disabled.alert` | Authing is not configured for this instance. Self-service registration and API key management are unavailable. |
+| `keys.authing_disabled.observatory` | Go to Observatory |
+| `role.reader` | Read-only |
+| `role.writer` | Read/write |
+| `role.none` | None |
+| `status.deleted` | Deleted |
+| `status.buffered` | Pending |
+| `status.active` | active |
 
 Notes:
 
@@ -471,7 +477,7 @@ Add `render_locale_switcher(request, locale)` in `ui_i18n.py` or `ui_theme.py`. 
 
 Copy JS:
 
-- Current JS embeds `btn.textContent = '已复制';`.
+- Current JS hardcodes the zh-CN "Copied" string directly in `btn.textContent = ...;`.
 - In Phase 1, make `MA3_COPY_JS` a function:
 
 ```python
@@ -516,7 +522,7 @@ Optional v1.1:
 - `tr()` returns plain text. Any user-controlled interpolation must be escaped by the caller:
 
 ```python
-esc(t("portal.settings.display_name_help", personal_library_name=f"{user.display_name} 的个人库"))
+esc(t("portal.settings.display_name_help", personal_library_name=f"{user.display_name}'s personal library"))
 ```
 
 - Do not store HTML in JSON catalogs for v1.
@@ -610,7 +616,7 @@ Recommended tests:
 
 1. Default locale is zh-CN:
    - `GET /ui/me/`
-   - Assert `<html lang="zh-CN">`, `我的主页`, `库`, `记录`, `投票`, `退出`.
+   - Assert `<html lang="zh-CN">` and the zh-CN strings for Home, Libraries, Records, Votes, Sign out.
 
 2. Query param switches and sets cookie:
    - `GET /ui/me/?lang=en-US`
@@ -625,7 +631,7 @@ Recommended tests:
 4. Query param overrides cookie:
    - Cookie `ma3_locale=en-US`.
    - `GET /ui/me/votes/?lang=zh-CN`
-   - Assert `<html lang="zh-CN">`, `投票`, `赞同`, `反对`.
+   - Assert `<html lang="zh-CN">` and the zh-CN strings for Votes, Upvote, Downvote.
 
 5. Accept-Language fallback:
    - No cookie.
@@ -738,7 +744,7 @@ Pytest coverage verifies zh-CN/en-US rendering for overview, writes, votes, keys
 ## Open Questions for Owner
 
 1. Should English copy keep product terms as `Record`, `Library`, `API Key`, `MCP`, `Problem`, `Outcome`, and `Summary`, or should some be more user-friendly (`Entry`, `Knowledge library`, etc.)?
-2. Should the language switcher label be `EN/中文`, `English/中文`, or a dropdown? The minimal recommendation is a single alternate-language link.
+2. Should the language switcher label be `EN` / *Zhōngwén*, `English` / *Zhōngwén*, or a dropdown? The minimal recommendation is a single alternate-language link.
 3. Should anonymous public library pages persist locale by cookie even before login? Recommendation: yes, because it is not user-identifying by itself and keeps behavior consistent.
 4. Should per-user DB persistence be added in v1.1 for cross-device locale preference? Recommendation: defer until a broader account preferences model exists.
 5. Should non-admin Observatory 403 be considered portal scope? Recommendation: translate it via shared `render_page_403(...)`; leave admin dashboard internals untranslated.

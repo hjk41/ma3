@@ -1,31 +1,33 @@
-# 监控与健康检查
+# Monitoring and Health Checks
 
-> TODO(v1.1): 补 metrics/告警/SLO（见文末清单）；已有端点与 doctor 检查项如下。
+> Chinese version: [monitoring-and-health.zh.md](monitoring-and-health.zh.md)
 
-## 已有端点
+> TODO(v1.1): add metrics/alerting/SLO (see checklist at the end); existing endpoints and doctor checks below.
 
-| 端点 / 工具 | 用途 |
+## Existing Endpoints
+
+| Endpoint / tool | Purpose |
 |-------------|------|
-| `GET /healthz` | 存活；暴露 version、commit、instance |
-| MCP `ma3_doctor` | auth、DB、embedding、legacy keys、billing schema（Phase B） |
-| MCP `ma3_whoami` | 运行时 key/principal/quota 快照 |
+| `GET /healthz` | liveness; exposes version, commit, instance |
+| MCP `ma3_doctor` | auth, DB, embedding, legacy keys, billing schema (Phase B) |
+| MCP `ma3_whoami` | runtime key/principal/quota snapshot |
 
-## doctor 应报告项（目标）
+## What doctor Should Report (target)
 
-- `anonymous_mcp_enabled: false`（无 API key 时 `tools/call` 除 `ma3_whoami` 外返回 authentication required；匿名无 Community 记录可读权）
+- `anonymous_mcp_enabled: false` (without an API key, `tools/call` returns authentication required except for `ma3_whoami`; anonymous callers have no read access to Community records)
 - `api_keys_table: ok`
-- `auth_admin_configured: ok`（Authing on 时）
-- `billing_schema_ok`（Phase B）
-- `usage_rollup_lag`（Phase B）
-- `legacy_env_writer_keys: deprecated`（若仍设置）
+- `auth_admin_configured: ok` (when Authing is on)
+- `billing_schema_ok` (Phase B)
+- `usage_rollup_lag` (Phase B)
+- `legacy_env_writer_keys: deprecated` (if still set)
 
-## MCP quota 块
+## MCP quota Block
 
-成功读响应可选 `structuredContent.quota` — Agent policy 可要求转告 `warnings`。
+Successful read responses may include `structuredContent.quota` — the Agent policy may require relaying `warnings`.
 
-> TODO(v1.1)：
+> TODO(v1.1):
 >
-> - Prometheus metrics（若有）
-> - 告警阈值（read quota 80%、publish job lag）
-> - 日志结构化字段约定
-> - SLO / SLA 定义（正式 SLA 为 v1.1+ 规划）
+> - Prometheus metrics (if any)
+> - Alert thresholds (read quota 80%, publish job lag)
+> - Structured log field conventions
+> - SLO / SLA definitions (formal SLA planned for v1.1+)

@@ -1,34 +1,36 @@
-# ADR-001 — SaaS 多租户为 v1 首要部署形态
+# ADR-001 — Multi-tenant SaaS as the primary v1 deployment form factor
 
-## 状态
+> Chinese version: [001-saas-primary-deploy.zh.md](001-saas-primary-deploy.zh.md)
 
-Accepted（2026-07-01）
+## Status
 
-## 背景
+Accepted (2026-07-01)
 
-旧 repo 同时承载 LAN 实验、LTP 内网、v4 SaaS 文档，auth 与数据模型缠在一起。Q1 需选定 default 形态以定稿架构。
+## Context
 
-## 决策
+The old repo carried LAN experiments, LTP intranet, and v4 SaaS docs at the same time, with auth and the data model tangled together. Q1 needed a chosen default form factor to finalize the architecture.
 
-- **v1 首要形态 = B：多租户 SaaS**（org + library + OIDC + library keys）
-- **LAN / 自建 = dev profile**（`MA3_DEV_AUTH=1`），与 SaaS **同一 server binary**，不是 fork
-- org 表 **进入 v1**（Q3=B）：library 必须挂 `org_id`；单节点部署使用 implicit `org_default`
+## Decision
 
-## 后果
+- **v1 primary form factor = B: multi-tenant SaaS** (org + library + OIDC + library keys)
+- **LAN / self-hosted = dev profile** (`MA3_DEV_AUTH=1`), **the same server binary** as SaaS, not a fork
+- The org table **ships in v1** (Q3=B): every library must be attached to an `org_id`; single-node deployments use an implicit `org_default`
 
-### 正面
+## Consequences
 
-- 与 v4 设计文档一致，避免二次迁移
-- 202 等 LAN 环境成为真实 dev 测试床，而非「另一套 ma3」
-- auth、ACL、Observatory 边界可写清
+### Positive
 
-### 负面
+- Consistent with the v4 design docs, avoiding a second migration
+- Environments like 202 (LAN) become real dev testbeds rather than "another ma3"
+- Auth, ACL, and Observatory boundaries can be written clearly
 
-- v1 实现量大于「纯 LAN core」
-- 需在 profile-lan 文档中强调：dev_auth 不可用于公网 SaaS
+### Negative
 
-### 关联
+- v1 implementation scope is larger than a "pure LAN core"
+- Must emphasize in the profile-lan docs: dev_auth must not be used for public-facing SaaS
+
+### Related
 
 - Q1=B, Q3=B
-- [deployment.md](../../06-operations/deployment.md) — SaaS profile（待补全 profile-saas 细节）
-- [authorization-and-libraries.md](../../03-backend/authorization-and-libraries.md) — org 与 ACL 设计真源
+- [deployment.md](../../06-operations/deployment.md) — SaaS profile (profile-saas details still to be filled in)
+- [authorization-and-libraries.md](../../03-backend/authorization-and-libraries.md) — source of truth for org and ACL design

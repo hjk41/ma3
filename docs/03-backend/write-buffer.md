@@ -1,123 +1,125 @@
-# 16 — 库写入缓冲期（Write Buffer）
+# 16 — Library Write Buffer
 
-> **状态**：定稿（2026-07-04，产品决策 ratified）  
-> **验收**：[acceptance-criteria.md](../08-quality/acceptance-criteria.md)（`v1-library-write-buffer` 待迁入）
+> Chinese version: [write-buffer.zh.md](write-buffer.zh.md)
 
----
-
-## 0. 一句话结论
-
-为每个 **library** 增加可配的 **`write_buffer_hours`（schema 默认 24）**。用户通过 agent 写入的新增/补充类 record，在缓冲期结束前 **对他人不可见、不可被搜索引用**；**写入者本人始终可见**。缓冲期内 **仅写入者** 可 **PATCH 修改**、**硬删除** 或 **立即确认 publish**。缓冲期满自动 publish（`active`）。
-
-**Personal 库**：sole owner 在 buffer 期间本就能读自己的内容，buffer **对其无实质影响**；owner 可将 `write_buffer_hours` 设为 **0** 关闭 buffer。
-
-这与 **`visibility=draft`（维护者审核队列）** 和 **写前 `confirmation`（agent↔用户对话）** 是第三条轴：**写后、发布前的可撤销窗口**。
+> **Status**: Finalized (2026-07-04, product decision ratified)
+> **Acceptance**: [acceptance-criteria.md](../08-quality/acceptance-criteria.md) (`v1-library-write-buffer` pending migration)
 
 ---
 
-## 1. Ratified 决策
+## 0. TL;DR
 
-| # | 议题 | **决定** |
+Add a configurable **`write_buffer_hours`** (schema default 24) for every **library**. New/supplement records written by a user via an agent are **invisible to others and not searchable/citable** until the buffer period ends; **the writer themself can always see it**. During the buffer period, **only the writer** can **PATCH-edit**, **hard-delete**, or **immediately confirm publish**. When the buffer period elapses, it auto-publishes (`active`).
+
+**Personal libraries**: since the sole owner can already read their own content during the buffer period, the buffer has **no practical effect** for them; the owner can set `write_buffer_hours` to **0** to disable the buffer.
+
+This is a third axis distinct from **`visibility=draft`** (maintainer review queue) and pre-write **`confirmation`** (agent↔user dialogue): **a revocable window after write, before publish**.
+
+---
+
+## 1. Ratified decisions
+
+| # | Topic | **Decision** |
 |---|------|----------|
-| B1 | 默认 buffer | **24**（schema 默认）；personal owner **可设 0** |
-| B2 | PATCH 后计时 | **重置** `publish_at = now + hours` |
-| B3 | 修改语义 | **同 record_id 覆盖** |
-| B4 | 写入者权威 | `write_audit_log.principal_id` |
-| B5 | UI | v1 即带：`/ui/me/writes/` + `/ui/records/{id}/` 操作区 |
-| B6 | Stats | buffered **不计入**公共 active；作者侧「待发布」计数 |
-| B7 | 用户说明 | 写入 **Community 公共库**（`lib_default`）知识条目 |
+| B1 | Default buffer | **24** (schema default); personal owner **can set 0** |
+| B2 | Timer after PATCH | **Resets** `publish_at = now + hours` |
+| B3 | Edit semantics | **Overwrite the same record_id** |
+| B4 | Writer authority | `write_audit_log.principal_id` |
+| B5 | UI | Shipped in v1: `/ui/me/writes/` + action area on `/ui/records/{id}/` |
+| B6 | Stats | Buffered records **do not count** toward public active count; author-side "pending publish" count |
+| B7 | User disclosure | Writing to the **Community** public library (`lib_default`) knowledge entries |
 
 ---
 
-## 2. 适用范围
+## 2. Scope
 
-| `report_kind` / 路径 | 是否进 buffer |
+| `report_kind` / path | Enters buffer |
 |----------------------|---------------|
-| **new** / **supplement** | **是**（若库 `write_buffer_hours > 0`） |
-| **verify** / **refute** | **否** — 锁定 target 库，不宜隐藏 |
-| 显式 `visibility=draft` | **否叠加** — 走 maintainer draft 队列 |
-| Maintainer / admin 代写 | **否**（v1 maintainer 豁免） |
+| **new** / **supplement** | **Yes** (if the library's `write_buffer_hours > 0`) |
+| **verify** / **refute** | **No** — locks the target library, should not be hidden |
+| Explicit `visibility=draft` | **Not stacked** — goes through the maintainer draft queue |
+| Maintainer / admin ghost-writing | **No** (v1 maintainer exemption) |
 
-### 库级配置
+### Library-level configuration
 
-| 字段 | 默认 | 谁可改 |
+| Field | Default | Who can change |
 |------|------|--------|
-| `write_buffer_hours` | **24** | 库 owner / 库管理员；personal owner 可设 **0** |
-| `0` | — | 关闭 buffer，写入即 `active`（ADR-002 行为） |
+| `write_buffer_hours` | **24** | Library owner / library admin; personal owner can set **0** |
+| `0` | — | Disables the buffer, writes go straight to `active` (ADR-002 behavior) |
 
 ---
 
-## 3. 状态模型
+## 3. State model
 
-### 3.1 新 status：`buffered`
+### 3.1 New status: `buffered`
 
 ```
 ma3_report (supplement/new)
     → status = buffered
     → publish_at = now + write_buffer_hours
     → created_by = principal_id
-    → 不入 search / ma3_context（对他人）
-    → 写入者 deep link + ma3_list_my_writes + 本人 ma3_context 可见
+    → not entered into search / ma3_context (for others)
+    → visible to the writer via deep link + ma3_list_my_writes + their own ma3_context
 
-缓冲期结束（background job，每 60s）
+At end of buffer period (background job, every 60s)
     → status = active
 
-写入者操作：
-    publish_now  → active（立即）
-    PATCH        → 覆盖同 record_id；publish_at 重置
-    delete       → ma3_delete_record（硬删 + tombstone）
+Writer operations:
+    publish_now  → active (immediately)
+    PATCH        → overwrites the same record_id; publish_at reset
+    delete       → ma3_delete_record (hard delete + tombstone)
 ```
 
-**不采用**「status=active + 隐藏字段」单态方案：Observatory stats、search、portal 已广泛假设 `active` = 可见。
+**Not adopted**: a single-state design of "status=active + a hidden field" — Observatory stats, search, and the portal already broadly assume `active` = visible.
 
-### 3.2 可见性矩阵
+### 3.2 Visibility matrix
 
-| 观察者 | buffered record |
+| Observer | buffered record |
 |--------|-----------------|
-| **写入者** | 读、PATCH、删、publish；search/deep link 可见 |
-| 同库其他读者 / 其他 agent | **404**；search / ma3_context **不可见** |
-| 库 maintainer | **v1 不可见**（v1.1 可选「可见不可改」） |
-| 产品 admin（Observatory） | 可见枚举 |
-| Library Stats（portal） | **不计入** active；作者侧「待发布 N」 |
+| **Writer** | Read, PATCH, delete, publish; visible via search/deep link |
+| Other readers/agents in the same library | **404**; **not visible** in search / ma3_context |
+| Library maintainer | **Not visible in v1** (optionally "visible but not editable" in v1.1) |
+| Product admin (Observatory) | Visible, enumerable |
+| Library Stats (portal) | **Not counted** toward active; "N pending publish" on the author's side |
 
 ---
 
-## 4. 门户 UI
+## 4. Portal UI
 
 ```text
-/ui/me/writes/          filter「待发布」/ badge / stat 链接 ?status=buffered
-/ui/records/{id}/       buffered + owner → [立即发布] [修改] [删除]
-/ui/libraries/{id}/settings/  owner/admin → write_buffer_hours 表单（0–168）
+/ui/me/writes/          filter "pending publish" / badge / stat link ?status=buffered
+/ui/records/{id}/       buffered + owner → [Publish Now] [Edit] [Delete]
+/ui/libraries/{id}/settings/  owner/admin → write_buffer_hours form (0–168)
 ```
 
-列表批量操作（buffered only）：批量发布 · 批量删除 → `POST /ui/me/writes/batch`（[22](../04-frontend/information-architecture.md) §3.4）。
+Bulk list operations (buffered only): bulk publish · bulk delete → `POST /ui/me/writes/batch` ([22](../04-frontend/information-architecture.md) §3.4).
 
 ---
 
-## 5. MCP / Agent 契约
+## 5. MCP / Agent contract
 
-| 工具 | 变更 |
+| Tool | Change |
 |------|------|
-| `ma3_report` | 响应增加 `status: "buffered"`, `publish_at`, `buffer_hours_remaining` |
-| `ma3_publish_record(record_id)` | 写入者提前 publish → active |
-| `ma3_patch_record` / recall | 仅 buffered + owner；PATCH 后 **重置 publish_at** |
-| `ma3_delete_record` | buffered 同样可删 |
-| `ma3_context` | 永不返回他人 buffered；**包含作者本人 buffered** |
-| `ma3_list_my_writes` | 增加 `status`, `publish_at` |
+| `ma3_report` | Response adds `status: "buffered"`, `publish_at`, `buffer_hours_remaining` |
+| `ma3_publish_record(record_id)` | Writer publishes early → active |
+| `ma3_patch_record` / recall | Only buffered + owner; PATCH **resets `publish_at`** |
+| `ma3_delete_record` | Buffered records can also be deleted |
+| `ma3_context` | Never returns others' buffered records; **includes the author's own buffered records** |
+| `ma3_list_my_writes` | Adds `status`, `publish_at` |
 
-Agent policy：收到 `status=buffered` 时告知用户缓冲截止时间；提示 `/ui/me/writes/` 或 `ma3_publish_record` 提前发布。
+Agent policy: when receiving `status=buffered`, inform the user of the buffer deadline; suggest `/ui/me/writes/` or `ma3_publish_record` to publish early.
 
 ---
 
-## 6. 与 draft / confirmation 的关系
+## 6. Relationship to draft / confirmation
 
-| 机制 | 时点 | 可见性 | 审批方 |
+| Mechanism | Timing | Visibility | Approver |
 |------|------|--------|--------|
-| **confirmation**（ADR-013） | 写**前** | 未落库 | agent↔用户（非门禁） |
-| **buffer**（本设计） | 写**后** | 仅作者 | 作者 publish 或超时 |
-| **draft**（ADR-002） | 写**后** | maintainer 队列 | maintainer approve |
+| **confirmation** (ADR-013) | **Before** write | Not yet persisted | Agent↔user (not a gate) |
+| **buffer** (this design) | **After** write | Author only | Author publishes or timeout |
+| **draft** (ADR-002) | **After** write | Maintainer queue | Maintainer approval |
 
-**互斥**：`visibility=draft` → **never** 同时 `buffered`；`verify_direct` → 直接 active，无 buffer。
+**Mutually exclusive**: `visibility=draft` → **never** also `buffered`; `verify_direct` → goes straight to active, no buffer.
 
 ---
 
@@ -125,20 +127,20 @@ Agent policy：收到 `status=buffered` 时告知用户缓冲截止时间；提�
 
 ```sql
 ALTER TABLE libraries ADD COLUMN write_buffer_hours INTEGER NOT NULL DEFAULT 24;
-ALTER TABLE records ADD COLUMN publish_at TEXT NULL;   -- ISO8601；仅 status=buffered
--- records.status 允许 'buffered'
+ALTER TABLE records ADD COLUMN publish_at TEXT NULL;   -- ISO8601; only for status=buffered
+-- records.status allows 'buffered'
 ```
 
 ---
 
-## 8. 定时任务
+## 8. Scheduled job
 
-`publish_due_buffered_records()`：startup + 每 60s background task；`publish_at <= now` → `status=active` + 建索引。
+`publish_due_buffered_records()`: runs at startup + every 60s as a background task; `publish_at <= now` → `status=active` + build index.
 
 ---
 
-## 9. 相关文档
+## 9. Related documents
 
-- [10-write-audit-and-delete.md](writes-audit-and-deletion.md) — 写入者判定、删除
+- [10-write-audit-and-delete.md](writes-audit-and-deletion.md) — writer determination, deletion
 - [15-user-portal.md](../04-frontend/portal-permissions.md) — Stats≠Enumerate
-- [22-user-portal-ui-layout.md](../04-frontend/information-architecture.md) — 列表/filter/batch
+- [22-user-portal-ui-layout.md](../04-frontend/information-architecture.md) — list/filter/batch

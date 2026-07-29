@@ -1,23 +1,25 @@
-# ADR-000 — 模板
+# ADR-000 — Template
 
-## 状态
+> Chinese version: [000-template.zh.md](000-template.zh.md)
+
+## Status
 
 Proposed | Accepted | Deprecated
 
-## 背景
+## Context
 
-（为何需要决策）
+(Why this decision is needed)
 
-## 决策
+## Decision
 
-（我们决定…）
+(We decided…)
 
-## 后果
+## Consequences
 
-### 正面
+### Positive
 
-### 负面
+### Negative
 
-### 关联
+### Related
 
 - Q# from 03-design-review.md

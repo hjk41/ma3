@@ -1,33 +1,35 @@
-# 测试策略
+# Test Strategy
 
-## 分层
+> Chinese version: [test-strategy.zh.md](test-strategy.zh.md)
 
-| 层 | 位置 | 职责 |
+## Layers
+
+| Layer | Location | Responsibility |
 |----|------|------|
-| **Unit** | `code/server/tests/unit/` | ranking、entitlement、billing 公式、onboarding 幂等 |
-| **Integration** | `code/server/tests/integration/` | MCP、portal、keys、auth、search ranking |
-| **E2E** | `scripts/e2e_authing_ui.py` | 可选；需 `AUTHING_TEST_USER` |
-| **Agent eval** | `code/eval/` | 非发布物；真实 Agent 行为（T1–T5） |
+| **Unit** | `code/server/tests/unit/` | Ranking, entitlement, billing formulas, onboarding idempotency |
+| **Integration** | `code/server/tests/integration/` | MCP, portal, keys, auth, search ranking |
+| **E2E** | `scripts/e2e_authing_ui.py` | Optional; requires `AUTHING_TEST_USER` |
+| **Agent eval** | `code/eval/` | Not a release artifact; real agent behavior (T1–T5) |
 
-## 模块门禁
+## Module gates
 
-| 模块 | 关键测试 |
+| Module | Key tests |
 |------|----------|
-| MCP 错误 | `test_mcp_integration.py` — assert `error.message` |
-| 搜索 GTN | `test_ranking.py`、`test_search_ranking.py`；MCP explain 不泄露 |
-| API Keys | delete blocks MCP、legacy revoked hidden、422 label |
-| Portal | navigation、403 observatory、stat links、list sort/filter |
-| Write buffer | author vs others visibility、publish job |
-| Display name | setup gate、unique constraint |
+| MCP errors | `test_mcp_integration.py` — assert `error.message` |
+| Search GTN | `test_ranking.py`, `test_search_ranking.py`; MCP explain does not leak |
+| API keys | Delete blocks MCP, legacy revoked hidden, 422 label |
+| Portal | Navigation, 403 observatory, stat links, list sort/filter |
+| Write buffer | Author-vs-others visibility, publish job |
+| Display name | Setup gate, unique constraint |
 
-## CI 策略
+## CI policy
 
-- **每 PR**：unit + integration（SQLite 为主）
-- **Nightly / 发版前**：search golden（hybrid 延后）、Agent eval 子集
-- **阻塞合并**：ranking 不变量守卫、MCP explain 键集不相交
+- **Every PR**: unit + integration (mainly SQLite)
+- **Nightly / pre-release**: search golden (hybrid deferred), agent eval subset
+- **Merge blocking**: ranking invariant guards, MCP explain key sets disjoint
 
-## 待补充
+## To be added
 
-- [ ] 覆盖率目标
-- [ ] Playwright 门户回归范围
-- [ ] 性能/负载测试（read quota、search pool）
+- [ ] Coverage targets
+- [ ] Playwright portal regression scope
+- [ ] Performance/load tests (read quota, search pool)

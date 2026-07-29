@@ -1,25 +1,27 @@
-# 08 — 知识库访问与组织隔离
+# 08 — Knowledge Base Access & Organization Isolation
 
-> **ADR**：[ADR-011](../02-architecture/decisions/011-kb-access-and-org-isolation.md)  
-> **状态**：设计定稿；key 签发/生命周期的 v1 实现以 [13-self-service-onboarding.md](../05-agent/getting-started.md)、[14-api-key-lifecycle.md](../04-frontend/api-keys-ui-and-api.md) 为准
+> Chinese version: [authorization-and-libraries.zh.md](authorization-and-libraries.zh.md)
+
+> **ADR**: [ADR-011](../02-architecture/decisions/011-kb-access-and-org-isolation.md)
+> **Status**: Design finalized; the v1 implementation of key issuance/lifecycle is authoritative in [13-self-service-onboarding.md](../05-agent/getting-started.md) and [14-api-key-lifecycle.md](../04-frontend/api-keys-ui-and-api.md)
 
 ---
 
-## 1. 目标
+## 1. Goals
 
-| 目标 | 说明 |
+| Goal | Description |
 |------|------|
-| **强制 key** | 所有 Agent 访问任何 library（含公共库）须持有效 API key；**移除匿名 MCP 读** |
-| **贡献优先** | 对 library 无 grant = 无访问；有 grant 默认 **read + write** |
-| **付费 read-only** | 仅付费 plan 可创建 **只读** grant（见 [ADR-012](../02-architecture/decisions/012-billing-and-quotas.md)、[09](billing-and-quotas.md)） |
-| **组织隔离** | org 拥有 library；成员多对多；visibility 控制 entitlement |
-| **可签发 key** | 用户门户（Authing session）自助签发 key；MCP 签发工具缓期 v1.1 |
+| **Mandatory keys** | All agent access to any library (including public libraries) requires a valid API key; **anonymous MCP reads are removed** |
+| **Contribution first** | No grant on a library = no access; having a grant defaults to **read + write** |
+| **Paid read-only** | Only paid plans can create **read-only** grants (see [ADR-012](../02-architecture/decisions/012-billing-and-quotas.md), [09](billing-and-quotas.md)) |
+| **Org isolation** | Orgs own libraries; membership is many-to-many; visibility controls entitlement |
+| **Key issuance** | Users self-issue keys via the user portal (Authing session); MCP key-issuance tools deferred to v1.1 |
 
 ---
 
-## 2. 概念模型
+## 2. Conceptual model
 
-### 2.1 实体
+### 2.1 Entities
 
 ```text
 Organization ──< org_members >── Principal (user:xxx)
@@ -27,25 +29,25 @@ Organization ──< org_members >── Principal (user:xxx)
       └──< libraries (org_id = owner org)
                 │
                 ├── visibility: public | org | private
-                └── library_grants ──> Principal (外部显式授权)
+                └── library_grants ──> Principal (explicit external grant)
 
 Principal ──< api_keys ──< api_key_grants >── Library
 ```
 
-### 2.2 术语
+### 2.2 Terminology
 
-| 术语 | 含义 |
+| Term | Meaning |
 |------|------|
-| **Principal** | 身份主体，如 `user:<authing_sub>`；registry 在 `principals` 表 |
-| **Entitlement** | Layer 1：某 principal *被允许* 接触某 library（由 visibility + membership + library_grants 决定） |
-| **Key grant** | Layer 2：某 API key 对某 library 的 **read / write / maintain** 能力子集 |
-| **Public library** | `lib_default`（Community Library），`visibility=public` |
-| **Personal library** | `kind=personal`，`owner_principal_id` 指向用户；名为 `{display_name} 的个人库`（[10](writes-audit-and-deletion.md) §3） |
-| **Org library** | `org_id` 指向创建 org；默认 `visibility=org` |
+| **Principal** | An identity subject, e.g. `user:<authing_sub>`; registered in the `principals` table |
+| **Entitlement** | Layer 1: whether a principal *is allowed* to touch a library (determined by visibility + membership + library_grants) |
+| **Key grant** | Layer 2: the **read / write / maintain** capability subset an API key has on a library |
+| **Public library** | `lib_default` (Community Library), `visibility=public` |
+| **Personal library** | `kind=personal`, `owner_principal_id` points to the user; named `{display_name}'s Personal Library` ([10](writes-audit-and-deletion.md) §3) |
+| **Org library** | `org_id` points to the owning org; defaults to `visibility=org` |
 
-### 2.3 双层授权
+### 2.3 Two-layer authorization
 
-**Layer 1 — Entitlement 解析**（创建 key 或校验 grant 子集时）
+**Layer 1 — Entitlement resolution** (when creating a key or validating a grant subset)
 
 ```python
 def entitled_libraries(principal_id: str) -> dict[str, LibraryEntitlement]:
@@ -60,7 +62,7 @@ def entitled_libraries(principal_id: str) -> dict[str, LibraryEntitlement]:
     """
 ```
 
-**Layer 2 — Key 生效能力**（每个 MCP 请求）
+**Layer 2 — Effective key capabilities** (per MCP request)
 
 ```python
 def effective_capabilities(key_id: str) -> KeyCapabilities:
@@ -69,21 +71,21 @@ def effective_capabilities(key_id: str) -> KeyCapabilities:
     maintainer = { lib | row.role == 'maintainer' AND owner has maintain entitlement }
 ```
 
-**Invariant**：key grants 必须是 owner entitlement 的**子集**；只读 grant（reader）仅当 key 对应 plan 允许（`allow_readonly_grants`，见 09）。
+**Invariant**: key grants must be a **subset** of the owner's entitlement; a read-only grant (reader) is allowed only if the key's plan permits it (`allow_readonly_grants`, see 09).
 
 ---
 
-## 3. 数据模型（已落库形态）
+## 3. Data model (as implemented)
 
 ### `organizations`
 
-`id, name, entitlement (free|paid), created_at`（billing 扩展见 [09](billing-and-quotas.md) §3.6）
+`id, name, entitlement (free|paid), created_at` (billing extensions in [09](billing-and-quotas.md) §3.6)
 
 ### `libraries`
 
-`id, org_id (owner org), name, visibility (public|org|private), kind (personal|…), owner_principal_id, created_by, created_at, write_buffer_hours (DEFAULT 24, 见 design/16)`
+`id, org_id (owner org), name, visibility (public|org|private), kind (personal|…), owner_principal_id, created_by, created_at, write_buffer_hours (DEFAULT 24, see design/16)`
 
-**Seed**：`lib_default` → `visibility=public`，`org_id=org_default`，name=`Community Library`。
+**Seed**: `lib_default` → `visibility=public`, `org_id=org_default`, name=`Community Library`.
 
 ### `principals`
 
@@ -113,14 +115,14 @@ CREATE TABLE api_keys (
   created_by TEXT,
   last_used_at TEXT,
   expires_at TEXT,
-  revoked_at TEXT,                    -- 仅 legacy/admin 行；自助 key 用硬删除（design/14）
-  key_prefix TEXT,                    -- 明文前 12 字符，仅展示
-  key_ciphertext TEXT                 -- Fernet 加密明文，owner 可重复展示（design/14）
+  revoked_at TEXT,                    -- legacy/admin rows only; self-service keys use hard delete (design/14)
+  key_prefix TEXT,                    -- first 12 plaintext characters, display only
+  key_ciphertext TEXT                 -- Fernet-encrypted plaintext, owner can re-reveal it (design/14)
 );
 ```
 
-- 明文格式 `ma3k_<random>`；hash 校验，ciphertext 仅供 owner 在 UI 复制
-- **自助 key 的生命周期是删除（hard delete），不是撤销**；`revoked_at` 仅保留给 legacy 行（不再出现在列表、不参与配额）
+- Plaintext format `ma3k_<random>`; validated via hash, ciphertext is only for the owner to copy again in the UI
+- **The lifecycle of a self-service key is deletion (hard delete), not revocation**; `revoked_at` is only kept for legacy rows (no longer appears in listings, does not count against quota)
 
 ### `api_key_grants`
 
@@ -145,37 +147,37 @@ CREATE TABLE library_grants (
 );
 ```
 
-用于 **private** library 或 org 对外部 principal 的显式授权。
+Used for explicit grants to an external principal on a **private** library or an org.
 
 ---
 
-## 4. 规则详解
+## 4. Rules in detail
 
-### 4.1 Read + Write 耦合（贡献优先）
+### 4.1 Read + Write coupling (contribution first)
 
-创建或更新 key grant 时：
+When creating or updating a key grant:
 
 ```text
-IF grant.library_id 不在 owner entitled_libraries:  REJECT 403 / 400
+IF grant.library_id is not in owner entitled_libraries:  REJECT 403 / 400
 IF grant.role == reader:
-    IF NOT plan.allow_readonly_grants:  拒绝（免费档 Community writer 锁定，见 design/14）
+    IF NOT plan.allow_readonly_grants:  reject (free tier Community writer lock, see design/14)
 ```
 
-**产品语义**：免费用户给 key 授权公共库读 ⇒ **必须同时写**；要「只读汲取」须付费或加入付费 org。
+**Product semantics**: a free user granting a key read access to the public library ⇒ **must also grant write**; "read-only extraction" requires a paid plan or joining a paid org.
 
-### 4.2 Visibility 与 Entitlement
+### 4.2 Visibility & entitlement
 
 | visibility | entitled principals |
 |------------|---------------------|
-| `public` | 所有已认证 principal（read+write；maintain 仅 platform admin / library_grants.admin） |
-| `org` | owner org 的 `org_members` 成员；admin 成员 +maintain |
-| `private` | owner（personal 库）或 `library_grants` 行 |
+| `public` | All authenticated principals (read+write; maintain only for platform admin / `library_grants.admin`) |
+| `org` | Members of the owner org's `org_members`; admin members also get maintain |
+| `private` | Owner (personal library) or a `library_grants` row |
 
-### 4.3 Maintain 能力
+### 4.3 Maintain capability
 
-maintainer grant 要求：writer 能力 + owner 对该库有 maintain entitlement。用于 `ma3_list_drafts`、`ma3_review_record`、`supersedes` 等 maintainer 门控。
+A maintainer grant requires: writer capability + owner has maintain entitlement on that library. Used to gate `ma3_list_drafts`, `ma3_review_record`, `supersedes`, and similar maintainer operations.
 
-### 4.4 MCP 请求解析
+### 4.4 MCP request resolution
 
 ```mermaid
 flowchart TD
@@ -190,32 +192,32 @@ flowchart TD
   CapSets --> ToolGate[per_tool_library_check]
 ```
 
-- **Bootstrap dev key**：`MA3_DEV_AUTH=1` 且匹配 `MA3_DEV_API_KEY` → admin bypass（LAN only）
-- **Bearer / session 不授予 MCP 数据访问**：session 仅用于 UI 与 key 管理
+- **Bootstrap dev key**: `MA3_DEV_AUTH=1` combined with a matching `MA3_DEV_API_KEY` → admin bypass (LAN only)
+- **Bearer / session grants no MCP data access**: session is used only for UI and key management
 
-### 4.5 写路径 library 选择
+### 4.5 Write-path library selection
 
-`ma3_report`：可选 `library_id`；缺省 → **owner 的 personal library**（`default_owned_personal_library`）；响应回显 `library_selection_reason`。verify/refute 跟随 `target_record_id` 所在库。详见 [10](writes-audit-and-deletion.md) §2、[13](../05-agent/getting-started.md) §10。
+`ma3_report`: `library_id` is optional; defaults to **the owner's personal library** (`default_owned_personal_library`); the response echoes back `library_selection_reason`. verify/refute follow the library of the `target_record_id`. See [10](writes-audit-and-deletion.md) §2 and [13](../05-agent/getting-started.md) §10 for details.
 
 ---
 
-## 5. Key 管理界面
+## 5. Key management UI
 
-**v1 实现真源**：[13-self-service-onboarding.md](../05-agent/getting-started.md)（签发）+ [14-api-key-lifecycle.md](../04-frontend/api-keys-ui-and-api.md)（生命周期）。要点：
+**v1 implementation source of truth**: [13-self-service-onboarding.md](../05-agent/getting-started.md) (issuance) + [14-api-key-lifecycle.md](../04-frontend/api-keys-ui-and-api.md) (lifecycle). Highlights:
 
-- `/ui/keys/`（Authing session）：列表、创建（grant picker：personal + Community，free 档 Community writer 锁定）、复制（ciphertext 重展示）、改名、**删除**
-- REST：`GET/POST /api/keys`、`PATCH /api/keys/{key_id}`（label）、`DELETE /api/keys/{key_id}`；mutating 路由须 same-origin
-- **MCP 签发工具（`ma3_create_key` 等）缓期 v1.1**：防泄漏 key 的权限持久化攻击面；自举场景本来就需要人操作 UI
-- org 管理页（`/ui/orgs/*`）v1.1
+- `/ui/keys/` (Authing session): list, create (grant picker: personal + Community, free tier Community writer lock), copy (ciphertext re-reveal), rename, **delete**
+- REST: `GET/POST /api/keys`, `PATCH /api/keys/{key_id}` (label), `DELETE /api/keys/{key_id}`; mutating routes require same-origin
+- **MCP key-issuance tools (`ma3_create_key`, etc.) deferred to v1.1**: to avoid a persistence attack surface for leaked-key permissions; bootstrap scenarios inherently require a human to use the UI anyway
+- Org admin pages (`/ui/orgs/*`) are v1.1
 
-### `ma3_whoami` 返回
+### `ma3_whoami` response
 
 ```json
 {
   "principal_id": "user:abc",
-  "display_name": "张三",
+  "display_name": "Zhang San",
   "writable_libraries": [
-    {"library_id": "lib_personal_abc", "name": "张三 的个人库", "visibility": "private"},
+    {"library_id": "lib_personal_abc", "name": "Zhang San's Personal Library", "visibility": "private"},
     {"library_id": "lib_default", "name": "Community Library", "visibility": "public"}
   ],
   "effective": {"readable": ["…"], "writable": ["…"], "maintainer": []}
@@ -224,40 +226,40 @@ flowchart TD
 
 ---
 
-## 6. `ma3_doctor` 与安全
+## 6. `ma3_doctor` and security
 
-- doctor 报告：`anonymous_mcp_enabled: false`、`api_keys_table: ok`、legacy env writer keys deprecated
-- `MA3_WRITER_API_KEYS` / `MA3_MAINTAINER_API_KEYS` 已 deprecated；设置时启动 warn
+- Doctor report: `anonymous_mcp_enabled: false`, `api_keys_table: ok`, legacy env writer keys deprecated
+- `MA3_WRITER_API_KEYS` / `MA3_MAINTAINER_API_KEYS` are deprecated; a startup warning is emitted if they are set
 
-| 项 | 措施 |
+| Item | Measure |
 |----|------|
-| Key 存储 | SHA-256 hash 校验 + Fernet ciphertext（owner 重展示）；hash/ciphertext 永不出现在列表响应 |
-| Key 传输 | HTTPS；`X-API-Key` header |
-| 失效 | 行删除（自助）或 `revoked_at`（legacy）即拒绝 |
-| 审计 | 创建/删除/grant 变更写 application log；写入审计见 [10](writes-audit-and-deletion.md) |
-| 越权探测 | 他人 key_id / record → **404**，不泄露存在性 |
+| Key storage | SHA-256 hash validation + Fernet ciphertext (owner re-reveal); hash/ciphertext never appear in listing responses |
+| Key transport | HTTPS; `X-API-Key` header |
+| Invalidation | Row deletion (self-service) or `revoked_at` (legacy) both result in rejection |
+| Audit | Creation/deletion/grant changes are written to the application log; write auditing is described in [10](writes-audit-and-deletion.md) |
+| Privilege-escalation probing | Another user's key_id / record → **404**, does not leak existence |
 
 ---
 
-## 7. v1.1 开放项
+## 7. Open items for v1.1
 
-| 项 | 说明 |
+| Item | Description |
 |----|------|
-| `ma3_create_key` / `ma3_list_keys` / MCP 签发 | 约束：grants ⊆ 调用者 key grants；owner 同 principal；dev bypass 禁用 |
-| entitlement resolver 完整实现 | 替换 v1 启发式（personal ∪ lib_default ∪ active key grants） |
-| org 管理 UI（`/ui/orgs/*`） | 成员、建库、visibility、外部 grant |
-| Key 轮换 / 过期 UI | `expires_at` 列已在 |
-| `entitlement` 字段 → `billing_account.plan_code` | [09](billing-and-quotas.md) |
+| `ma3_create_key` / `ma3_list_keys` / MCP issuance | Constraint: grants ⊆ caller's key grants; owner is the same principal; dev bypass disabled |
+| Full entitlement resolver implementation | Replace the v1 heuristic (personal ∪ lib_default ∪ active key grants) |
+| Org admin UI (`/ui/orgs/*`) | Members, library creation, visibility, external grants |
+| Key rotation / expiry UI | The `expires_at` column already exists |
+| `entitlement` field → `billing_account.plan_code` | [09](billing-and-quotas.md) |
 
 ---
 
-## 8. 相关文档
+## 8. Related documents
 
-| 文档 | 关系 |
+| Document | Relationship |
 |------|------|
-| [ADR-011](../02-architecture/decisions/011-kb-access-and-org-isolation.md) | 访问控制决策 |
-| [09-billing-and-quotas.md](billing-and-quotas.md) | 付费套餐与配额 |
-| [10-write-audit-and-delete.md](writes-audit-and-deletion.md) | 写入审计与删除 |
-| [13-self-service-onboarding.md](../05-agent/getting-started.md) | 自助注册与 key 签发（v1 实现） |
-| [14-api-key-lifecycle.md](../04-frontend/api-keys-ui-and-api.md) | key 生命周期（v1 实现） |
-| [15-user-portal.md](../04-frontend/portal-permissions.md) | UI 侧 Stats/Enumerate/Mutate 三级能力 |
+| [ADR-011](../02-architecture/decisions/011-kb-access-and-org-isolation.md) | Access control decisions |
+| [09-billing-and-quotas.md](billing-and-quotas.md) | Paid plans and quotas |
+| [10-write-audit-and-delete.md](writes-audit-and-deletion.md) | Write auditing and deletion |
+| [13-self-service-onboarding.md](../05-agent/getting-started.md) | Self-service registration and key issuance (v1 implementation) |
+| [14-api-key-lifecycle.md](../04-frontend/api-keys-ui-and-api.md) | Key lifecycle (v1 implementation) |
+| [15-user-portal.md](../04-frontend/portal-permissions.md) | UI-side Stats/Enumerate/Mutate three-tier capabilities |

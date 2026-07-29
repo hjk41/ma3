@@ -1,37 +1,39 @@
-# 代码仓库布局
+# Repository layout
 
-> 结构变更时请随 PR 同步更新本文件。真源以仓库实际目录为准。
+> Chinese version: [repository-layout.zh.md](repository-layout.zh.md)
 
-## 顶层
+> Update this file in the same PR when the structure changes. The live tree in the repo is the source of truth.
+
+## Top level
 
 ```text
 ma3/
-├── README.md / README.en.md / CONTRIBUTING.md / CHANGELOG.md / LICENSE / SECURITY.md
+├── README.md / README.zh.md / CONTRIBUTING.md / CHANGELOG.md / LICENSE / SECURITY.md
 ├── code/
-│   ├── server/          FastAPI：MCP、门户 UI、REST、auth、search
-│   ├── client/          HTTP bundle：manifest、policy、sync 脚本
-│   └── eval/            评测场景（非 v1 发布物）
-├── docs/                系统化文档（01–09）
+│   ├── server/          FastAPI: MCP, portal UI, REST, auth, search
+│   ├── client/          HTTP bundle: manifest, policy, sync scripts
+│   └── eval/            Evaluation scenarios (not a v1 release artifact)
+├── docs/                Systematized docs (01–09; English default, *.zh.md Chinese)
 └── deploy/
-    ├── self-host/       社区 Compose 交付物
-    └── *.sh / README    维护者推送与验收（环境 env 不进 git）
+    ├── self-host/       Community Compose delivery
+    └── *.sh / README    Maintainer push & verify (env files not in git)
 ```
 
-运行时数据与 secret 留在部署目录 / 环境变量中（例如 `<DEPLOY_DIR>`），**不要**假定仓库根下存在已提交的 `data/` 或 `ma3.env`。
+Runtime data and secrets stay in the deploy directory / environment variables (e.g. `<DEPLOY_DIR>`). **Do not** assume a committed `data/` or `ma3.env` under the repo root.
 
-## Server 模块
+## Server modules
 
 ```text
 code/server/app/
-├── api/           MCP、门户 HTML、REST（keys/orgs/libraries/setup/admin）、i18n、setup_gate
-├── services/      mcp、onboarding、api_key、org、invite、local_auth、setup、billing、…
-├── storage/       db、search、ranking
+├── api/           MCP, portal HTML, REST (keys/orgs/libraries/setup/admin), i18n, setup_gate
+├── services/      mcp, onboarding, api_key, org, invite, local_auth, setup, billing, …
+├── storage/       db, search, ranking
 ├── models/        mcp_payloads
-├── auth/          session、OIDC / local
-└── core/          config、security
+├── auth/          session, OIDC / local
+└── core/          config, security
 ```
 
-## Client 面
+## Client surface
 
 ```text
 code/client/
@@ -41,7 +43,7 @@ code/client/
 └── lib/ma3_sync_core.py
 ```
 
-## 测试
+## Tests
 
 ```text
 code/server/tests/
@@ -49,8 +51,8 @@ code/server/tests/
 └── integration/
 ```
 
-CI：`.github/workflows/ci.yml`（unit + integration + self-host Docker build）。
+CI: `.github/workflows/ci.yml` (unit + integration + self-host Docker build).
 
-## 设计过程稿
+## Design process drafts
 
-`docs/09-engineering/design-archive/` 仅保留各主题**决策摘要**（非契约）。规划中的设计项见 `design-backlog.md`。
+`docs/09-engineering/design-archive/` keeps only per-topic **decision summaries** (not contractual). Planned design items: `design-backlog.md`.

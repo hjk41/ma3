@@ -1,5 +1,7 @@
 # Self-hosting ma3
 
+> Chinese version: [self-hosting.zh.md](self-hosting.zh.md)
+
 Run your own ma3 instance (private knowledge libraries + MCP).  
 **Support: community best-effort, no SLA.**
 
@@ -7,7 +9,7 @@ Official SaaS / our internal SSH deploy scripts are separate; this page is for *
 
 **First-run UX:** after `./up.sh`, open **`/ui/setup/`** (browser) **or** use the **JSON setup APIs** below (agents).
 
-**Administrator walkthrough (deploy → init → invite members):** **[self-host-admin-guide.md](self-host-admin-guide.md)** (中文操作手册).
+**Administrator walkthrough (deploy → init → invite members):** **[self-host-admin-guide.md](self-host-admin-guide.md)**.
 
 Details / design: **[self-host-first-run-guide.md](self-host-first-run-guide.md)**.
 
@@ -72,7 +74,7 @@ LIB_ID=$(jq -r '.library_id' <<<"$LIB")
 # 4) Invite teammate (recommended) — works even when registration is closed
 INV=$(curl -fsS -X POST "$BASE/api/orgs/$ORG_ID/invites" \
   -H "X-API-Key: $ADMIN_KEY" -H 'Content-Type: application/json' \
-  -d '{"role":"member","max_uses":1,"expires_in_hours":168,"member_alias":"小张"}')
+  -d '{"role":"member","max_uses":1,"expires_in_hours":168,"member_alias":"Alex"}')
 echo "$INV" | jq '{invite_url, token, member_alias, expires_at}'
 # Share invite_url with teammate. They open it (or POST /api/auth/register with "invite")
 # and join the org automatically with the preset org alias.
@@ -219,7 +221,7 @@ docker compose exec ma3 python scripts/bootstrap_selfhost.py --force
 
 ## Related
 
-- **Admin handbook (中文):** [self-host-admin-guide.md](self-host-admin-guide.md)
+- **Admin handbook:** [self-host-admin-guide.md](self-host-admin-guide.md)
 - Checklist: [self-hosting-mvp-checklist.md](self-hosting-mvp-checklist.md)
 - ADR-015: [015-oidc-pluggable-selfhost-bootstrap.md](../02-architecture/decisions/015-oidc-pluggable-selfhost-bootstrap.md)
 - Agent onboarding: `GET {MA3_BASE_URL}/client/agent-onboarding.md`

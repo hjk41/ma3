@@ -1,33 +1,37 @@
-# 法律文档索引（Legal）
+# Legal Documents Index
 
-> **English note**: This folder contains draft legal documents for the ma3 project
-> (Terms of Service, Privacy Policy, Data Retention & Deletion). They are written
-> in Chinese as the primary language. **All documents here are drafts and have NOT
-> been reviewed by a lawyer.** They describe the project's actual current behavior
-> honestly (best-effort support, no SLA yet) and must be legally reviewed before
-> being presented as binding contracts.
+> Chinese version: [README.zh.md](README.zh.md)
 
-> **状态：草案（draft）。未经律师审阅，不构成法律意见；正式商用前须法务审核。**
+> This folder contains draft legal documents for the ma3 project
+> (Terms of Service, Privacy Policy, Data Retention & Deletion). English is the
+> default language; Chinese versions are kept as `*.zh.md` siblings. **All
+> documents here are drafts and have NOT been reviewed by a lawyer.** They
+> describe the project's actual current behavior honestly (best-effort support,
+> no SLA yet) and must be legally reviewed before being presented as binding
+> contracts.
 
-## 文档列表
+> **Status: draft. Not lawyer-reviewed; does not constitute legal advice. Legal review is required before formal commercial use.**
 
-| 文档 | 内容 |
+## Document list
+
+| Document | Content |
 |------|------|
-| [terms-of-service.md](terms-of-service.md) | 服务条款：服务范围、账户与 API Key、内容与知识记录的权利义务、免责声明 |
-| [privacy-policy.md](privacy-policy.md) | 隐私政策：收集哪些数据、如何使用、第三方（如 OIDC/Authing）、自托管实例的责任划分 |
-| [data-retention-and-deletion.md](data-retention-and-deletion.md) | 数据保留与删除：记录删除（ADR-013）、审计日志、备份、下架（takedown）流程 |
+| [terms-of-service.md](terms-of-service.md) | Terms of Service: service scope, accounts and API keys, rights and obligations around content and knowledge records, disclaimers |
+| [privacy-policy.md](privacy-policy.md) | Privacy Policy: what data is collected, how it is used, third parties (e.g. OIDC/Authing), responsibility split for self-hosted instances |
+| [data-retention-and-deletion.md](data-retention-and-deletion.md) | Data retention and deletion: record deletion (ADR-013), audit logs, backups, takedown process |
 
-## 适用范围与责任划分（重要）
+## Scope and responsibility split (important)
 
-- **ma3.io（官方 SaaS）**：由 ma3 维护者运营，本目录文档直接适用。
-- **自托管（self-host）实例**：运营者（operator）是其实例数据的**数据控制者**，
-  须自行对其用户承担合规义务；本目录文档仅可作为模板参考，ma3 项目与维护者
-  不对第三方自托管实例的数据处理行为负责。
+- **ma3.io (official SaaS)**: operated by the ma3 maintainers; the documents in this folder apply directly.
+- **Self-hosted instances**: the operator is the **data controller** for their instance's data
+  and must fulfill compliance obligations toward their own users; the documents here may only
+  serve as template references, and the ma3 project and maintainers are not responsible for
+  the data processing behavior of third-party self-hosted instances.
 
-## 现状的诚实声明
+## Honest statement of current status
 
-- 当前所有档位（含付费）支持均为 **best-effort，无正式 SLA**（正式 SLA 计划 v1.1+）。
-- 记录所有者可自助删除自己的记录（见 [ADR-013](../../02-architecture/decisions/013-write-confirmation-audit-delete.md)）。
-- 维护者下架（takedown）流程**尚未自动化**：通过维护者 GitHub 个人资料页所列邮箱联系
-  （参见仓库根 [SECURITY.md](../../../SECURITY.md)）。
-- 本项目**不声称**已通过 GDPR 或任何合规认证。
+- Support for all tiers (including paid) is currently **best-effort, with no formal SLA** (formal SLA planned for v1.1+).
+- Record owners can self-service delete their own records (see [ADR-013](../../02-architecture/decisions/013-write-confirmation-audit-delete.md)).
+- The maintainer takedown process is **not yet automated**: contact via the email listed on the
+  maintainer's GitHub profile page (see the repo root [SECURITY.md](../../../SECURITY.md)).
+- This project does **not claim** GDPR or any other compliance certification.

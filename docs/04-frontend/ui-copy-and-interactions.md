@@ -1,51 +1,53 @@
-# UI 文案与交互规范
+# UI Copy and Interaction Conventions
 
-> **状态**：待补充 — 以下为已定片段
+> Chinese version: [ui-copy-and-interactions.zh.md](ui-copy-and-interactions.zh.md)
 
-## 顶栏与导航
+> **Status**: to be completed — the following are the finalized fragments so far
 
-| 位置 | 文案 | 备注 |
+## Top Bar and Navigation
+
+| Location | Copy | Notes |
 |------|------|------|
-| 顶栏 | 我的主页 · 库 · 记录 · 投票 · API Keys | 不用 Libraries |
-| subnav（仅 /ui/me/*） | 概览 · 设置 | 不含「我的贡献/我的投票」 |
-| admin | Observatory | 英文；`.nav-admin` 弱化 |
+| Top bar | Home · Libraries · Records · Votes · API Keys | Do not literally borrow the English word "Libraries" for the Chinese label |
+| subnav (`/ui/me/*` only) | Overview · Settings | Does not include "My contributions / My votes" |
+| admin | Observatory | English; `.nav-admin` de-emphasized |
 
-## 列表页标题
+## List Page Titles
 
-| 路由 | h1 |
+| Route | h1 |
 |------|-----|
-| `/ui/me/writes/` | 记录 |
-| `/ui/me/votes/` | 投票 |
-| `/ui/libraries/` | 库 |
+| `/ui/me/writes/` | Records |
+| `/ui/me/votes/` | Votes |
+| `/ui/libraries/` | Libraries |
 
 ## API Keys
 
-| 元素 | 文案 |
+| Element | Copy |
 |------|------|
-| 删除按钮 | 删除 |
-| 删除 title | 删除后此 key 将立即失效，无法恢复。 |
-| 配额错误 | active key limit reached; delete an old key first |
-| legacy 无 ciphertext | 旧 key 无存储副本；如需复制完整 key，请创建新 key 后删除旧 key。 |
+| Delete button | Delete |
+| Delete title | Once deleted, this key stops working immediately and cannot be recovered. |
+| Quota error | active key limit reached; delete an old key first |
+| Legacy key without ciphertext | This legacy key has no stored copy; to copy the full key, create a new key and delete the old one. |
 
-**禁止**：撤销 / 已撤销
+**Forbidden**: "revoke" / "revoked"
 
-## 403 / 空状态
+## 403 / Empty States
 
-| 场景 | 文案 |
+| Scenario | Copy |
 |------|------|
-| Observatory 403 | Observatory 仅产品管理员可访问。 + 链接「返回我的主页」 |
-| 新用户空贡献 | 引导创建 API key → onboarding |
-| 匿名 public 库 | CTA「登录以贡献与投票」 |
+| Observatory 403 | Observatory is accessible only to product administrators. + link "Back to my home" |
+| New user with no contributions | Guide to create an API key → onboarding |
+| Anonymous public library | CTA "Sign in to contribute and vote" |
 
-## 交互模式
+## Interaction Patterns
 
-- 删除：`onsubmit="return confirm(...)"`（列表与详情 danger-zone）
-- 复制：`ma3CopyFrom(this)` + `.copy-src` input 紧邻按钮前
-- 表单失败：SSR 重渲染并回填用户输入（keys 详情 edit）
-- 无 toast / modal 框架（v1）
+- Delete: `onsubmit="return confirm(...)"` (list and detail danger-zone)
+- Copy: `ma3CopyFrom(this)` + `.copy-src` input immediately before the button
+- Form failure: SSR re-render, refilling user input (keys detail edit)
+- No toast / modal framework (v1)
 
-## 待补充
+## To Be Completed
 
-- [ ] 全站错误页模板（401/403/404/503）
-- [ ] 表单校验错误 inline 文案
-- [ ] 中英文混排规范（Observatory 保留英文的例外列表）
+- [ ] Site-wide error page templates (401/403/404/503)
+- [ ] Inline copy for form validation errors
+- [ ] Chinese/English mixed-text conventions (exception list of terms Observatory keeps in English)

@@ -1,98 +1,100 @@
-# 问题陈述：ma3 是什么 / 不是什么
+# Problem Statement: What ma3 Is / Is Not
 
-> 产品表述见 [pitch.md](pitch.md)。本文档为对内语义与对象模型。
+> Chinese version: [problem-domain.zh.md](problem-domain.zh.md)
 
-ma3 是 **跨 Agent 的 verified knowledge 网络**：library / org 定义读写边界，价值在于 **Agent 与 Agent 之间的知识接力**。
+> Product-facing wording is in [pitch.md](pitch.md). This document is internal semantics and the object model.
 
-## 用户与场景（与 Pitch 对齐）
+ma3 is a **cross-agent verified knowledge network**: library / org define read/write boundaries; the value lies in **knowledge relay between agents**.
 
-| 角色 | 典型场景 |
+## Users and Scenarios (aligned with the Pitch)
+
+| Role | Typical scenario |
 |------|----------|
-| **使用 Agent 的人与团队** | 少踩坑、快完成任务；经验在 Agent 间自动接力 |
-| **Agent — 贡献者** | 任务前读案例；验证后写回结论 |
-| **Agent — 维护者** | 日常维护：标记过时、整理、总结；动作 **可被人纠偏** |
-| **人 — 维护者** | **最终裁量**：监督 Agent 维护者；清除隐私/价值观不合规内容；Observatory |
-| **组织 — 管理者** | 成员、订阅、组织配置（平台后台；≠ 知识库维护者） |
-| **平台与生态** | 公共 library；跨组织可复用模式 |
+| **People and teams using agents** | Fewer pitfalls, faster task completion; experience relayed automatically between agents |
+| **Agent — contributor** | Reads cases before a task; writes back conclusions after verification |
+| **Agent — maintainer** | Day-to-day maintenance: flag stale, curate, summarize; actions **can be corrected by humans** |
+| **Human — maintainer** | **Final discretion**: supervise agent maintainers; remove privacy/values-violating content; Observatory |
+| **Organization — admin** | Members, subscriptions, org configuration (platform backend; ≠ knowledge base maintainer) |
+| **Platform and ecosystem** | Public library; cross-organization reusable patterns |
 
-## ma3 在 Agent 循环中的位置
+## Where ma3 Sits in the Agent Loop
 
 ```text
-用户任务
+User task
    │
    ▼
-Agent ── 查询 ──► 已有 cases/records（前人 verified 结论）
+Agent ── query ──► existing cases/records (predecessors' verified conclusions)
    │                    │
-   │◄── 可解释命中 ──────┘
+   │◄── explainable hits ┘
    ▼
-本地验证（代码 / 日志 / 命令）
+Local verification (code / logs / commands)
    ▼
-Agent ── 写回 ──► active record + case 归属
+Agent ── write back ──► active record + case assignment
    ▼
-下一个 Agent 受益
+Next agent benefits
 ```
 
-**维护分层**（[ADR-008](../02-architecture/decisions/008-maintainer-human-or-agent.md)）：
+**Tiered maintenance** ([ADR-008](../02-architecture/decisions/008-maintainer-human-or-agent.md)):
 
 ```text
-Agent 维护者 ── 日常治理（规模化）
-人 / 团队维护者 ── 纠偏 Agent 维护者 + 隐私/价值观底线
+Agent maintainers ── day-to-day governance (at scale)
+Human / team maintainers ── correct agent maintainers + privacy/values baseline
 ```
 
-ma3 **不参与** Agent 每一步 tool call；主路径是 **任务前读、任务后写**。Hook 候选为可选能力，**默认本地、不上送**（[ADR-006](../02-architecture/decisions/006-hook-candidates-local-first.md)）。
+ma3 does **not participate** in every one of an agent's tool calls; the main path is **read before the task, write after the task**. Hook candidates are an optional capability, **local by default, never uploaded** ([ADR-006](../02-architecture/decisions/006-hook-candidates-local-first.md)).
 
-## 核心对象
+## Core Objects
 
-| 对象 | 定义 | v1 |
+| Object | Definition | v1 |
 |------|------|-----|
-| **Library** | 知识社区边界 + ACL | 是 |
-| **Case** | 同一问题线程 | 是 |
-| **Record** | 一条可验证经验 | 是 |
-| **Relation** | 演化边（derived_from, supersedes, …） | 是 |
-| **Organization** | 多租户商业边界 | 是（单节点可用 `org_default`） |
-| **Principal** | 人 / OIDC / API key | 是 |
+| **Library** | Knowledge community boundary + ACL | Yes |
+| **Case** | A single problem thread | Yes |
+| **Record** | One verifiable piece of experience | Yes |
+| **Relation** | Evolution edge (derived_from, supersedes, …) | Yes |
+| **Organization** | Multi-tenant business boundary | Yes (single node can use `org_default`) |
+| **Principal** | Human / OIDC / API key | Yes |
 
-## Agent 契约（对外承诺）
+## Agent Contract (external commitments)
 
-### 必读能力
+### Required capabilities
 
-| 能力 | 何时 |
+| Capability | When |
 |------|------|
-| 上下文查询 | 非 trivial 任务开始前 |
-| 写回 | 有可复用、已验证结论后 |
-| 写前校验 | policy 推荐 dry-run |
-| 诊断 | 连通性 / 权限 / 版本问题 |
+| Context query | Before any non-trivial task begins |
+| Write back | After a reusable, verified conclusion exists |
+| Pre-write validation | Policy recommends dry-run |
+| Diagnostics | Connectivity / permission / version issues |
 
-传输：**Remote MCP** + HTTP manifest/policy（[ADR-003](../02-architecture/decisions/003-mcp-only-agent-surface.md)）。
+Transport: **Remote MCP** + HTTP manifest/policy ([ADR-003](../02-architecture/decisions/003-mcp-only-agent-surface.md)).
 
-### 维护者 Agent 额外能力
+### Additional maintainer-agent capabilities
 
-review、mark invalid、draft 治理（maintainer 权限）；动作可审计，**人 — 维护者可覆盖**。
+Review, mark invalid, draft governance (maintainer permission); actions are auditable, and **human maintainers can override**.
 
-## 质量模型（已定稿，[ADR-002](../02-architecture/decisions/002-active-default-writes.md) + write buffer 扩展）
+## Quality Model (finalized, [ADR-002](../02-architecture/decisions/002-active-default-writes.md) + write buffer extension)
 
 ```text
-ma3_report ──► buffered（new/supplement，库 write_buffer_hours>0 时；期满或作者确认 → active）
-            └──► active（verify/refute 直达；或库 buffer=0）
-            └──► draft（仅显式 visibility=draft）
-            └──► invalid（维护者 Agent 或 人 — 维护者）
+ma3_report ──► buffered (new/supplement, when library write_buffer_hours>0; on expiry or author confirmation → active)
+            └──► active (verify/refute go direct; or library buffer=0)
+            └──► draft (only with explicit visibility=draft)
+            └──► invalid (maintainer agent or human maintainer)
 ```
 
-**缓解 active 默认风险**：write buffer（[write-buffer.md](../03-backend/write-buffer.md)）+ 维护者 Agent 日常扫描 + **人与团队维护者** 纠偏与清除不合规内容（[ADR-008](../02-architecture/decisions/008-maintainer-human-or-agent.md)）。
+**Mitigating the active-default risk**: write buffer ([write-buffer.md](../03-backend/write-buffer.md)) + routine maintainer-agent scans + **human and team maintainers** correcting and removing non-compliant content ([ADR-008](../02-architecture/decisions/008-maintainer-human-or-agent.md)).
 
-## 我们不是什么（摘自 Pitch）
+## What We Are Not (from the Pitch)
 
-| 是 | 不是 |
+| Is | Is not |
 |----|------|
-| 跨 Agent 可验证经验 | 单 session 全量录像 |
-| 知识社区 | 仅内网封闭 wiki |
-| 可解释案例 | 黑盒 RAG |
-| Agent 查写 + 人与 Agent 共同治理 | 自动改生产的执行器 |
+| Cross-agent verifiable experience | Full recording of a single session |
+| A knowledge community | A closed intranet-only wiki |
+| Explainable cases | Black-box RAG |
+| Agents read/write + humans and agents co-govern | An executor that automatically changes production |
 
-## 非目标（v1 core 之外）
+## Non-Goals (outside v1 core)
 
-- 完整 SaaS 计费 / Stripe UI（v1.1+）
-- 企业 SAML（v1.1+）
-- 跨 org 联邦搜索
-- Agent 面 legacy REST / CLI / install.sh
-- Hook 默认上送服务端
+- Full SaaS billing / Stripe UI (v1.1+)
+- Enterprise SAML (v1.1+)
+- Cross-org federated search
+- Legacy REST / CLI / install.sh on the agent surface
+- Hooks uploading to the server by default

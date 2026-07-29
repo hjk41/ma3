@@ -1,14 +1,16 @@
 # v1 Acceptance — Library Write Buffer (design/16)
 
+> Chinese version: [v1-library-write-buffer.zh.md](v1-library-write-buffer.zh.md)
+
 - **Tester**: fable (QA acceptance)
 - **Date**: 2026-07-04
 - **Target**: local pytest + code inspection
-- **Scope**: ratified [../../03-backend/write-buffer.md](../../03-backend/write-buffer.md)（原 design/16 fable 已归档移除）
+- **Scope**: ratified [../../03-backend/write-buffer.md](../../03-backend/write-buffer.md) (the original design/16 fable has been archived and removed)
 - **Method**: integration suite `tests/integration/test_write_buffer.py`, existing suites with `write_buffer_hours=0` on test default library, structural grep for MCP/portal routes
 
 ## Verdict
 
-**PASS-WITH-NITS (fable QA sign-off).** Write buffer v1 conforms to all seven ratified decisions in design/16: schema (`write_buffer_hours` DEFAULT 24, `records.publish_at`), `buffer_service` status resolution, MCP `ma3_publish_record` / `ma3_patch_record` with timer reset, author-only visibility across `ma3_context` / portal deep links, background publish loop (startup + 60s) plus lazy publish on read/write paths, and v1 portal UI (待发布 badge, record actions, library settings 0–168h). Implementer + fable evidence: 8/8 buffer tests, **210** total passed locally.
+**PASS-WITH-NITS (fable QA sign-off).** Write buffer v1 conforms to all seven ratified decisions in design/16: schema (`write_buffer_hours` DEFAULT 24, `records.publish_at`), `buffer_service` status resolution, MCP `ma3_publish_record` / `ma3_patch_record` with timer reset, author-only visibility across `ma3_context` / portal deep links, background publish loop (startup + 60s) plus lazy publish on read/write paths, and v1 portal UI ("pending publish" badge, record actions, library settings 0–168h). Implementer + fable evidence: 8/8 buffer tests, **210** total passed locally.
 
 **Conditions before release:** seed ratified decision-7 user-guide record into `lib_default` (content op, not code). **Fixed in implementation pass:** patch when library `write_buffer_hours=0` now auto-publishes instead of leaving a stuck `buffered` record.
 
@@ -27,7 +29,7 @@ Remaining nits (stats total card includes buffered count, no portal DOM tests, e
 | B7 | `verify` / `visibility=draft` paths exempt from buffer | **PASS** | `resolve_report_status`; `test_verify_report_skips_buffer` |
 | B8 | Maintainer/admin bypass → immediate `active` | **PASS** | `resolve_report_status(is_maintainer=True)`; `test_smoke.test_ma3_report_active_default` (ma3dev admin) |
 | B9 | `publish_due_buffered_records()` on startup + background loop (60s) | **PASS** | `main.py` `_buffer_publish_loop`; `test_publish_due_buffered_records` |
-| B10 | Portal: `/ui/me/` 待发布 count; writes status; record publish/edit/delete; library settings | **PASS** (code) | `routes_portal.py`; no dedicated portal DOM tests for buffer UI |
+| B10 | Portal: `/ui/me/` pending-publish count; writes status; record publish/edit/delete; library settings | **PASS** (code) | `routes_portal.py`; no dedicated portal DOM tests for buffer UI |
 
 ## Schema / MCP
 

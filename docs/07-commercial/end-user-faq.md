@@ -1,41 +1,43 @@
-# 终端用户 FAQ
+# End-User FAQ
 
-> **状态**：待补充 — 以下为已定答案草稿
+> Chinese version: [end-user-faq.zh.md](end-user-faq.zh.md)
 
-## 账号与显示名
+> **Status**: To be completed — the following is a draft of settled answers
 
-**Q：显示名可以改吗？**  
-A：不可以。注册后在 `/ui/me/setup/` **一次性**设定，之后在设置页只读展示。
+## Account and display name
 
-**Q：Principal ID 是什么？**  
-A：你在 ma3 内部的永久标识（`user:…`），在 **设置页**只读查看，一般不需要复制。
+**Q: Can I change my display name?**
+A: No. It is set **once** at `/ui/me/setup/` after registration, and is shown read-only on the settings page afterwards.
 
-## API Key
+**Q: What is a Principal ID?**
+A: Your permanent identifier inside ma3 (`user:…`). It is viewable read-only on the **settings page**; you normally do not need to copy it.
 
-**Q：如何给 Agent 配置 key？**  
-A：登录 → 顶栏 **API Keys** → 创建 → 复制 → 填入 MCP 配置的 `X-API-Key`。详见 [getting-started.md](../05-agent/getting-started.md)。
+## API keys
 
-**Q：key 丢了怎么办？**  
-A：无法找回明文。请 **删除** 旧 key（若仍可用）并 **创建新 key**，更新 Agent 配置。
+**Q: How do I configure a key for my agent?**
+A: Log in → top bar **API Keys** → create → copy → put it in the `X-API-Key` field of your MCP configuration. See [getting-started.md](../05-agent/getting-started.md).
 
-**Q：为什么 Community Library 不能改成只读？**  
-A：免费套餐要求对公共库保持 **读写**，以鼓励写回贡献。付费套餐可创建只读 key。
+**Q: What if I lose a key?**
+A: The plaintext cannot be recovered. **Delete** the old key (if it is still usable) and **create a new key**, then update your agent configuration.
 
-## 写入与「待发布」
+**Q: Why can't the Community Library be set to read-only?**
+A: The free plan requires **read-write** access to the public library to encourage write-back contributions. Paid plans can create read-only keys.
 
-**Q：什么是待发布？**  
-A：写入 Community 等库时，可能有 **24 小时缓冲期**，期间仅你自己可见；可在「记录」页提前 **发布**。Personal 库可将 buffer 设为 0。
+## Writes and "pending publish"
 
-**Q：写错到社区库怎么办？**  
-A：缓冲期内在 record 详情 **修改** 或 **删除**，或等待自动发布前处理。
+**Q: What is pending publish?**
+A: Writes to libraries such as Community may have a **24-hour buffer period** during which only you can see them; you can **publish** early from the "Records" page. Personal libraries can set the buffer to 0.
 
-## 库与权限
+**Q: What if I wrote something wrong to the community library?**
+A: During the buffer period, **edit** or **delete** it from the record detail page, or handle it before it is auto-published.
 
-**Q：为什么看不到库里的 record 列表？**  
-A：普通用户仅看 **库统计（Stats）**；完整列表仅库管理员 / 产品管理员。你的写入在 **记录** 页查看。
+## Libraries and permissions
 
-## 待补充
+**Q: Why can't I see the record list inside a library?**
+A: Regular users only see **library statistics (Stats)**; the full list is for library administrators / product administrators only. Your own writes are visible on the **Records** page.
 
-- [ ] 配额用尽时的用户可见说明
-- [ ] 投票如何工作
-- [ ] 联系支持方式
+## To be added
+
+- [ ] User-visible explanation when quotas are exhausted
+- [ ] How voting works
+- [ ] How to contact support

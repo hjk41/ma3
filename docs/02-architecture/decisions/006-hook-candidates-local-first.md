@@ -1,79 +1,81 @@
-# ADR-006 — Hook 候选默认本地，不上送 ma3 直至显式 promote
+# ADR-006 — Hook candidates default to local storage, not uploaded to ma3 until explicitly promoted
 
-## 状态
+> Chinese version: [006-hook-candidates-local-first.zh.md](006-hook-candidates-local-first.zh.md)
 
-Accepted（2026-07-01）
+## Status
 
-## 背景
+Accepted (2026-07-01)
 
-Hook 在 agent 生命周期中自动采集 session、prompt、tool use 等上下文（见旧 repo `docs/agentmemory-mechanism-lessons.md`）。若与 `ma3_report` 默认 active 混为同一路径，verified knowledge 会被 raw trace 污染。
+## Context
 
-产品负责人确认：hook 候选 **不得** 自动 active；并进一步明确 **默认存储在本地**，而非 ma3 服务端。
+Hooks automatically capture session, prompt, tool-use, and other context throughout the agent lifecycle (see the old repo's `docs/agentmemory-mechanism-lessons.md`). If this were treated as the same path as `ma3_report`'s active-by-default behavior, verified knowledge would get polluted by raw traces.
 
-## 决策
+The product owner confirmed: hook candidates **must not** be auto-activated; and further clarified that they should be **stored locally by default**, rather than on the ma3 server.
 
-### 1. 存储位置
+## Decision
 
-| 层级 | 默认位置 | 内容 |
+### 1. Storage location
+
+| Layer | Default location | Content |
 |------|----------|------|
-| **Hook 候选** | **本地**（agent 机器） | session 快照、截断后的 tool trace、draft report 模板、fingerprint 去重状态 |
-| **Verified record** | **ma3 服务端** | 经 `ma3_report` 或人审 promote 后的 case/record |
+| **Hook candidates** | **Local** (agent machine) | Session snapshots, truncated tool traces, draft report templates, fingerprint dedup state |
+| **Verified records** | **ma3 server** | Cases/records promoted via `ma3_report` or human review |
 
-Hook **默认不向 ma3 写入**任何 searchable 数据。
+Hooks **do not write** any searchable data to ma3 by default.
 
-### 2. 上送 ma3 的唯一路径
+### 2. The only path to ma3
 
-本地 candidate → 显式动作 → 服务端：
+Local candidate → explicit action → server:
 
-1. Agent 调用 **`ma3_report`**（默认 `active`，见 ADR-002）
-2. **维护者**（人/Agent）在 Observatory / review 流程 **promote** 本地或服务端 draft
-3. 可选：payload 显式 `visibility=draft` 上送 ma3 草稿队列（**非** hook 自动触发）
+1. The agent calls **`ma3_report`** (defaults to `active`, see ADR-002)
+2. A **maintainer** (human/agent) **promotes** a local or server-side draft via Observatory / the review process
+3. Optionally: the payload explicitly sets `visibility=draft` to submit to ma3's draft queue (**not** hook-auto-triggered)
 
-无上述步骤 → **不进 ma3 索引**。
+Without one of the above steps → **does not enter the ma3 index**.
 
-### 3. Hook 实现边界（v1 可不 ship，边界先定）
+### 3. Hook implementation boundary (may not ship in v1, but the boundary is set now)
 
-- Hook 脚本挂在 **Cursor/Codex 等 agent runtime** 的 hook 目录，**不**依赖 ma3 CLI / `install.sh`（ADR-003）
-- 本地存储：轻量 JSON 或 SQLite，带 **TTL / session 级清理**
-- Hook 侧：**截断**（如 tool output 8k）、**脱敏**、**去重**、**timeout + try/catch**，失败不阻塞 agent
-- **禁止**：每个 `post-tool-use` 自动 POST 到 ma3；禁止 hook 静默创建 `active` record
+- Hook scripts attach to the hook directory of the **agent runtime** (Cursor/Codex, etc.), and **do not** depend on the ma3 CLI / `install.sh` (ADR-003)
+- Local storage: lightweight JSON or SQLite, with **TTL / session-level cleanup**
+- Hook-side requirements: **truncation** (e.g., tool output capped at 8k), **redaction**, **deduplication**, **timeout + try/catch**; failures must not block the agent
+- **Forbidden**: auto-POSTing to ma3 on every `post-tool-use`; hooks silently creating `active` records
 
-### 4. 与 ADR-002 / ADR-003 的关系
+### 4. Relationship to ADR-002 / ADR-003
 
 ```text
-Hook（本地 draft candidate）
+Hook (local draft candidate)
         │
-        │  agent 整理 + ma3_validate + ma3_report
+        │  agent curates + ma3_validate + ma3_report
         ▼
-ma3 服务端（active 默认）
+ma3 server (active by default)
 
-Hook ──✗──► ma3 active   （禁止）
-Hook ──✗──► ma3 默认上送  （禁止）
+Hook ──✗──► ma3 active   (forbidden)
+Hook ──✗──► ma3 default upload  (forbidden)
 ```
 
-## 后果
+## Consequences
 
-### 正面
+### Positive
 
-- 敏感 raw trace 默认不出本机
-- 高频 hook 不压 ma3 网络与索引
-- 与 P1（verified over raw）、Q2=A 一致
-- 删除 CLI 后仍可在 agent IDE 侧集成 hook
+- Sensitive raw traces default to staying on the local machine
+- High-frequency hooks don't hammer ma3's network or index
+- Consistent with P1 (verified over raw), Q2=A
+- Hooks can still be integrated on the agent IDE side after removing the CLI
 
-### 负面
+### Negative
 
-- 多机协作时本地 candidate 不共享（需靠 `ma3_report` 写回后，**其它 Agent** 在 library 内可见）
-- 若要做「跨 session 本地检索」，需自管本地索引（非 ma3 v1 core）
+- Local candidates are not shared across machines when collaborating (requires writing back via `ma3_report` before **other agents** can see it within the library)
+- Doing "cross-session local retrieval" would require a self-managed local index (not part of ma3 v1 core)
 
-### v1 范围
+### v1 scope
 
-- **ADR 约束立即生效**（设计边界）
-- **Hook 实现为可选模块**，不阻塞 v1 core（MCP + Observatory + SaaS auth）
-- 若实现，落点：`code/client/hooks/`（示例脚本 + 本地 store 规范），**非** server 必需组件
+- **The ADR constraint takes effect immediately** (design boundary)
+- **Hook implementation is an optional module** and does not block v1 core (MCP + Observatory + SaaS auth)
+- If implemented, it lands at `code/client/hooks/` (example scripts + local store spec), **not** a required server component
 
-## 关联
+## Related
 
-- ADR-002（ma3_report 默认 active）
-- ADR-003（MCP + policy，无 CLI）
-- Q2=A（verified over raw）
-- 旧 repo `docs/agentmemory-mechanism-lessons.md` §1
+- ADR-002 (`ma3_report` defaults to active)
+- ADR-003 (MCP + policy, no CLI)
+- Q2=A (verified over raw)
+- Old repo `docs/agentmemory-mechanism-lessons.md` §1

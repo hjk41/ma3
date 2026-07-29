@@ -1,183 +1,185 @@
-# 15 — 用户门户（User Portal）
+# 15 — User Portal
 
-> **状态**：定稿（2026-07-04，产品决策 ratified）  
-> **IA / 布局真源**：[22-user-portal-ui-layout.md](information-architecture.md)（顶栏、列表壳、stat 链接）  
-> **视觉真源**：[15-user-portal-visual.md](visual-design-system.md)  
-> **技术约束**：SSR HTML（`ui_theme.py`），无 SPA
+> Chinese version: [portal-permissions.zh.md](portal-permissions.zh.md)
 
----
-
-## 0. 一句话结论
-
-登录后默认落地页从 `/ui/observatory/` 改为 **`/ui/me/`**（个人主页）。Observatory 保留原路由但降级为**产品管理员专属**（`is_admin` 门控，非 admin → **403**）。普通用户看到的是「我的库权限、我写过的记录、我投过的票、API keys」——**以 principal 为中心**的视图。
+> **Status**: Finalized (2026-07-04, product decision ratified)  
+> **IA / layout source of truth**: [22-user-portal-ui-layout.md](information-architecture.md) (top bar, list shell, stat links)  
+> **Visual source of truth**: [15-user-portal-visual.md](visual-design-system.md)  
+> **Technical constraint**: SSR HTML (`ui_theme.py`), no SPA
 
 ---
 
-## 1. 已 ratified 产品决策
+## 0. One-Sentence Conclusion
 
-| # | 议题 | **决定** |
+The default landing page after login changes from `/ui/observatory/` to **`/ui/me/`** (personal home). Observatory keeps its original route but is downgraded to **product-administrator-only** (`is_admin` gated; non-admin → **403**). Regular users see "my library entitlements, records I've written, votes I've cast, API keys" — a **principal-centric** view.
+
+---
+
+## 1. Ratified Product Decisions
+
+| # | Topic | **Decision** |
 |---|------|----------|
-| 1 | 非 admin 访问 Observatory | **403 Forbidden**（非 302） |
-| 2 | Authing 已启用且 admin 白名单为空 | **拒绝启动**（refuse boot）；LAN `authing_enabled=False` 不受限 |
-| 3 | 库内容可见性 | 有读 entitlement → **仅 Stats**；不可枚举/改/导出；枚举/修改/导出 → 库管理员或产品管理员 |
-| 4 | 未登录访客 | **仅 public 库 Stats**（`lib_default`）；无 record 详情、无投票 |
-| 5 | `principal_id` | **v1 在 `/ui/me/settings/` 只读展示**（无复制）；不在概览页展示 |
-| 6 | 显示名 | **`/ui/me/setup/` 一次性设定**；settings 只读（[17](display-name-registration.md)） |
-| 7 | 顶栏 IA | 我的主页 · **库 · 记录 · 投票 · API Keys**（同级） |
-| 8 | 账户 subnav | 仅 `/ui/me/*`：**概览 · 设置** |
-| 9 | 列表页文案 | h1 / stat：**记录、投票**（非「我的贡献/我的投票」） |
-| 10 | Stat cards | 5 张整卡可点：记录、待发布、可访问库、投票、API Keys |
-| 11 | 个人库名 | `{display_name} 的个人库` |
+| 1 | Non-admin accessing Observatory | **403 Forbidden** (not 302) |
+| 2 | Authing enabled with an empty admin allowlist | **Refuse to boot**; LAN `authing_enabled=False` is not restricted |
+| 3 | Library content visibility | Read entitlement → **Stats only**; cannot enumerate/modify/export; enumerate/modify/export → library admin or product admin |
+| 4 | Anonymous visitors | **Stats for public libraries only** (`lib_default`); no record detail, no voting |
+| 5 | `principal_id` | **v1: shown read-only at `/ui/me/settings/`** (no copy); not shown on the overview page |
+| 6 | Display name | **Set once at `/ui/me/setup/`**; read-only in settings ([17](display-name-registration.md)) |
+| 7 | Top bar IA | Home · **Libraries · Records · Votes · API Keys** (peer level) |
+| 8 | Account subnav | `/ui/me/*` only: **Overview · Settings** |
+| 9 | List page copy | h1 / stats: **Records, Votes** (not "My contributions / My votes") |
+| 10 | Stat cards | 5 fully-clickable cards: Records, Pending, Accessible libraries, Votes, API Keys |
+| 11 | Personal library name | `{display_name}'s personal library` |
 
 ---
 
-## 2. 角色
+## 2. Roles
 
-| 角色 | 身份判定 | 核心诉求 |
+| Role | Identity Determination | Core Needs |
 |------|----------|----------|
-| **普通用户（贡献者）** | Authing session + principal | 库权限、写入、投票、自助 key |
-| **库管理员** | `library_grants` maintainer/admin，或 personal owner，或 org admin | 管库授权、审 draft（v1.1 UI） |
-| **组织管理员** | `org_members.role == admin` | 管成员、建 org library（v1.1） |
-| **产品管理员** | `SessionUser.is_admin` | 全局健康度（Observatory） |
+| **Regular user (contributor)** | Authing session + principal | Library access, writes, voting, self-service keys |
+| **Library admin** | `library_grants` maintainer/admin, or personal owner, or org admin | Manage library grants, review drafts (v1.1 UI) |
+| **Org admin** | `org_members.role == admin` | Manage members, create org libraries (v1.1) |
+| **Product admin** | `SessionUser.is_admin` | Global health overview (Observatory) |
 
-角色**叠加**：产品管理员也是普通用户；Observatory 只是多出来的导航项。
+Roles **stack**: a product admin is also a regular user; Observatory is just an extra nav item.
 
 ---
 
-## 3. 路由树
+## 3. Route Tree
 
 ```text
-/ui/me/                      个人主页 ★ 默认落地
-/ui/me/settings/             账户（显示名只读、Principal ID）
-/ui/me/setup/                首次显示名（一次性，design/17）
+/ui/me/                      Personal home ★ default landing
+/ui/me/settings/             Account (read-only display name, Principal ID)
+/ui/me/setup/                First-time display name (one-time, design/17)
 
-/ui/me/writes/               记录列表（顶栏「记录」）
-/ui/me/votes/                投票列表（顶栏「投票」）
-/ui/records/{record_id}/     单条详情 + 投票 + buffer 操作区
+/ui/me/writes/               Records list (top bar "Records")
+/ui/me/votes/                Votes list (top bar "Votes")
+/ui/records/{record_id}/     Single record detail + voting + buffer action area
 
-/ui/libraries/               我有读 entitlement 的库
-/ui/libraries/{lib_id}/      库详情 — Stats only（非 admin）
-/ui/libraries/{id}/settings/ 库 buffer 设置（owner）
+/ui/libraries/               Libraries I have read entitlement for
+/ui/libraries/{lib_id}/      Library detail — Stats only (non-admin)
+/ui/libraries/{id}/settings/ Library buffer settings (owner)
 
-/ui/keys/                    API key 管理（design/14）
-/ui/keys/{key_id}            key 详情
+/ui/keys/                    API key management (design/14)
+/ui/keys/{key_id}            Key detail
 
-/ui/observatory/             产品管理员专属
+/ui/observatory/             Product-admin only
 
 [v1.1] /ui/orgs/*, /ui/libraries/{id}/records/, /ui/libraries/{id}/grants
 ```
 
-- record 详情 canonical URL：`/ui/records/{id}`；旧 Observatory 路径 301
-- logo → `/ui/me/`；Authing 回调无 `next` → `/ui/me/`
+- Record detail canonical URL: `/ui/records/{id}`; the old Observatory path 301-redirects
+- Logo → `/ui/me/`; Authing callback without `next` → `/ui/me/`
 
 ---
 
-## 4. 库内容三级能力（Stats / Enumerate / Mutate）
+## 4. Three Tiers of Library Content Capability (Stats / Enumerate / Mutate)
 
-| 能力 | 普通用户（有读 entitlement） | 库管理员 | 产品管理员 |
+| Capability | Regular user (read entitlement) | Library admin | Product admin |
 |------|------------------------------|----------|------------|
-| **Stats** — 聚合数字 | ✅ | ✅ 所管库 | ✅ 全局（Observatory） |
-| **Enumerate** — record/case 列表、browse、search UI | ❌ | ✅ 本库 | ✅ 全局 |
-| **Mutate / Export** | ❌ | ✅ 本库 | ✅ 全局；Export v1.1+ |
+| **Stats** — aggregate numbers | ✅ | ✅ (their libraries) | ✅ globally (Observatory) |
+| **Enumerate** — record/case listing, browse, search UI | ❌ | ✅ within their library | ✅ globally |
+| **Mutate / Export** | ❌ | ✅ within their library | ✅ globally; Export v1.1+ |
 
-普通用户**不能**在 UI 上浏览库内 record 列表；只能看 Stats，并通过「记录 / 投票」列表或已知 record ID 深链打开单条详情。
+Regular users **cannot** browse the record list within a library in the UI; they can only see Stats, and open a single record detail via the "Records / Votes" lists or a known record ID deep link.
 
-**v1 读 entitlement 启发式**：`个人库 ∪ lib_default ∪ active key grants 并集`；v1.1 换 entitlement resolver，**API 签名不变**。
+**v1 read entitlement heuristic**: `union of personal library ∪ lib_default ∪ active key grants`; v1.1 will replace this with an entitlement resolver, **the API signature stays the same**.
 
 ---
 
-## 5. 页面概要
+## 5. Page Overview
 
-详细线框与 query 契约见 [22-user-portal-ui-layout.md](information-architecture.md)。
+For detailed wireframes and query contracts, see [22-user-portal-ui-layout.md](information-architecture.md).
 
-| 页面 | 要点 |
+| Page | Key points |
 |------|------|
-| `/ui/me/` | avatar + 显示名；5 可点 stat；我的库表；最近贡献 |
-| `/ui/me/settings/` | 只读显示名 + Principal ID（无复制） |
-| `/ui/me/writes/` | sort/filter/per_page/batch（buffered）；h1「记录」 |
-| `/ui/me/votes/` | sort/filter/per_page；改票仅在 record 详情 |
-| `/ui/libraries/{id}/` | Stats 卡 + 我的访问；**无** record 表格 |
-| `/ui/records/{id}/` | 登录 + 读 entitlement；buffered 非 author → 404 |
-| `/ui/observatory/` | 非 admin → 403 HTML +「返回我的主页」 |
+| `/ui/me/` | avatar + display name; 5 clickable stats; my libraries table; recent contributions |
+| `/ui/me/settings/` | read-only display name + Principal ID (no copy) |
+| `/ui/me/writes/` | sort/filter/per_page/batch (buffered); h1 "Records" |
+| `/ui/me/votes/` | sort/filter/per_page; changing a vote only from record detail |
+| `/ui/libraries/{id}/` | Stats cards + my access; **no** record table |
+| `/ui/records/{id}/` | requires login + read entitlement; buffered, non-author → 404 |
+| `/ui/observatory/` | non-admin → 403 HTML + "Back to my home" |
 
-**匿名**访问 `lib_default`：Stats 卡 + CTA「登录以贡献与投票」；无 record 详情。
+**Anonymous** access to `lib_default`: Stats cards + CTA "Sign in to contribute and vote"; no record detail.
 
 ---
 
-## 6. 角色可见性矩阵
+## 6. Role Visibility Matrix
 
-| 页面 / 入口 | 普通用户 | 库管理员 | 产品管理员 |
+| Page / Entry | Regular user | Library admin | Product admin |
 |---|---|---|---|
 | `/ui/me/*` | ✅ | ✅ | ✅ |
 | `/ui/keys/*` | ✅ | ✅ | ✅ |
-| `/ui/records/{id}` | ✅ 单条 | ✅ | ✅ |
+| `/ui/records/{id}` | ✅ single record | ✅ | ✅ |
 | `/ui/libraries/{id}/` Stats | ✅ | ✅ | ✅ |
-| `/ui/libraries/{id}/records/` 枚举 | ❌ | ✅ | ✅* |
-| `/ui/libraries/lib_default/` 匿名 Stats | ✅ | — | — |
+| `/ui/libraries/{id}/records/` enumerate | ❌ | ✅ | ✅* |
+| `/ui/libraries/lib_default/` anonymous Stats | ✅ | — | — |
 | `/ui/observatory/` | ❌ **403** | ❌ **403** | ✅ |
 
-\* 产品管理员（`is_admin`）**不**自动获得 org/库业务管理权；全局观测与业务管理分离。
+\* Product admin (`is_admin`) does **not** automatically get org/library business management permissions; global observability and business management are separate.
 
-**越权直查 URL** → 404（不泄露资源存在性）。
+**Direct URL access without entitlement** → 404 (does not leak resource existence).
 
 ---
 
 ## 7. v1 vs v1.1
 
-### v1（已存在表即可）
+### v1 (existing tables are sufficient)
 
 - `/ui/me/` + writes + votes + settings
-- `/ui/libraries/` + Stats-only 详情 + 匿名 public Stats
-- 启动拒绝空 admin 白名单
-- Observatory 403 + record URL 迁移
-- Write buffer UI（design/16）
-- 显示名 setup（design/17）
+- `/ui/libraries/` + Stats-only detail + anonymous public Stats
+- Refuse to boot with an empty admin allowlist
+- Observatory 403 + record URL migration
+- Write buffer UI (design/16)
+- Display name setup (design/17)
 
-**v1 不做**：record/case 枚举 UI（非 admin）；export；orgs；grants 管理页；community browse/search UI。
+**Not in v1**: record/case enumeration UI (non-admin); export; orgs; grants management page; community browse/search UI.
 
 ### v1.1
 
-- `/ui/orgs/*`、`/ui/libraries/{id}/grants`、`/ui/libraries/{id}/records/`
-- entitlement resolver 替换启发式
-- URL 美化 `/ui/records/`、`/ui/votes/`
-- settings 页 Principal ID 复制（可选）
+- `/ui/orgs/*`, `/ui/libraries/{id}/grants`, `/ui/libraries/{id}/records/`
+- Entitlement resolver replaces the heuristic
+- URL cleanup: `/ui/records/`, `/ui/votes/`
+- Settings page Principal ID copy (optional)
 
 ---
 
-## 8. 数据依赖
+## 8. Data Dependencies
 
-### 已存在
+### Already exists
 
-`list_write_audit_for_principal`、`get_feedback_summaries`、`list_api_keys_for_principal`、`get_record`、`SessionUser.is_admin`。
+`list_write_audit_for_principal`, `get_feedback_summaries`, `list_api_keys_for_principal`, `get_record`, `SessionUser.is_admin`.
 
-### v1 新增 helper
+### New v1 helpers
 
-| Helper | 说明 |
+| Helper | Description |
 |--------|------|
-| `count_write_audit_for_principal` | 统计卡 + 分页 |
-| `list_feedback_for_principal` | 投票列表 |
-| `count_feedback_for_principal` | 统计卡 |
-| `list_entitled_libraries_for_principal` | v1 启发式并集 |
-| `get_library_stats(library_id)` | Stats-only 页 |
-| `assert_admin_configured()` | Authing on 且 admin 白名单非空 |
+| `count_write_audit_for_principal` | Stat cards + pagination |
+| `list_feedback_for_principal` | Votes list |
+| `count_feedback_for_principal` | Stat cards |
+| `list_entitled_libraries_for_principal` | v1 heuristic union |
+| `get_library_stats(library_id)` | Stats-only page |
+| `assert_admin_configured()` | Authing on and admin allowlist non-empty |
 
-### 路由
+### Routes
 
-- `routes_portal.py`：`/ui/me/*`、`/ui/libraries/*`、`/ui/records/*`
-- 复用 `routes_keys.py` 的 session 门控与 `_assert_same_origin`
-
----
-
-## 9. 实现五条规则
-
-1. 登录后一切入口收敛到 `/ui/me/`。
-2. `render_page` 导航参数化是第一个 PR。
-3. record 迁到 `/ui/records/{id}`，旧路径 301，feedback POST 一并迁移。
-4. 管理能力与 `is_library_admin` / org role **单点判定**；UI 与路由共用。
-5. v1 不渲染 org UI；`list_entitled_libraries_for_principal` 锁定签名，v1.1 只换实现。
+- `routes_portal.py`: `/ui/me/*`, `/ui/libraries/*`, `/ui/records/*`
+- Reuses `routes_keys.py`'s session gating and `_assert_same_origin`
 
 ---
 
-## 10. 验收
+## 9. Five Implementation Rules
 
-验收见 [acceptance-criteria.md](../08-quality/acceptance-criteria.md)（`v1-user-portal` P1–P19 待迁入）。
+1. After login, all entry points converge to `/ui/me/`.
+2. Parameterizing `render_page`'s navigation is the first PR.
+3. Records move to `/ui/records/{id}`, old paths 301, feedback POST migrates along with it.
+4. Admin capability and `is_library_admin` / org role are determined by a **single source of truth**; UI and routes share it.
+5. v1 does not render org UI; `list_entitled_libraries_for_principal`'s signature is locked, v1.1 only swaps the implementation.
+
+---
+
+## 10. Acceptance
+
+See [acceptance-criteria.md](../08-quality/acceptance-criteria.md) (`v1-user-portal` P1–P19 to be migrated in).

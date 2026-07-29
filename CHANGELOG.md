@@ -16,9 +16,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
-- Clarified MCP (knowledge) vs REST (operations) for all audiences
-- Scrubbed internal LAN hostnames/paths from public docs where practical
-- Compressed `docs/09-engineering/design-archive/` to decision summaries (D5=C)
+- **Docs language policy:** English is the default for `README.md` and `docs/**/*.md`; Chinese retained as sibling `*.zh.md` files (former `README.en.md` removed)
 
 ### Support posture
 

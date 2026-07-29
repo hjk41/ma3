@@ -1,27 +1,29 @@
-# 发布检查清单
+# Release Checklist
 
-> **状态**：待补充
+> Chinese version: [release-checklist.zh.md](release-checklist.zh.md)
 
-## 发版前（草案）
+> **Status**: to be completed
 
-- [ ] 全量 `pytest` 绿
-- [ ] `ma3_doctor` 无 fail（目标环境）
-- [ ] MCP smoke：`tools/list`、`ma3_whoami`、`ma3_context`、dry-run `ma3_report`
-- [ ] 门户 smoke：login → `/ui/me/` → keys 列表
-- [ ] Authing callback + setup 流程（staging 新账号）
-- [ ] manifest / policy `skill_bundle_version` bump（若 policy 变更）
-- [ ] ADR/文档与行为一致（若 breaking）
-- [ ] acceptance P* 回归（见 [acceptance-criteria.md](acceptance-criteria.md)）
+## Pre-release (draft)
 
-## 部署后
+- [ ] Full `pytest` green
+- [ ] `ma3_doctor` with no failures (target environment)
+- [ ] MCP smoke: `tools/list`, `ma3_whoami`, `ma3_context`, dry-run `ma3_report`
+- [ ] Portal smoke: login → `/ui/me/` → keys list
+- [ ] Authing callback + setup flow (new account on staging)
+- [ ] Manifest / policy `skill_bundle_version` bump (if the policy changed)
+- [ ] ADRs/docs consistent with behavior (if breaking)
+- [ ] Acceptance P* regression (see [acceptance-criteria.md](acceptance-criteria.md))
 
-- [ ] `/healthz` version/commit 正确
-- [ ] admin 可访问 Observatory；非 admin 403
-- [ ] buffer publish job 运行（写 buffered → 等 60s → active）
-- [ ] 监控无异常 error rate
+## Post-deploy
 
-## 待补充
+- [ ] `/healthz` version/commit correct
+- [ ] Admin can access Observatory; non-admin gets 403
+- [ ] Buffer publish job running (write buffered → wait 60s → active)
+- [ ] No abnormal error rate in monitoring
 
-- [ ] 回滚检查项
-- [ ] 数据库 migration 顺序
-- [ ] 客户可见 changelog 链接
+## To be added
+
+- [ ] Rollback checklist items
+- [ ] Database migration ordering
+- [ ] Customer-visible changelog link

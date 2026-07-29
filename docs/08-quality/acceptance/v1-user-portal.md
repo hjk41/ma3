@@ -1,5 +1,9 @@
 # v1 Acceptance — User Portal (design/15)
 
+> Chinese version: [v1-user-portal.zh.md](v1-user-portal.zh.md)
+
+> Note: the zh-CN UI copy referenced below (Libraries = *kù*, Records = *jìlù*, Votes = *tóupiào*, Pending publish = *dài fābù*, Overview = *gàilǎn*, Settings = *shèzhì*) is spelled out in pinyin plus its English gloss rather than reproducing the CJK glyphs.
+
 - **Tester**: fable (QA acceptance)
 - **Date**: 2026-07-04 (P1–P12); design/22 implementation 2026-07-05 (P13–P19)
 - **Target**: local pytest + code inspection; production smoke on the LAN staging host when deployed
@@ -10,7 +14,7 @@
 
 **PASS** for **P1–P19** (design/15 baseline + design/22 unified layout).
 
-Implementation true source: [../../04-frontend/information-architecture.md](../../04-frontend/information-architecture.md)（design/22 历史 fable 已归档移除）。
+Implementation true source: [../../04-frontend/information-architecture.md](../../04-frontend/information-architecture.md) (the historical design/22 fable has been archived and removed).
 
 ## P1–P12 mapping
 
@@ -36,22 +40,22 @@ Implementation true source: [../../04-frontend/information-architecture.md](../.
 | P13 | `/ui/me/` stat cards clickable → writes/buffered/libraries/votes/keys | **PASS** | `render_stat_cards` href tuples; `test_stat_card_links_to_buffered_filter` |
 | P14 | `/ui/me/writes/` column sort (`sort`/`dir`) | **PASS** | `render_sort_link`; `test_writes_page_has_filter_sort_and_footer` |
 | P15 | writes status filter + batch publish/delete (buffered) | **PASS** | `portal_writes_batch`; `test_writes_status_filter_buffered`, `test_writes_batch_publish` |
-| P16 | Personal library name `{display_name} 的个人库` | **PASS** | `ensure_personal_library` sync; `test_ensure_personal_library_syncs_stale_display_name` |
+| P16 | Personal library name `{display_name}'s personal library` | **PASS** | `ensure_personal_library` sync; `test_ensure_personal_library_syncs_stale_display_name` |
 | P17 | writes pagination + `per_page` 10/25/50/100 | **PASS** | `render_list_footer`; writes integration tests |
 | P18 | `/ui/me/votes/` same list UX (sort, vote filter, per_page) | **PASS** | `portal_votes`; `test_votes_page_has_filter_and_footer`, `test_votes_after_feedback` |
-| P19 | Top nav peer: 库/记录/投票/API Keys; subnav 概览+设置 only | **PASS** | `portal_nav_items`; `test_user_portal_nav.py` |
+| P19 | Top nav peer: Libraries/Records/Votes/API Keys; subnav Overview+Settings only | **PASS** | `portal_nav_items`; `test_user_portal_nav.py` |
 
-**Backlog index**: 见 [../../04-frontend/page-specifications.md](../../04-frontend/page-specifications.md)  
-**Unified design**: 见 [../../04-frontend/information-architecture.md](../../04-frontend/information-architecture.md)
+**Backlog index**: see [../../04-frontend/page-specifications.md](../../04-frontend/page-specifications.md)
+**Unified design**: see [../../04-frontend/information-architecture.md](../../04-frontend/information-architecture.md)
 
 ### P13 stat hrefs (when implemented)
 
 | Stat | href |
 |------|------|
-| 记录 | `/ui/me/writes/` |
-| 待发布 | `/ui/me/writes/?status=buffered` |
-| 可访问库 | `/ui/libraries/` |
-| 投票 | `/ui/me/votes/` |
+| Records | `/ui/me/writes/` |
+| Pending publish | `/ui/me/writes/?status=buffered` |
+| Accessible libraries | `/ui/libraries/` |
+| Votes | `/ui/me/votes/` |
 | API Keys | `/ui/keys/` |
 
 ## Fable sign-off (design/22, 2026-07-05)
@@ -60,21 +64,21 @@ Implementation true source: [../../04-frontend/information-architecture.md](../.
 
 | # | Result | Evidence |
 |---|---|---|
-| P13 | **PASS** | `portal_me` stat cards use `render_stat_cards` with hrefs; labels 记录/投票 |
+| P13 | **PASS** | `portal_me` stat cards use `render_stat_cards` with hrefs; labels Records/Votes |
 | P14 | **PASS** | `portal_writes` + `render_sort_link`; integration test |
 | P15 | **PASS** | filter pills + `portal_writes_batch`; batch publish test |
 | P16 | **PASS** | `ensure_personal_library` sync via `set_library_name`; unit test |
 | P17 | **PASS** | `render_list_footer` with per_page 10/25/50/100 |
 | P18 | **PASS** | `portal_votes` mirror UX; votes integration tests |
-| P19 | **PASS** | `portal_nav_items` peer nav; subnav 概览+设置 only |
+| P19 | **PASS** | `portal_nav_items` peer nav; subnav Overview+Settings only |
 
 **Nits (non-blocking):**
 
 1. Batch bar always visible on writes page even with zero rows — acceptable v1; could hide when no buffered owner rows.
-2. Sort on「记录」column is display-only (no DB column) — matches design/19 deferral.
+2. Sort on the Records column is display-only (no DB column) — matches design/19 deferral.
 3. Production smoke requires Authing login; automated HTML checks run via pytest only.
 
-> design/22 两层导航、标准列表壳与 stat 快捷入口均已按 spec 落地；246 pytest 全绿，202 已部署。验收 **PASS-WITH-NITS**，可进入 owner 目视确认。
+> The design/22 two-level navigation, standard list shell, and stat quick entries all landed per spec; all 246 pytest tests green, deployed to 202. Acceptance is **PASS-WITH-NITS**; ready for owner visual confirmation.
 
 ## Visual review nits (from fable, verified)
 

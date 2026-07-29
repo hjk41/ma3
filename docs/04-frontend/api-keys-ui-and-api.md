@@ -1,61 +1,63 @@
-# 14 — API Key 生命周期管理
+# 14 — API Key Lifecycle Management
 
-> **ADR**：[ADR-011](../02-architecture/decisions/011-kb-access-and-org-isolation.md)  
-> **前置**：[13-self-service-onboarding.md](../05-agent/getting-started.md)  
-> **状态**：定稿（2026-07-04）；验收见 [acceptance-criteria.md](../08-quality/acceptance-criteria.md)（`v1-api-key-lifecycle` 待迁入）
+> Chinese version: [api-keys-ui-and-api.zh.md](api-keys-ui-and-api.zh.md)
+
+> **ADR**: [ADR-011](../02-architecture/decisions/011-kb-access-and-org-isolation.md)  
+> **Prerequisite**: [13-self-service-onboarding.md](../05-agent/getting-started.md)  
+> **Status**: Finalized (2026-07-04); acceptance see [acceptance-criteria.md](../08-quality/acceptance-criteria.md) (`v1-api-key-lifecycle` to be migrated in)
 
 ---
 
-## 1. 目标与非目标
+## 1. Goals and Non-Goals
 
-### 目标
+### Goals
 
-| 目标 | v1 决定 |
+| Goal | v1 decision |
 |------|---------|
-| 自助管理 | Authing 登录后在 `/ui/keys/` 管理自己的 key |
-| **删除** 替代撤销 | UI/REST 统一 **删除**；用户视角 key 立即失效且不可恢复 |
-| Grants 可理解 | 创建时 grant picker：personal + Community，各 `reader`/`writer`/`none`；免费档 Community writer 锁定 |
-| 复制便利 | 列表/详情展示完整 key（`key_ciphertext` decrypt 成功时）+ 复制按钮 |
-| 安全边界 | mutating：session 须 same-origin；**用户 `X-API-Key` 可管理本人 keys**（不可删除当前正在使用的 key）；bootstrap key 不能管理 keys |
-| 小 diff | 复用现有表结构 + SSR 路由模式 |
+| Self-service management | Manage your own keys at `/ui/keys/` after signing in with Authing |
+| **Delete** replaces revoke | UI/REST unify on **delete**; from the user's perspective the key stops working immediately and cannot be recovered |
+| Understandable grants | A grant picker at creation time: personal + Community, each `reader`/`writer`/`none`; the free tier locks Community writer |
+| Convenient copying | List/detail show the full key (`key_ciphertext` when decryption succeeds) + a copy button |
+| Security boundary | Mutations: session must be same-origin; **a user's `X-API-Key` can manage that user's own keys** (cannot delete the key currently in use); a bootstrap key cannot manage keys |
+| Small diff | Reuse existing table structure + SSR route pattern |
 
-### 非目标（v1）
+### Non-Goals (v1)
 
-- Org admin key 管理（v1.1+）
-- Key 轮换工作流（v1：建新 key → 更新配置 → 删旧 key）
-- 过期策略 UI（`expires_at` 列在，UI 不暴露）
-- 创建后改 grants（v1：建新 key 再删旧 key）
-- 删除后恢复
+- Org-admin key management (v1.1+)
+- Key rotation workflow (v1: create a new key → update config → delete the old key)
+- Expiration policy UI (`expires_at` column exists but not exposed in the UI)
+- Editing grants after creation (v1: create a new key, then delete the old one)
+- Recovery after deletion
 
 ---
 
-## 2. 操作目录
+## 2. Operation Catalog
 
-| 操作 | v1 | UI | REST |
+| Operation | v1 | UI | REST |
 |------|-----|-----|------|
-| Create | ✅ | `/ui/keys/` 表单 + grant picker | `POST /api/keys` |
-| View/List | ✅ | 表格 | `GET /api/keys` |
-| Copy | ✅ | `ma3CopyFrom` + hidden/offscreen input | 列表响应 `plaintext_key` |
-| **Delete** | ✅ | 行内 `删除` + confirm | `DELETE /api/keys/{key_id}` + `POST /ui/keys/{id}/delete` |
-| Rename | ✅ | 详情页统一表单 | `PATCH /api/keys/{key_id}` |
-| Edit grants | ✅（仅创建时 + 详情页统一保存） | 详情页 grant picker | 详情 `POST /ui/keys/{id}/edit` |
+| Create | ✅ | `/ui/keys/` form + grant picker | `POST /api/keys` |
+| View/List | ✅ | table | `GET /api/keys` |
+| Copy | ✅ | `ma3CopyFrom` + hidden/offscreen input | list response `plaintext_key` |
+| **Delete** | ✅ | inline `Delete` + confirm | `DELETE /api/keys/{key_id}` + `POST /ui/keys/{id}/delete` |
+| Rename | ✅ | unified detail-page form | `PATCH /api/keys/{key_id}` |
+| Edit grants | ✅ (creation time + unified save on detail page) | detail-page grant picker | detail `POST /ui/keys/{id}/edit` |
 | Rotate / Expire | ❌ | — | — |
 
 ---
 
-## 3. 删除 vs 撤销（已定稿）
+## 3. Delete vs Revoke (finalized)
 
-**v1 使用硬删除**：
+**v1 uses hard delete**:
 
-1. `DELETE /api/keys/{key_id}` 删除 `api_keys` 行
-2. 同事务删除 `api_key_grants`
-3. 列表不再显示；无「已撤销」状态 badge
-4. **不** cascade / 改写 `write_audit_log`（`api_key_id` 保留为历史字符串）
-5. **删除** `POST /api/keys/{id}/revoke` 等 revoke 路由（无 410 bridge）
+1. `DELETE /api/keys/{key_id}` deletes the `api_keys` row
+2. Deletes `api_key_grants` in the same transaction
+3. No longer shown in the list; no "revoked" status badge
+4. **Does not** cascade to or rewrite `write_audit_log` (`api_key_id` is kept as a historical string)
+5. **Removes** revoke routes such as `POST /api/keys/{id}/revoke` (no 410 bridge)
 
-`api_keys.revoked_at` 列保留给 legacy/admin 行；自助 UI **不写** 此列。列表 SQL：`AND revoked_at IS NULL`。
+The `api_keys.revoked_at` column is retained for legacy/admin rows; the self-service UI **does not write** to this column. List SQL: `AND revoked_at IS NULL`.
 
-应用日志：
+Application log:
 
 ```text
 api_key_deleted principal_id=user:... key_id=key_... key_prefix=ma3k_...
@@ -63,9 +65,9 @@ api_key_deleted principal_id=user:... key_id=key_... key_prefix=ma3k_...
 
 ---
 
-## 4. API 契约
+## 4. API Contract
 
-所有 `/api/keys` 路由要求：门户鉴权已启用（OIDC 或 `MA3_LOCAL_AUTH`，否则 503）；**session cookie 或用户 `X-API-Key`**；session 写操作须 same-origin；owner-only（他人/不存在 → 404）；**不可删除当前请求正在使用的 API key**；bootstrap key 禁止。
+All `/api/keys` routes require: portal auth is enabled (OIDC or `MA3_LOCAL_AUTH`, otherwise 503); **session cookie or user `X-API-Key`**; session write operations must be same-origin; owner-only (someone else's/nonexistent → 404); **cannot delete the API key currently being used for the request**; bootstrap keys are forbidden.
 
 ### `GET /api/keys`
 
@@ -78,7 +80,7 @@ api_key_deleted principal_id=user:... key_id=key_... key_prefix=ma3k_...
       "label": "my-laptop-agent",
       "plaintext_key": "ma3k_9f8e7d6c5b4a3210fedcba9876543210",
       "grants": [
-        {"library_id": "lib_personal_abc123", "library_name": "Alice 的个人库", "role": "writer"},
+        {"library_id": "lib_personal_abc123", "library_name": "Alice's personal library", "role": "writer"},
         {"library_id": "lib_default", "library_name": "Community Library", "role": "writer"}
       ],
       "created_at": "2026-07-04T09:00:00+00:00",
@@ -89,90 +91,90 @@ api_key_deleted principal_id=user:... key_id=key_... key_prefix=ma3k_...
 }
 ```
 
-- 不含 `key_hash` / `key_ciphertext` / 已删除 key
-- `plaintext_key` 可为 `null`（legacy 无 ciphertext 或 decrypt 失败）
+- Does not include `key_hash` / `key_ciphertext` / deleted keys
+- `plaintext_key` may be `null` (legacy key with no ciphertext, or decryption failed)
 
 ### `POST /api/keys`
 
-Request：`{"label": "...", "grants": [...]}`（grants 可选，缺省 personal+Community writer）
+Request: `{"label": "...", "grants": [...]}` (grants optional, defaults to personal+Community writer)
 
 | Case | Status | Detail |
 |------|--------|--------|
-| Missing/blank label | 200 | 归一化为 `agent-key` |
-| Label over 120 chars（**JSON API**） | **422** | Pydantic `max_length=120` |
-| Label over 120 chars（SSR form） | 200 | truncate |
-| Free tier 去掉 Community writer | 400 | `free tier requires Community Library writer grant` |
+| Missing/blank label | 200 | normalized to `agent-key` |
+| Label over 120 chars (**JSON API**) | **422** | Pydantic `max_length=120` |
+| Label over 120 chars (SSR form) | 200 | truncated |
+| Free tier removes Community writer | 400 | `free tier requires Community Library writer grant` |
 | Quota reached | 400 | `active key limit reached; delete an old key first` |
 
 ### `PATCH /api/keys/{key_id}`
 
-仅改 `label`；blank → `agent-key`；JSON 超 120 → 422。
+Only changes `label`; blank → `agent-key`; JSON over 120 chars → 422.
 
 ### `DELETE /api/keys/{key_id}`
 
-Response：`{"deleted": true, "key_id": "..."}`；非 owner → 404。
+Response: `{"deleted": true, "key_id": "..."}`; non-owner → 404.
 
-### SSR 路由
+### SSR Routes
 
-| 路由 | 方法 | 行为 |
+| Route | Method | Behavior |
 |------|------|------|
-| `/ui/keys/` | GET | 列表 + 创建表单 |
-| `/ui/keys/create` | POST | 创建 → 303 `/ui/keys/` |
-| `/ui/keys/{key_id}` | GET | 详情 |
-| `/ui/keys/{key_id}/edit` | POST | label + grants 统一保存 → 303 详情或列表 |
-| `/ui/keys/{key_id}/delete` | POST | 删除 → **始终** 303 `/ui/keys/` |
+| `/ui/keys/` | GET | list + create form |
+| `/ui/keys/create` | POST | create → 303 `/ui/keys/` |
+| `/ui/keys/{key_id}` | GET | detail |
+| `/ui/keys/{key_id}/edit` | POST | unified save of label + grants → 303 to detail or list |
+| `/ui/keys/{key_id}/delete` | POST | delete → **always** 303 `/ui/keys/` |
 
 ---
 
-## 5. UI 布局
+## 5. UI Layout
 
-### 5.1 列表页 `/ui/keys/`
+### 5.1 List page `/ui/keys/`
 
 ```
-┌─ Key 管理 ──────────────────────────────────────────────────────────┐
+┌─ Key management ──────────────────────────────────────────────────────────┐
 │ Name          Prefix      Grants           Last used   Actions      │
-│ my-laptop     ma3_ab12…   个人库(读写),…   2026-07-03   [复制] [删除] │
+│ my-laptop     ma3_ab12…   Personal(rw),…   2026-07-03   [Copy] [Delete] │
 │ ─────────────────────────────────────────────────────────────────── │
-│ Label [my-laptop-agent      ] [创建新 key]                          │
+│ Label [my-laptop-agent      ] [Create new key]                          │
 │ (grant picker: Community + personal)                                │
 └─────────────────────────────────────────────────────────────────────┘
 ```
 
-- **Actions 列**：复制（hidden/offscreen `.copy-src` input **紧贴**按钮前，适配 `ma3CopyFrom` 的 `previousElementSibling`）+ 删除（行内 form + `confirm`）
-- 无 plaintext 的旧 key：**不渲染**复制按钮（非 disabled）
-- 删除文案：`删除`；title：`删除后此 key 将立即失效，无法恢复。`
+- **Actions column**: Copy (a hidden/offscreen `.copy-src` input placed **immediately before** the button, matching `ma3CopyFrom`'s `previousElementSibling` lookup) + Delete (inline form + `confirm`)
+- Legacy keys with no plaintext: the copy button is **not rendered** (not just disabled)
+- Delete copy: `Delete`; title: `Once deleted, this key stops working immediately and cannot be recovered.`
 
-### 5.2 详情页 `/ui/keys/{key_id}`
+### 5.2 Detail page `/ui/keys/{key_id}`
 
 ```
 API Keys / my-laptop                        ← breadcrumb
 
 ┌─ my-laptop ─────────────────────────────────────────────┐
-│ Key  [ma3_xxxxxxxx...        ] [复制]                    │  ← 只读，表单外
+│ Key  [ma3_xxxxxxxx...        ] [Copy]                    │  ← read-only, outside the form
 │ Prefix / Created / Last used                             │
 │ ─────────────────────────────────────────────────────── │
 │ <form POST .../edit>                                     │
 │   Label [my-laptop              ]                        │
-│   知识库权限 (grant picker)                               │
-│   [← 返回列表]                          [保存]            │  ← .form-footer
+│   Library permissions (grant picker)                     │
+│   [← Back to list]                      [Save]           │  ← .form-footer
 │ </form>                                                  │
 │ ─────────────────────────────────────────────────────── │
-│ ┌─ 危险操作 ────────────────────────────────┐             │
-│ │ 删除后此 key 立即失效。        [删除 key]  │  ← 独立 form │
+│ ┌─ Danger zone ────────────────────────────────┐             │
+│ │ Deleting this key disables it immediately.  [Delete key]  │  ← separate form │
 │ └───────────────────────────────────────────┘             │
 └─────────────────────────────────────────────────────────┘
 ```
 
-- **单一 `<form>`** 保存 label + grants；删除在独立 `danger-zone` form（禁止嵌套）
-- 旧 `/label`、`/grants` 端点已合并为 `/edit`
+- **A single `<form>`** saves label + grants; delete is a separate `danger-zone` form (no nesting)
+- The old `/label` and `/grants` endpoints have been merged into `/edit`
 
-### 5.3 CSS 增量
+### 5.3 CSS Increments
 
-`.btn.sm`、`.cell-actions`、`.copy-src`（offscreen）、`.form-footer`、`.danger-zone`
+`.btn.sm`, `.cell-actions`, `.copy-src` (offscreen), `.form-footer`, `.danger-zone`
 
 ---
 
-## 6. DB helper
+## 6. DB Helper
 
 ```python
 def delete_api_key(key_id: str, *, principal_id: str) -> bool:
@@ -188,7 +190,7 @@ def delete_api_key(key_id: str, *, principal_id: str) -> bool:
     return True
 ```
 
-配额：
+Quota:
 
 ```sql
 SELECT COUNT(*) FROM api_keys WHERE principal_id = ? AND revoked_at IS NULL;
@@ -196,36 +198,36 @@ SELECT COUNT(*) FROM api_keys WHERE principal_id = ? AND revoked_at IS NULL;
 
 ---
 
-## 7. 错误与边界
+## 7. Errors and Edge Cases
 
-| 状态 | UI | API |
+| State | UI | API |
 |------|-----|-----|
-| Authing 未配置 | 503 说明页 | 503 JSON |
-| 无 session | 302 login | 401 |
-| 缺 Origin/Referer（mutation） | 错误提示 | 403 |
-| 删他人 key | 303 回列表（无差异） | 404 |
-| legacy revoked 行 | 不出现在列表 | 不出现在 GET |
-| decrypt 失败 | prefix + 重建引导 | `plaintext_key: null` |
+| Authing not configured | 503 explanation page | 503 JSON |
+| No session | 302 login | 401 |
+| Missing Origin/Referer (mutation) | error message | 403 |
+| Delete someone else's key | 303 back to list (no difference shown) | 404 |
+| Legacy revoked row | does not appear in list | does not appear in GET |
+| Decryption failed | prefix + re-create guidance | `plaintext_key: null` |
 
 ---
 
-## 8. 验收要点
+## 8. Acceptance Points
 
-- A1：新用户自助 create → copy → `ma3_whoami` 双库
-- A2：UI 无 `撤销`/`已撤销`；操作为 `删除`
-- A3–A5：硬删行 + MCP 立即 401 + 列表不含已删 key
-- A6：`write_audit_log` 行保留原 `api_key_id`
-- A7：删除释放配额
-- A8：他人 key → 404
-- A9：mutation 缺/错 Origin → 403
-- A10：免费档 Community writer 锁定
-- A11：rename 仅改 label
-- A13：legacy `revoked_at` 行不在列表、不计配额
+- A1: new user self-service create → copy → `ma3_whoami` shows both libraries
+- A2: UI has no `revoke`/`revoked`; the action is `delete`
+- A3–A5: hard delete row + MCP immediate 401 + list excludes deleted keys
+- A6: `write_audit_log` rows keep the original `api_key_id`
+- A7: deletion frees up quota
+- A8: someone else's key → 404
+- A9: mutation with missing/incorrect Origin → 403
+- A10: free tier locks Community writer
+- A11: rename only changes the label
+- A13: legacy `revoked_at` rows not in the list, not counted toward quota
 
 ---
 
-## 9. 相关文档
+## 9. Related Documents
 
-- [13-self-service-onboarding.md](../05-agent/getting-started.md) — 首登建库 + 自助签发切片
-- [08-kb-access-and-org-isolation.md](../03-backend/authorization-and-libraries.md) — grants 模型
-- [22-user-portal-ui-layout.md](information-architecture.md) §3.7 — 顶栏 API Keys 入口
+- [13-self-service-onboarding.md](../05-agent/getting-started.md) — first-login library creation + self-service issuance slice
+- [08-kb-access-and-org-isolation.md](../03-backend/authorization-and-libraries.md) — grants model
+- [22-user-portal-ui-layout.md](information-architecture.md) §3.7 — top bar API Keys entry point

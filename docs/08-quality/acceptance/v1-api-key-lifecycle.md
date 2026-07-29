@@ -1,5 +1,9 @@
 # v1 Acceptance — API Key Lifecycle (design/14)
 
+> Chinese version: [v1-api-key-lifecycle.zh.md](v1-api-key-lifecycle.zh.md)
+
+> Note: Chinese-locale UI copy referenced below (Copy = *fùzhì*, Delete = *shānchú*, Save = *bǎocún*, Revoke = *chèxiāo*) is asserted by the tests against the zh-CN strings; this document spells the terms out in pinyin plus their English gloss rather than reproducing the CJK glyphs.
+
 - **Tester**: fable (QA acceptance)
 - **Date**: 2026-07-04 (updated after layout pass)
 - **Target**: LAN staging host, ma3 `http://ma3.example.internal:8000`, Postgres, Authing enabled
@@ -8,14 +12,14 @@
 
 ## Verdict
 
-**PASS-WITH-NITS.** The full lifecycle — create, list/copy, rename, grants edit, delete — works end-to-end in a real browser with a real Authing account. List page now exposes per-row **复制** and **删除** in an Actions column (`cell-actions`); detail page merges label + grants into one form with a single **保存** button (`POST /ui/keys/{id}/edit`), with delete isolated in a `danger-zone` block. Every destructive-path criterion verified directly: `DELETE /api/keys/{key_id}` hard-deletes rows, deleted keys fail MCP auth immediately (`-32001`), disappear from both `GET /api/keys` and `/ui/keys/`, and free quota. The 撤销 vocabulary is gone from self-service surfaces. Nits unchanged (A6/A9/rename-owner-only tests missing). Logout E2E remains flaky and unrelated.
+**PASS-WITH-NITS.** The full lifecycle — create, list/copy, rename, grants edit, delete — works end-to-end in a real browser with a real Authing account. List page now exposes per-row **Copy** and **Delete** in an Actions column (`cell-actions`); detail page merges label + grants into one form with a single **Save** button (`POST /ui/keys/{id}/edit`), with delete isolated in a `danger-zone` block. Every destructive-path criterion verified directly: `DELETE /api/keys/{key_id}` hard-deletes rows, deleted keys fail MCP auth immediately (`-32001`), disappear from both `GET /api/keys` and `/ui/keys/`, and free quota. The *chèxiāo* ("Revoke") vocabulary is gone from self-service surfaces. Nits unchanged (A6/A9/rename-owner-only tests missing). Logout E2E remains flaky and unrelated.
 
 ## A1–A12 mapping
 
 | # | Criterion | Result | Evidence |
 |---|---|---|---|
 | A1 | Fresh Authing developer opens `/ui/keys/`, creates a key, copies it, uses it for `ma3_whoami` | **PASS** | Real-browser E2E on 202 with Authing account `user:6a45abec4d2ef946d80649f6`: `/ui/keys/` reachable after login (no redirect back to `/auth/login`), create form submit → 303 → list shows label `e2e-authing-key` and full `ma3k_` plaintext in the copyable input. Key usability over MCP covered by `test_mcp_roundtrip_with_created_key` (whoami dual libs, headless `ma3_report`) and by the account's live key working against 202 MCP. |
-| A2 | No `撤销`/`已撤销` on self-service surfaces; destructive action is `删除` | **PASS** | E2E asserts `撤销 not in keys_html` and clicks the `删除` form button; `test_ui_delete_key_form_post` asserts `删除` present and `撤销` absent. `grep -rn '撤销\|revoke' code/server/app`: remaining hits are only the legacy `db.revoke_api_key` helper (kept for legacy/admin rows per design §6), the `revoked_at` resolver check, and the MCP `-32001` error string ("unknown, revoked, or expired") — none is keys-UI copy. The two stragglers from review N3 (legacy-key hint, quota error) are fixed. |
+| A2 | No *chèxiāo*/*yǐ chèxiāo* ("Revoke"/"Revoked") on self-service surfaces; destructive action is *shānchú* ("Delete") | **PASS** | E2E asserts the "Revoke" zh-CN string is not in `keys_html` and clicks the "Delete" form button; `test_ui_delete_key_form_post` asserts the "Delete" string is present and the "Revoke" string is absent. `grep -rn 'revoke' code/server/app`: remaining hits are only the legacy `db.revoke_api_key` helper (kept for legacy/admin rows per design §6), the `revoked_at` resolver check, and the MCP `-32001` error string ("unknown, revoked, or expired") — none is keys-UI copy. The two stragglers from review N3 (legacy-key hint, quota error) are fixed. |
 | A3 | `DELETE /api/keys/{key_id}` removes the `api_keys` row and all `api_key_grants` rows | **PASS** | Verified on 202: row and grants gone after delete. `test_delete_key_blocks_mcp` asserts `db.get_api_key_for_principal(...) is None`; `test_delete_key_hard_deletes_grants` asserts `db.get_api_key_grants(key_id) == []`. |
 | A4 | Deleted keys immediately fail MCP authentication | **PASS** | `test_delete_key_blocks_mcp`: after `DELETE`, `api_key_service.resolve_api_key(plaintext) is None` and `tools/call ma3_whoami` with the deleted plaintext → JSON-RPC `-32001`. |
 | A5 | Deleted keys absent from `GET /api/keys` and `/ui/keys/` | **PASS** | E2E post-delete steps: renamed key row gone from the page, and browser `fetch('/api/keys')` JSON no longer contains it. `test_ui_delete_key_form_post` asserts the label is absent from the next list render. |
@@ -24,8 +28,8 @@
 | A8 | Cannot delete/rename another user's key; 404 without existence leak | **PASS** (delete tested; rename by inspection) | `test_delete_key_owner_only`: session user B deleting A's key → 404. Rename path uses the same ownership predicate (`db.update_api_key_label` has `principal_id` in the WHERE, route returns 404 on `None`) but has no dedicated test; see nit 2. |
 | A9 | Mutating routes reject missing/cross-origin `Origin`/`Referer` | **PASS** (code inspection) | `_assert_same_origin` is called by `POST/PATCH/DELETE /api/keys*` and all `/ui/keys/*` form routes; it raises 403 for missing headers ("origin or referer required") and mismatched origin/referer ("cross-origin request rejected"). No test exercises the 403 path for the new DELETE/PATCH verbs; see nit 3. |
 | A10 | Free tier requires Community writer; paid principals can customize | **PASS** | `test_create_key_with_custom_grants`: free user requesting Community `reader` → 400 with free-tier detail. `test_paid_user_can_create_reader_community_key`: principal in `paid_principal_ids` → 200 with Community `reader` grant stored. |
-| A11 | Rename updates only label; plaintext/hash/grants/audit unchanged | **PASS** | `test_update_key_label`: PATCH → 200 with new label, original plaintext still resolves via `resolve_api_key`. `test_ui_rename_key_form_post` covers unified SSR `/edit` form (single 保存). E2E renamed via `form[action$="/edit"]` in a real browser. |
-| A12 | Optional Authing Playwright E2E passes with `AUTHING_TEST_USER` | **PASS** (keys steps) | On 202: login, keys create form, no-撤销 check, unified save (rename + grants), list `cell-actions` copy/delete present, delete via danger-zone — all green. Logout step flaky (residual). |
+| A11 | Rename updates only label; plaintext/hash/grants/audit unchanged | **PASS** | `test_update_key_label`: PATCH → 200 with new label, original plaintext still resolves via `resolve_api_key`. `test_ui_rename_key_form_post` covers unified SSR `/edit` form (single "Save"). E2E renamed via `form[action$="/edit"]` in a real browser. |
+| A12 | Optional Authing Playwright E2E passes with `AUTHING_TEST_USER` | **PASS** (keys steps) | On 202: login, keys create form, no-"Revoke" check, unified save (rename + grants), list `cell-actions` copy/delete present, delete via danger-zone — all green. Logout step flaky (residual). |
 
 **Test suite**: `pytest tests/integration/test_self_service_onboarding.py` → **18 passed** locally (adds `test_ui_list_shows_copy_and_delete`; rename/grants forms use `/edit`).
 
@@ -47,7 +51,7 @@
 e2e_authing_ui.py vs ma3.example.internal:8000, AUTHING_TEST_USER=user:6a45abec4d2ef946d80649f6
   login → /ui/keys/ loads (no login redirect)
   create form label=e2e-authing-key → 303 → detail shows label + ma3k_ plaintext
-  assert 撤销 not in page                                    → OK
+  assert "Revoke" (zh-CN) not in page                         → OK
   unified save (form /edit): rename + grant_personal reader  → OK
   list page cell-actions copy/delete present                 → OK
   delete via danger-zone → row gone; fetch /api/keys omits key → OK
@@ -55,6 +59,6 @@ e2e_authing_ui.py vs ma3.example.internal:8000, AUTHING_TEST_USER=user:6a45abec4
 pytest tests/integration/test_self_service_onboarding.py     → 18 passed
 psql/DB on 202: DELETE /api/keys/{id} → api_keys row gone, api_key_grants rows gone
 PATCH /api/keys/{id} {"label": ...} → label updated, key still authenticates
-grep -rn '撤销|revoke' code/server/app → legacy helper + MCP error copy only
+grep -rn 'revoke' code/server/app → legacy helper + MCP error copy only
 code inspection: write_audit_log no FK to api_keys; _assert_same_origin on all mutating routes
 ```

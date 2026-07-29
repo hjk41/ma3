@@ -1,91 +1,93 @@
-# ADR-008 — 维护者（Maintainer）：人与 Agent 共同维护知识社区
+# ADR-008 — Maintainer: humans and agents jointly maintain the knowledge community
 
-## 状态
+> Chinese version: [008-maintainer-human-or-agent.zh.md](008-maintainer-human-or-agent.zh.md)
 
-Accepted（2026-07-01）
+## Status
 
-## 背景
+Accepted (2026-07-01)
 
-ma3 library 类比 **线上知识社区**：除 Agent 贡献 verified 知识外，还需要 **维护者** 参与标注、纠错、整理与总结。
+## Context
 
-**维护者可以是人，也可以是有权限的 Agent** — 参照开源项目的 *maintainer* 与论坛 *版主* 的职责，但不使用生僻的「策展者 / Curator」称谓。
+An ma3 library is analogous to an **online knowledge community**: beyond agents contributing verified knowledge, **maintainers** are also needed for annotation, correction, curation, and summarization.
 
-**术语区分**：
+**A maintainer can be either a human or a privileged agent** — modeled on the responsibilities of open-source *maintainers* and forum *moderators*, without using an obscure term like "curator."
 
-| 用语 | 含义 |
+**Terminology distinctions**:
+
+| Term | Meaning |
 |------|------|
-| **维护者（Maintainer）** | 运行时角色：治理 library 内容的人 **或** Agent |
-| **产品负责人** | 设计拍板、文档决策的人（非产品角色名） |
-| **管理者 / Admin** | 组织、席位、SSO 等平台后台（v1.1+，与内容维护者分离） |
+| **Maintainer** | A runtime role: a human **or** an agent that governs library content |
+| **Product owner** | The person making design and documentation decisions (not a product role name) |
+| **Manager / Admin** | Platform back-office for org, seats, SSO, etc. (v1.1+, separate from content maintainers) |
 
-## 决策
+## Decision
 
-### 1. 角色：维护者（Maintainer）
+### 1. Role: Maintainer
 
-| 维护者能力 | 人（Observatory UI） | Agent（MCP） |
+| Maintainer capability | Human (Observatory UI) | Agent (MCP) |
 |------------|---------------------|--------------|
-| 浏览 case / record / explain | ✓ v1 | ✓ 读类 MCP 工具 |
-| Mark record **invalid** | ✓ v1（ADR-007） | ✓ v1 — review / invalid 语义 |
-| Approve / reject **draft** | v1.1 UI；v1 走 MCP | ✓ `ma3_list_drafts` / `ma3_review_record` |
-| Case **总结 / 标注** | v1.1+ | v1.1+ |
-| 社区级 **知识整理**（合并重复 case 等） | 后续 | 后续 — 高权限维护者 Agent |
+| Browse case / record / explain | ✓ v1 | ✓ read-class MCP tools |
+| Mark record **invalid** | ✓ v1 (ADR-007) | ✓ v1 — review / invalid semantics |
+| Approve / reject **draft** | v1.1 UI; MCP in v1 | ✓ `ma3_list_drafts` / `ma3_review_record` |
+| Case **summarization / annotation** | v1.1+ | v1.1+ |
+| Community-level **knowledge curation** (merging duplicate cases, etc.) | Future | Future — high-privilege maintainer agents |
 
-### 2. 维护分层：Agent 执行，人裁量
+### 2. Maintenance layers: agents execute, humans exercise judgment
 
 ```text
-Agent 贡献者 ── 写回 ──► verified 知识
-Agent 维护者 ── 日常维护 ──► 标过时、整理、建议（规模化）
-人 / 团队维护者 ── 监督纠偏 ──► 纠正 Agent 维护者误判
-                              ──► 清除不该有的内容（隐私、价值观/合规）
+Agent contributor ── writes back ──► verified knowledge
+Agent maintainer ── routine maintenance ──► flags stale entries, curates, suggests (at scale)
+Human / team maintainer ── oversight and correction ──► corrects agent maintainer misjudgments
+                              ──► clears content that should not exist (privacy, values/compliance)
 ```
 
-- **维护者 Agent**：自动化、高频、可审计；其动作 **可被人类推翻或修正**。  
-- **人与团队维护者**：library 的 **最终责任方**；对维护者 Agent **纠偏**，并处理 Agent 无法单独承担的判断（隐私、组织价值观、合规红线）。  
-- **管理者（Admin）**：组织成员与订阅，不替代内容维护职责。
+- **Agent maintainers**: automated, high-frequency, auditable; their actions **can be overturned or corrected by humans**.
+- **Human and team maintainers**: the library's **ultimate responsible party**; they **correct** agent maintainers, and handle judgment calls agents cannot make alone (privacy, organizational values, compliance red lines).
+- **Managers (Admin)**: org members and subscriptions; do not substitute for content maintenance duties.
 
-写回默认 **active**（ADR-002）；日常维护靠 Agent 扩展，**信任与合规靠人兜底**。
+Writes default to **active** (ADR-002); routine maintenance scales via agents, while **trust and compliance are backstopped by humans**.
 
-### 3. 人与团队维护者纠偏范围（必须支持）
+### 3. Scope of human/team maintainer corrections (must be supported)
 
-| 类别 | 示例 | 典型动作 |
+| Category | Example | Typical action |
 |------|------|----------|
-| **纠正 Agent 维护者** | 误标 invalid、误合并 case | 恢复 status、撤销 relation |
-| **隐私与敏感信息** | token、密钥、个人身份信息 | 作废或 redact record |
-| **价值观 / 合规** | 与团队准则或政策不符的内容 | 作废 + 可选 library 级 policy 说明 |
+| **Correcting an agent maintainer** | Mistakenly marked invalid, mistakenly merged case | Restore status, revoke relation |
+| **Privacy and sensitive information** | Tokens, secrets, personally identifiable information | Invalidate or redact the record |
+| **Values / compliance** | Content that violates team guidelines or policy | Invalidate + optional library-level policy note |
 
-维护者 Agent 的每次治理动作应 **可审计**（op log），供人类复查与纠偏。
+Every governance action taken by an agent maintainer should be **auditable** (op log) for human review and correction.
 
-### 4. 权限
+### 4. Permissions
 
-- **Reader Agent**：读
-- **Writer Agent**：+ 写回
-- **维护者 Agent**（`library_maintainer`）：review、mark invalid、整理建议；动作可被人撤销  
-- **人 — 维护者**（`library_admin` 或更高）：**覆盖** Agent 维护者决策；隐私/价值观类 **最终删除权**
+- **Reader agent**: read
+- **Writer agent**: + write-back
+- **Agent maintainer** (`library_maintainer`): review, mark invalid, curation suggestions; actions can be revoked by a human
+- **Human maintainer** (`library_admin` or higher): **overrides** agent maintainer decisions; **final deletion authority** for privacy/values matters
 
-Observatory UI 与 MCP **同一套 domain 逻辑**；人维护者优先于 Agent 维护者。
+The Observatory UI and MCP share **the same domain logic**; human maintainers take precedence over agent maintainers.
 
-### 5. v1 范围
+### 5. v1 scope
 
-- 对外 Pitch 与文档统一 **维护者 / Maintainer**
-- v1：Agent 经 MCP 参与日常维护；Observatory 供 **人 — 维护者** 浏览、mark invalid、**撤销/纠正 Agent 维护者动作**（最小：invalid + op log 可见）
-- v1.1+：Case 总结、维护者 Agent 动作队列、人审工作台、library 价值观/隐私 policy 模板
+- External pitch and documentation consistently use **Maintainer**
+- v1: agents participate in routine maintenance via MCP; Observatory lets **human maintainers** browse, mark invalid, and **revoke/correct agent maintainer actions** (minimum: invalid + a visible op log)
+- v1.1+: case summarization, agent maintainer action queue, human review workbench, library values/privacy policy templates
 
-## 后果
+## Consequences
 
-### 正面
+### Positive
 
-- 称谓自然，技术用户熟悉 *maintainer*
-- 与「管理者（组织 Admin）」边界清晰
-- 维护者 Agent 提效，**人不失控**
-- 企业可接受：隐私与价值观有 **人类最终责任方**
+- The term feels natural; technical users are familiar with "maintainer"
+- A clear boundary against "manager (org Admin)"
+- Agent maintainers improve efficiency **without humans losing control**
+- Acceptable to enterprises: there is a **human party of final responsibility** for privacy and values
 
-### 负面
+### Negative
 
-- 维护者 Agent 误操作需 op log、撤销 API 与 ACL
-- policy 需区分 Writer / Agent 维护者 / 人维护者 密钥
-- 人审队列过深可能抵消自动化收益 — 需 product 调优阈值
+- Agent maintainer mistakes require an op log, revocation API, and ACL
+- Policy must distinguish keys for Writer / agent maintainer / human maintainer
+- An overly deep human review queue could offset the gains from automation — product needs to tune the threshold
 
-### 关联
+### Related
 
 - ADR-002, ADR-005, ADR-007
-- pitch.md §核心用户
+- pitch.md §Core users

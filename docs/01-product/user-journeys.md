@@ -1,65 +1,67 @@
-# 用户旅程（User Journeys）
+# User Journeys
 
-## J1 — 新个人开发者：从零到首次写回
+> Chinese version: [user-journeys.zh.md](user-journeys.zh.md)
 
-```text
-发现 ma3 → 浏览器打开 /ui/keys/
-  → Authing 注册/登录
-  → /auth/callback：建 principal + personal library
-  → /ui/me/setup/：一次性设定显示名
-  → /ui/keys/：创建 key（personal + Community writer）
-  → 复制 key → 配置 Agent MCP（X-API-Key）
-  → ma3_whoami 确认双库
-  → ma3_report（无 library_id）→ 写入 personal library
-  → /ui/me/：概览出现「最近贡献」
-```
-
-详见 [../05-agent/getting-started.md](../05-agent/getting-started.md)。
-
-## J2 — 贡献者：查看与管理自己的写入
+## J1 — New individual developer: from zero to first write-back
 
 ```text
-/ui/me/ → stat「记录」→ /ui/me/writes/
-  → sort/filter（如「待发布」）
-  → 点击 record → /ui/records/{id}/
-  → buffered：发布 / 修改 / 删除
-  → active：只读 + 投票
+Discover ma3 → open /ui/keys/ in browser
+  → Sign up / log in via Authing
+  → /auth/callback: create principal + personal library
+  → /ui/me/setup/: one-time display name setup
+  → /ui/keys/: create key (personal + Community writer)
+  → Copy key → configure agent MCP (X-API-Key)
+  → ma3_whoami confirms both libraries
+  → ma3_report (no library_id) → written to personal library
+  → /ui/me/: overview shows "Recent contributions"
 ```
 
-Write buffer 语义见 [../03-backend/write-buffer.md](../03-backend/write-buffer.md)。
+Details in [../05-agent/getting-started.md](../05-agent/getting-started.md).
 
-## J3 — Agent：任务闭环（查 → 做 → 写回）
+## J2 — Contributor: view and manage own writes
 
 ```text
-任务开始 → ma3_context(query)
-  → 选用命中 record → 本地验证
-  → ma3_validate（可选 dry-run）
-  → ma3_report → 响应 status/buffer/publish_at
-  → 若 buffered：policy 提示用户可在门户提前发布
-  → 对排在采用答案前的错误 record → ma3_feedback downvote
+/ui/me/ → stat "Records" → /ui/me/writes/
+  → sort/filter (e.g. "pending publish")
+  → click record → /ui/records/{id}/
+  → buffered: publish / edit / delete
+  → active: read-only + vote
 ```
 
-## J4 — 产品管理员：全局观测
+Write buffer semantics in [../03-backend/write-buffer.md](../03-backend/write-buffer.md).
+
+## J3 — Agent: task loop (query → do → write back)
 
 ```text
-登录 → /ui/me/（与普通用户相同）
-  → 顶栏 Observatory（admin only）
-  → 全局 Stats + 枚举 + search explain
-  → 非 admin 直访 → 403 +「返回我的主页」
+Task starts → ma3_context(query)
+  → adopt matching record → verify locally
+  → ma3_validate (optional dry-run)
+  → ma3_report → response status/buffer/publish_at
+  → if buffered: policy tells user they can publish early in the portal
+  → for wrong records ranked above the adopted answer → ma3_feedback downvote
 ```
 
-## J5 — 删除泄漏的 API Key
+## J4 — Product admin: global observability
 
 ```text
-/ui/keys/ → 识别 key → 删除（confirm）
-  → MCP 立即 401
-  → 创建新 key → 更新 Agent 配置 → 删除旧 key（若仍存在）
+Log in → /ui/me/ (same as regular users)
+  → top bar Observatory (admin only)
+  → global Stats + enumeration + search explain
+  → non-admin direct access → 403 + "Back to my home"
 ```
 
-详见 [../04-frontend/api-keys-ui-and-api.md](../04-frontend/api-keys-ui-and-api.md)。
+## J5 — Deleting a leaked API Key
 
-## v1.1 预留旅程
+```text
+/ui/keys/ → identify key → delete (confirm)
+  → MCP immediately returns 401
+  → create new key → update agent config → delete old key (if still present)
+```
 
-- **J6** org admin 邀请成员、建 org library
-- **J7** 库 admin 管理 grants、枚举库内 record
-- **J8** 升级 Pro/Team、只读 key、配额告警
+Details in [../04-frontend/api-keys-ui-and-api.md](../04-frontend/api-keys-ui-and-api.md).
+
+## Journeys reserved for v1.1
+
+- **J6** Org admin invites members, creates org library
+- **J7** Library admin manages grants, enumerates records in a library
+- **J8** Upgrade to Pro/Team, read-only keys, quota alerts

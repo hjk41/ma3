@@ -1,48 +1,50 @@
-# ADR-014 — MCP 错误必须可自纠
+# ADR-014 — MCP Errors Must Be Self-Correctable
 
-## 状态
+> Chinese version: [014-mcp-error-self-correction.zh.md](014-mcp-error-self-correction.zh.md)
 
-Accepted（2026-07-03）
+## Status
 
-## 背景
+Accepted (2026-07-03)
 
-ma3 v1 的 Agent 面仅有 MCP（[ADR-003](003-mcp-only-agent-surface.md)）。Agent 是**唯一**消费者，且大多在**无人值守**下运行——它读到什么错误、就凭什么错误决定下一步。
+## Context
 
-一次真实评测暴露了系统性缺陷：
+ma3 v1's agent surface is MCP only ([ADR-003](003-mcp-only-agent-surface.md)). The agent is the **sole** consumer and mostly runs **unattended** — whatever error it reads is what it bases its next step on.
 
-- 服务端**已经**把结构化诊断（`validation_errors`、`schema_hint`、字段路径）放进 JSON-RPC `error.data`。
-- 但**MCP 宿主（Cursor / Claude Code 等)只把 `error.message` 交给模型**，`error.data` 往往被丢弃——这与更早发现的 `structuredContent` 不可见是**同一类**宿主行为。
-- 结果：Claude 把 `ma3_report` 的 payload 误套进 `arguments`（照抄 `ma3_validate` 的 `{tool_name, arguments}` 信封），收到 `-32602 "Invalid params"`（无字段信息），**连试 6 次相同错误**后放弃、未写回。
+A real evaluation exposed a systemic flaw:
 
-即"信息在协议里存在，但不在 Agent 能看到的位置"。
+- The server **already** put structured diagnostics (`validation_errors`, `schema_hint`, field paths) into JSON-RPC `error.data`.
+- But **MCP hosts (Cursor / Claude Code, etc.) only hand `error.message` to the model**; `error.data` is often dropped — the **same class** of host behavior as the earlier `structuredContent` invisibility finding.
+- Result: Claude mistakenly wrapped the `ma3_report` payload inside `arguments` (copying `ma3_validate`'s `{tool_name, arguments}` envelope), received `-32602 "Invalid params"` (no field info), **retried the same mistake 6 times**, then gave up without writing back.
 
-## 决策
+In other words: "the information exists in the protocol, but not where the agent can see it."
 
-**约束（不变式）**：**所有 MCP 错误都必须在 `error.message` 中携带足以让 Agent 自行纠正的信息。**
+## Decision
 
-具体：
+**Constraint (invariant)**: **every MCP error must carry, in `error.message`, enough information for the agent to correct itself.**
 
-1. `error.message` 是**唯一**可假定被模型读到的字段。凡是 Agent 自纠所需的信息（缺哪个字段、多了什么、期望什么形状、如何取得权限），**必须**出现在 `message` 里。
-2. `error.data` 仍保留结构化副本（`validation_errors`、`status_code`、`schema_hint` 等），供能读 data 的程序化客户端使用——但**不得**作为 Agent 自纠的**唯一**载体。
-3. 校验类错误（`-32602` / `-32600`）的 message 必须**逐字段**说明 missing / unexpected / 类型错误，并在识别到常见误用（如把工具 payload 套进 `arguments`）时给出**定向提示**。
-4. message **不得**泄露 secrets、内部堆栈、SQL 或原始异常链。
+Specifically:
 
-详见 [error-handling.md](../../05-agent/error-handling.md)。
+1. `error.message` is the **only** field that can be assumed to reach the model. Anything the agent needs for self-correction (which field is missing, what is extraneous, what shape is expected, how to obtain permission) **must** appear in `message`.
+2. `error.data` still keeps a structured copy (`validation_errors`, `status_code`, `schema_hint`, etc.) for programmatic clients that can read data — but it **must not** be the **only** carrier of self-correction information.
+3. For validation errors (`-32602` / `-32600`), the message must explain missing / unexpected / type errors **field by field**, and give a **targeted hint** when a common misuse is detected (e.g. wrapping a tool payload inside `arguments`).
+4. The message **must not** leak secrets, internal stack traces, SQL, or raw exception chains.
 
-## 后果
+Details in [error-handling.md](../../05-agent/error-handling.md).
 
-### 正面
+## Consequences
 
-- 无人值守 Agent 能一次纠错，减少"重试相同错误直至放弃/不写回"。
-- 提升写回率与知识库沉淀质量（Agent 不再因 `ma3_report` 报错而丢弃可复用结论）。
-- 错误契约可测试化、可回归。
+### Positive
 
-### 负面
+- Unattended agents can correct themselves in one step, reducing "retry the same error until giving up / not writing back".
+- Improves write-back rate and knowledge base quality (agents no longer discard reusable conclusions because `ma3_report` errored).
+- The error contract becomes testable and regression-proof.
 
-- message 变长、部分内容与 `data` 重复。
-- 需要一处集中构造 message（`routes_mcp.py`），新增错误路径时须遵守约束（靠测试兜底）。
+### Negative
 
-### 关联
+- Messages get longer, partially duplicating `data`.
+- Requires one centralized place to construct messages (`routes_mcp.py`); new error paths must obey the constraint (backed by tests).
 
-- [ADR-003](003-mcp-only-agent-surface.md)：MCP 是唯一 Agent 面 → 错误面即产品面。
-- 复用 `structuredContent` 可见性修复的同一结论：把关键信息放进宿主一定会展示的字段。
+### Related
+
+- [ADR-003](003-mcp-only-agent-surface.md): MCP is the only agent surface → the error surface is the product surface.
+- Reuses the conclusion from the `structuredContent` visibility fix: put critical information in fields the host is guaranteed to display.

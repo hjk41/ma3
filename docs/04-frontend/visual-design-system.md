@@ -1,15 +1,17 @@
-# 15 — 用户门户视觉设计（GitHub 浅色风格）
+# 15 — User Portal Visual Design (GitHub Light Style)
 
-> **状态**：定稿（2026-07-04）  
-> **导航/subnav 以 [22-user-portal-ui-layout.md](information-architecture.md) 为准**  
-> **真源实现**：`code/server/app/api/ui_theme.py`（`MA3_CSS` + `render_page`）  
-> **权限模型**：[15-user-portal.md](portal-permissions.md)
+> Chinese version: [visual-design-system.zh.md](visual-design-system.zh.md)
 
-参照 GitHub.com / GitHub Settings / Personal Access Tokens 的**浅色**界面：深色顶栏、白底内容区、6px 圆角、细边框表格、蓝色主按钮。
+> **Status**: Finalized (2026-07-04)  
+> **Navigation/subnav source of truth is [22-user-portal-ui-layout.md](information-architecture.md)**  
+> **Implementation source of truth**: `code/server/app/api/ui_theme.py` (`MA3_CSS` + `render_page`)  
+> **Permission model**: [15-user-portal.md](portal-permissions.md)
+
+Modeled on the **light** interface of GitHub.com / GitHub Settings / Personal Access Tokens: dark top bar, white content area, 6px border radius, thin-bordered tables, blue primary button.
 
 ---
 
-## 1. Design tokens（`:root` 扩展）
+## 1. Design Tokens (`:root` extension)
 
 ```css
 --header-bg: #24292f;
@@ -24,138 +26,138 @@
 --sidebar-width: 220px;
 ```
 
-**不做**：dark mode、图标字体、外部 CSS/JS 框架。
+**Not doing**: dark mode, icon fonts, external CSS/JS frameworks.
 
 ---
 
-## 2. 页面壳（Page shell）
+## 2. Page Shell
 
 ```
 ┌─ .topbar (#24292f) ─────────────────────────────────────────────┐
-│ [brand→/ui/me/]  .topnav  我的主页 | 库 | 记录 | 投票 | API Keys | Observatory* │
-│                                    * .nav-admin 弱化色，仅 is_admin      │
-│                              .topbar-meta  显示名 · 账户 · 退出          │
+│ [brand→/ui/me/]  .topnav  Home | Libraries | Records | Votes | API Keys | Observatory* │
+│                                    * .nav-admin de-emphasized color, is_admin only      │
+│                              .topbar-meta  display name · account · sign out          │
 └────────────────────────────────────────────────────────────────┘
-┌─ .page (max-width 1280; 门户页内层 .page-narrow max 1012) ──────┐
-│ .breadcrumb（二级以下）                                          │
+┌─ .page (max-width 1280; inner .page-narrow max 1012 on portal pages) ──────┐
+│ .breadcrumb (second level and below)                                          │
 │ .page-header: .page-title + .page-subtitle | .actions            │
 │ body                                                             │
 │ .footer                                                          │
 └──────────────────────────────────────────────────────────────────┘
 ```
 
-- **Observatory** 导航项 class `nav-admin`：`opacity:0.75; font-weight:400`
-- Logo `href` 固定 `/ui/me/`
+- **Observatory** nav item class `nav-admin`: `opacity:0.75; font-weight:400`
+- Logo `href` fixed to `/ui/me/`
 
 ---
 
-## 3. 布局模式
+## 3. Layout Patterns
 
-### 3.1 默认单栏（列表 / 详情）
+### 3.1 Default Single Column (List / Detail)
 
-`.page-narrow` 包裹主内容；`.card` 堆叠，间距 16px。
+`.page-narrow` wraps the main content; `.card`s stack, 16px spacing.
 
-### 3.2 账户 subnav（仅 `/ui/me/*`）
+### 3.2 Account Subnav (`/ui/me/*` only)
 
 ```html
 <nav class="subnav-links">
-  <a class="active" href="/ui/me/">概览</a>
-  <a href="/ui/me/settings/">设置</a>
+  <a class="active" href="/ui/me/">Overview</a>
+  <a href="/ui/me/settings/">Settings</a>
 </nav>
 ```
 
-CSS：`border-bottom:1px solid var(--border-default)`；active 项 `border-bottom:2px solid #fd8c73; font-weight:600`。
+CSS: `border-bottom:1px solid var(--border-default)`; active item `border-bottom:2px solid #fd8c73; font-weight:600`.
 
-**v1 不用** sidebar 双栏（「我的贡献 / 我的投票」subnav 已废止）。
+**Not used in v1**: two-column sidebar layout (the "My contributions / My votes" subnav has been retired).
 
 ---
 
-## 4. 组件 catalog → CSS class
+## 4. Component Catalog → CSS Class
 
-| 组件 | Class | 说明 |
+| Component | Class | Description |
 |------|-------|------|
-| Profile 头 | `.profile-header` | 头像 + display_name（概览页无 Principal ID） |
-| Principal ID | `.id-block` | **仅 settings** 只读；mono；无复制 |
-| Stat 可点 | `a.stat-card-link` | design/22；5 张 stat |
-| 列表项（活动流） | `.list-group` > `.list-item` | 左标题链接 + 右 meta 时间 |
-| 表格 | `table.data` in `.table-wrap` | 已有 |
-| Filter | `.filter-pills` | 列表页状态/投票 filter |
-| 列表底栏 | `.list-footer` | 共 N 条 + per_page + 分页 |
-| 空状态 | `.empty` + `.empty-icon` + `.empty-cta` | CTA 用 `.btn.primary` |
-| 403 | `.page-403` | 居中；链接 `.btn` |
-| 分页 | `.pagination` | flex；`.pagination .current` |
-| Badge | `.badge.*` | 已有 |
-| Danger | `.danger-zone` | keys 详情删除区 |
-| 复制 | `.copy-src` + `.btn.sm` | keys 列表/详情；offscreen input |
+| Profile header | `.profile-header` | avatar + display_name (no Principal ID on overview page) |
+| Principal ID | `.id-block` | **settings only**, read-only; mono; no copy |
+| Clickable stat | `a.stat-card-link` | design/22; 5 stat cards |
+| List item (activity feed) | `.list-group` > `.list-item` | title link on the left + meta time on the right |
+| Table | `table.data` in `.table-wrap` | existing |
+| Filter | `.filter-pills` | list page status/vote filter |
+| List footer | `.list-footer` | total N items + per_page + pagination |
+| Empty state | `.empty` + `.empty-icon` + `.empty-cta` | CTA uses `.btn.primary` |
+| 403 | `.page-403` | centered; link `.btn` |
+| Pagination | `.pagination` | flex; `.pagination .current` |
+| Badge | `.badge.*` | existing |
+| Danger | `.danger-zone` | keys detail delete area |
+| Copy | `.copy-src` + `.btn.sm` | keys list/detail; offscreen input |
 
-### `.profile-header`（概览 / settings）
+### `.profile-header` (overview / settings)
 
 ```html
 <div class="profile-header">
-  <div class="profile-avatar" aria-hidden="true">{首字母}</div>
+  <div class="profile-avatar" aria-hidden="true">{initial}</div>
   <div class="profile-body">
     <h2 class="profile-name">{display_name}</h2>
   </div>
 </div>
 ```
 
-**概览页不含** `profile-meta`、Principal ID、`ma3CopyFrom`、编辑显示名链接。
+**The overview page does not include** `profile-meta`, Principal ID, `ma3CopyFrom`, or an edit display name link.
 
 ---
 
-## 5. 分页面线框与 class 映射
+## 5. Per-Page Wireframes and Class Mapping
 
 ### `/ui/me/`
 
-- `.profile-header`（仅 avatar + 显示名）
-- `.subnav-links`（概览 active）
-- `.grid.stats` ×5（`a.stat-card-link`）
-- `.card`「我的库」→ `table.data`（≤5 行）
-- `.card`「最近贡献」→ `.list-group` 或 compact table
+- `.profile-header` (avatar + display name only)
+- `.subnav-links` (Overview active)
+- `.grid.stats` ×5 (`a.stat-card-link`)
+- `.card` "My libraries" → `table.data` (≤5 rows)
+- `.card` "Recent contributions" → `.list-group` or compact table
 
 ### `/ui/me/writes/` `/ui/me/votes/`
 
-- **无 subnav**（顶栏高亮）
+- **No subnav** (top bar highlighted instead)
 - `.filter-pills` + `.card` + `table.data` + `.list-footer`
 
 ### `/ui/libraries/{id}/`
 
 - `.breadcrumb`
-- `.grid.stats`（Cases / Records / Active / Draft / Invalid）
-- `.card`「我的访问」`.kv`（登录用户）
-- 匿名：`.alert.info` CTA「登录以贡献与投票」
+- `.grid.stats` (Cases / Records / Active / Draft / Invalid)
+- `.card` "My access" `.kv` (logged-in user)
+- Anonymous: `.alert.info` CTA "Sign in to contribute and vote"
 
 ### `/ui/records/{id}`
 
-- `.breadcrumb`：`我的主页 / Record vk_…`
-- buffer 操作 `.card`（owner + buffered）
-- `.split` 双 card（record + feedback）
+- `.breadcrumb`: `Home / Record vk_…`
+- Buffer action `.card` (owner + buffered)
+- `.split` two cards (record + feedback)
 
 ### `/ui/keys/*`
 
-- design/14 布局；`active_nav=keys`
+- design/14 layout; `active_nav=keys`
 
 ### Observatory 403
 
 ```html
 <div class="page-403">
   <h1>403</h1>
-  <p>Observatory 仅产品管理员可访问。</p>
-  <a class="btn" href="/ui/me/">返回我的主页</a>
+  <p>Observatory is accessible only to product administrators.</p>
+  <a class="btn" href="/ui/me/">Back to my home</a>
 </div>
 ```
 
 ---
 
-## 6. 导航参数化
+## 6. Navigation Parameterization
 
 ```python
 def portal_nav_items(base: str, *, is_admin: bool) -> list[tuple[str, str, str, bool]]:
     items = [
-        ("me", "我的主页", f"{base}/ui/me/", False),
-        ("libraries", "库", f"{base}/ui/libraries/", False),
-        ("records", "记录", f"{base}/ui/me/writes/", False),
-        ("votes", "投票", f"{base}/ui/me/votes/", False),
+        ("me", "Home", f"{base}/ui/me/", False),
+        ("libraries", "Libraries", f"{base}/ui/libraries/", False),
+        ("records", "Records", f"{base}/ui/me/writes/", False),
+        ("votes", "Votes", f"{base}/ui/me/votes/", False),
         ("keys", "API Keys", f"{base}/ui/keys/", False),
     ]
     if is_admin:
@@ -167,23 +169,23 @@ def portal_nav_items(base: str, *, is_admin: bool) -> list[tuple[str, str, str, 
 
 ---
 
-## 7. 响应式
+## 7. Responsive Design
 
-- `@media (max-width: 768px)`：`.topnav` 隐藏部分 label；`.split` → 单栏；`.grid.stats` minmax 120px
-- v1 **不做** hamburger / kebab menu；`table-wrap` 横向滚动兜底
-
----
-
-## 8. 明确不做（v1）
-
-- Dark mode、动画、toast、模态框 JS
-- 客户端路由 / hydration
-- 库 record 枚举列表 UI（非 admin）
-- Org 侧栏
-- 概览页 Principal ID / 编辑显示名
+- `@media (max-width: 768px)`: `.topnav` hides some labels; `.split` → single column; `.grid.stats` minmax 120px
+- v1 **does not implement** a hamburger / kebab menu; `table-wrap` falls back to horizontal scroll
 
 ---
 
-## 9. CSS 增量预算
+## 8. Explicitly Not Doing (v1)
 
-新增约 **120 行** 以内：`.profile-*`, `.subnav-links`, `.list-group`, `.list-item`, `.page-403`, `.pagination`, `.page-narrow`, `.nav-admin`, `.empty-cta`, `.stat-card-link`, `.filter-pills`, `.list-footer`, `.id-block`, `.copy-src`, `.btn.sm`, `.cell-actions`, `.form-footer`, `.danger-zone`。
+- Dark mode, animations, toast, modal JS
+- Client-side routing / hydration
+- Library record enumeration list UI (non-admin)
+- Org sidebar
+- Overview page Principal ID / edit display name
+
+---
+
+## 9. CSS Increment Budget
+
+Roughly **120 lines** or fewer of new CSS: `.profile-*`, `.subnav-links`, `.list-group`, `.list-item`, `.page-403`, `.pagination`, `.page-narrow`, `.nav-admin`, `.empty-cta`, `.stat-card-link`, `.filter-pills`, `.list-footer`, `.id-block`, `.copy-src`, `.btn.sm`, `.cell-actions`, `.form-footer`, `.danger-zone`.

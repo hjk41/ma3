@@ -1,64 +1,66 @@
-# ADR-007 — v1 里程碑：Observatory 治理、首 deploy、数据迁移
+# ADR-007 — v1 milestones: Observatory governance, first deploy, data migration
 
-## 状态
+> Chinese version: [007-v1-milestones-and-observatory-governance.zh.md](007-v1-milestones-and-observatory-governance.zh.md)
 
-Accepted（2026-07-01）
+## Status
 
-## 背景
+Accepted (2026-07-01)
 
-Q1–Q12 与 ADR 001–006 已定核心架构。开写 `code/` 前仍需三项执行层拍板：Observatory 写权限边界、首个可运行环境、旧库数据策略。
+## Context
 
-## 决策
+Q1–Q12 and ADR 001–006 have already settled the core architecture. Before starting work on `code/`, three execution-layer decisions still needed to be made: Observatory write-permission boundaries, the first runnable environment, and the strategy for legacy library data.
 
-### 1. Observatory 治理（选项 B）
+## Decision
 
-Observatory 以 **只读浏览** 为主，供 **人 — 维护者** 使用；**Agent — 维护者** 通过 MCP 执行同等语义（ADR-008）。
+### 1. Observatory governance (Option B)
 
-人可在 UI 执行 **单一写动作（v1）**：
+Observatory is primarily **read-only browsing**, for use by **human maintainers**; **agent maintainers** perform equivalent actions via MCP (ADR-008).
 
-- **Mark record `invalid`**（含简要原因）
+Humans can perform **a single write action (v1)** in the UI:
 
-**不包含 v1**：
+- **Mark a record `invalid`** (with a brief reason)
 
-- 完整 review queue UI
-- draft approve/reject 表单（仍走 MCP `ma3_review_record`）
-- org/seat/billing 管理
+**Not included in v1**:
 
-与 ADR-005 关系：在「只读 Observatory」上增加 **最小治理写路径**，支撑 ADR-002 active 默认下的搜索污染缓解。
+- The full review queue UI
+- Draft approve/reject forms (still go through MCP `ma3_review_record`)
+- Org/seat/billing management
 
-### 2. 首个 deploy 目标（选项 A）
+Relationship to ADR-005: adds a **minimal governance write path** on top of the "read-only Observatory," supporting search-pollution mitigation under ADR-002's active-by-default policy.
 
-v1 **先在 LAN dev（内网 staging 主机）平行验证**：
+### 2. First deploy target (Option A)
 
-- 新端口（如 `:8001`）
-- SaaS **同一 binary**，`profile-lan` + `MA3_DEV_AUTH=1`
-- 公网 SaaS staging（完整 OIDC）在 202 验证通过后推进
+v1 will **first be validated in parallel on LAN dev (an internal staging host)**:
 
-### 3. 数据迁移（选项 C）
+- A new port (e.g. `:8001`)
+- **The same binary** as SaaS, `profile-lan` + `MA3_DEV_AUTH=1`
+- Public SaaS staging (full OIDC) proceeds once validation passes on 202
 
-**并行部署，cutover 后再迁数据**：
+### 3. Data migration (Option C)
 
-- v1 起 **新 PG 库 / 新 schema**（不原地改 202 上 `:8000` 生产库）
-- 旧实例 `:8000` 继续服务直至 v1 验证完成
-- cutover 时运行 **v2→v1 migration script**（含 `org_default` 回填）
-- 回滚：DNS/端口指回旧实例
+**Deploy in parallel, migrate data after cutover**:
 
-## 后果
+- v1 starts with a **new PG database / new schema** (no in-place changes to the production database on `:8000` on 202)
+- The old instance on `:8000` keeps serving until v1 validation completes
+- At cutover, run a **v2→v1 migration script** (including `org_default` backfill)
+- Rollback: point DNS/port back to the old instance
 
-### 正面
+## Consequences
 
-- 202 风险可控，不影响当前 `:8000` 用户
-- Observatory 给人一个「纠错」按钮，不必全靠 MCP
-- 迁移窗口清晰，可反复 dry-run
+### Positive
 
-### 负面
+- Risk on 202 is controlled and does not affect current `:8000` users
+- Observatory gives humans a "correction" button instead of relying entirely on MCP
+- A clear migration window that can be dry-run repeatedly
 
-- cutover 前 v1 库为空或仅测试数据，需接受双实例期
-- invalid 写路径需 UI + API + ACL 设计与 MCP 语义对齐
+### Negative
 
-### 关联
+- Before cutover, the v1 database is empty or holds only test data, requiring acceptance of a dual-instance period
+- The invalid write path requires UI + API + ACL design aligned with MCP semantics
+
+### Related
 
 - ADR-002, ADR-005, ADR-001
 - [pitch.md](../../01-product/pitch.md)
-- [system-overview.md](../../02-architecture/system-overview.md) — v1 架构与 deploy profile
-- [deployment.md](../../06-operations/deployment.md) — LAN / SaaS 部署
+- [system-overview.md](../../02-architecture/system-overview.md) — v1 architecture and deploy profiles
+- [deployment.md](../../06-operations/deployment.md) — LAN / SaaS deployment

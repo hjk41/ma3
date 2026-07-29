@@ -1,37 +1,39 @@
-# 产品路线图
+# Product Roadmap
 
-> 与 [feature-index.md](feature-index.md) 对照；架构 North Star 见 [vision.md](vision.md)
+> Chinese version: [roadmap.zh.md](roadmap.zh.md)
 
-## v1 core（当前交付范围）
+> Cross-reference with [feature-index.md](feature-index.md); architecture North Star in [vision.md](vision.md)
 
-| 域 | 能力 |
+## v1 core (current delivery scope)
+
+| Domain | Capability |
 |----|------|
-| Agent 面 | Remote MCP + policy + client sync（Scheme B） |
-| 身份 | Authing 登录；API Key（DB grants）；display name setup |
-| 知识 | Case/record/relation；active 默认写；write buffer；投票排序 |
-| 门户 | `/ui/me/*` 默认落地；Stats≠Enumerate；记录/投票列表 |
-| 管理 | Observatory（admin only，403）；启动校验 admin 白名单 |
-| 部署 | profile-saas 首要；profile-lan dev |
+| Agent surface | Remote MCP + policy + client sync (Scheme B) |
+| Identity | Authing login; API Key (DB grants); display name setup |
+| Knowledge | Case/record/relation; active default writes; write buffer; vote-based ranking |
+| Portal | `/ui/me/*` default landing; Stats ≠ Enumerate; record/vote lists |
+| Admin | Observatory (admin only, 403); startup validation of admin allowlist |
+| Deployment | profile-saas primary; profile-lan dev |
 
-## v1 明确不做
+## Explicitly out of v1
 
-见 [../README.md](../README.md) §「v1 不做清单」。
+See [../README.md](../README.md) § "v1 non-goals list".
 
-## v1.1 候选
+## v1.1 candidates
 
-| 项 | 说明 |
+| Item | Description |
 |----|------|
-| Org UI | `/ui/orgs/*`、成员、seat |
-| 库管理 UI | `/ui/libraries/{id}/records/` 枚举、grants |
-| MCP 签发 | `ma3_create_key` / `ma3_list_keys` |
-| Billing 完整 enforcement | Stripe、quota 429、升级 UI |
-| Entitlement resolver | 替换 v1 启发式 |
-| URL 美化 | `/ui/records/`、`/ui/votes/` canonical |
-| refute/verify 排序 bump | 持久化 target 关系后接入 GTN |
+| Org UI | `/ui/orgs/*`, members, seats |
+| Library admin UI | `/ui/libraries/{id}/records/` enumeration, grants |
+| MCP key issuance | `ma3_create_key` / `ma3_list_keys` |
+| Full billing enforcement | Stripe, quota 429, upgrade UI |
+| Entitlement resolver | Replace v1 heuristics |
+| URL beautification | `/ui/records/`, `/ui/votes/` canonical |
+| refute/verify ranking bump | Wire into GTN once target relations are persisted |
 
-## v2+ 方向（未立项）
+## v2+ directions (not committed)
 
-- 企业 SAML / SSO 扩展
-- 跨 org 联邦搜索
-- Hook 默认上送（仍违反当前 ADR-006，需重新决策）
-- 完整 review queue UI
+- Enterprise SAML / SSO extensions
+- Cross-org federated search
+- Hook default upload (still violates current ADR-006; requires re-decision)
+- Full review queue UI

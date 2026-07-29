@@ -1,234 +1,236 @@
-# 22 — 用户门户 UI 功能与布局
+# 22 — User Portal UI Features and Layout
 
-> **状态**：**已交付**（2026-07-05）  
-> **验收**：[acceptance/v1-user-portal-ui.md](../08-quality/acceptance/v1-user-portal-ui.md)（R/W/V 系列 + pytest 门禁）
-> **权限基线**：[15-user-portal.md](portal-permissions.md)  
-> **视觉**：[15-user-portal-visual.md](visual-design-system.md)
+> Chinese version: [information-architecture.zh.md](information-architecture.zh.md)
 
----
-
-## 0. 一句话结论
-
-ma3 登录后 UI 分为 **两层导航**：
-
-1. **顶栏（资源管理）** — 我的主页 · **库 · 记录 · 投票 · API Keys**（同级目录）
-2. **账户 subnav（仅 `/ui/me/*`）** — **概览 · 设置**
-
-列表类页面（记录、投票）共用 **标准列表壳**：filter pills → 可排序表格 → 批量操作条（仅记录）→ `list-footer`（共 N 条 + 每页条数 + 分页）。概览 stat cards 整卡可点，作为顶栏的快捷入口。
-
-**技术约束**：SSR HTML（`ui_theme.py`），无 SPA。
+> **Status**: **Delivered** (2026-07-05)  
+> **Acceptance**: [acceptance/v1-user-portal-ui.md](../08-quality/acceptance/v1-user-portal-ui.md) (R/W/V series + pytest gate)
+> **Permission baseline**: [15-user-portal.md](portal-permissions.md)  
+> **Visual**: [15-user-portal-visual.md](visual-design-system.md)
 
 ---
 
-## 1. 站点地图
+## 0. One-Sentence Conclusion
+
+After logging in, ma3's UI is split into **two layers of navigation**:
+
+1. **Top bar (resource management)** — Home · **Libraries · Records · Votes · API Keys** (peer-level items)
+2. **Account subnav (`/ui/me/*` only)** — **Overview · Settings**
+
+List-type pages (records, votes) share a **standard list shell**: filter pills → sortable table → batch action bar (records only) → `list-footer` (total N + items per page + pagination). Overview stat cards are fully clickable, acting as shortcuts into the top bar's sections.
+
+**Technical constraint**: SSR HTML (`ui_theme.py`), no SPA.
+
+---
+
+## 1. Sitemap
 
 ```text
-/ui/me/                      概览仪表盘 ★ 默认落地
-/ui/me/settings/             账户（显示名只读、Principal ID）
-/ui/me/setup/                首次显示名（design/17，一次性）
+/ui/me/                      Overview dashboard ★ default landing
+/ui/me/settings/             Account (read-only display name, Principal ID)
+/ui/me/setup/                First-time display name (design/17, one-time)
 
-/ui/libraries/               库列表
-/ui/libraries/{id}/          库详情（Stats only）
-/ui/libraries/{id}/settings/ 库 buffer 设置（owner）
+/ui/libraries/               Library list
+/ui/libraries/{id}/          Library detail (Stats only)
+/ui/libraries/{id}/settings/ Library buffer settings (owner)
 
-/ui/me/writes/               记录列表（顶栏「记录」）
-/ui/me/votes/                投票列表（顶栏「投票」）
-/ui/records/{id}/            单条详情 + 投票 + buffer 操作区
+/ui/me/writes/               Records list (top bar "Records")
+/ui/me/votes/                Votes list (top bar "Votes")
+/ui/records/{id}/            Single record detail + voting + buffer action area
 
-/ui/keys/                    API Keys 列表（design/14）
-/ui/keys/{id}                Key 详情
+/ui/keys/                    API Keys list (design/14)
+/ui/keys/{id}                Key detail
 
-/ui/observatory/             产品管理员（admin）
+/ui/observatory/             Product admin (admin)
 ```
 
-v1.1 预留：`/ui/orgs/*`、`/ui/libraries/{id}/records/`、URL 美化 `/ui/records/` `/ui/votes/`。
+Reserved for v1.1: `/ui/orgs/*`, `/ui/libraries/{id}/records/`, URL cleanup for `/ui/records/` and `/ui/votes/`.
 
 ---
 
-## 2. 全局壳（Page Shell）
+## 2. Global Shell (Page Shell)
 
-### 2.1 顶栏 `.topbar`
+### 2.1 Top bar `.topbar`
 
 ```
 ┌─ #24292f ──────────────────────────────────────────────────────────────┐
-│ [ma3→/ui/me/]  我的主页 | 库 | 记录 | 投票 | API Keys | Observatory* │
-│                                              显示名 · 账户 · 退出       │
+│ [ma3→/ui/me/]  Home | Libraries | Records | Votes | API Keys | Observatory* │
+│                                              display name · account · sign out       │
 └────────────────────────────────────────────────────────────────────────┘
-* Observatory：仅 is_admin，class nav-admin
+* Observatory: is_admin only, class nav-admin
 ```
 
-| key | 标签 | href | active 条件 |
+| key | label | href | active condition |
 |-----|------|------|-------------|
-| me | 我的主页 | `/ui/me/` | 概览、setup |
-| libraries | 库 | `/ui/libraries/` | 库列表/详情/settings |
-| records | 记录 | `/ui/me/writes/` | writes 及 query 变体 |
-| votes | 投票 | `/ui/me/votes/` | votes 及 query 变体 |
-| keys | API Keys | `/ui/keys/` | keys 列表/详情 |
+| me | Home | `/ui/me/` | overview, setup |
+| libraries | Libraries | `/ui/libraries/` | library list/detail/settings |
+| records | Records | `/ui/me/writes/` | writes and query variants |
+| votes | Votes | `/ui/me/votes/` | votes and query variants |
+| keys | API Keys | `/ui/keys/` | keys list/detail |
 | observatory | Observatory | `/ui/observatory/` | admin |
 
-**文案**：「库」替代 `Libraries`；`API Keys` 保留英文。
+**Copy**: the Chinese label uses the character meaning "library" instead of the English loanword `Libraries`; `API Keys` stays in English.
 
-### 2.2 账户 subnav `.subnav-links`
+### 2.2 Account subnav `.subnav-links`
 
-**仅**在 `/ui/me/`、`/ui/me/settings/` 渲染：
+Rendered **only** on `/ui/me/` and `/ui/me/settings/`:
 
 | tab | href |
 |-----|------|
-| 概览 | `/ui/me/` |
-| 设置 | `/ui/me/settings/` |
+| Overview | `/ui/me/` |
+| Settings | `/ui/me/settings/` |
 
-**不在** 记录/投票/库/keys 页渲染 subnav。
+**Not** rendered on records/votes/libraries/keys pages.
 
-### 2.3 内容区
+### 2.3 Content Area
 
 ```
 .page-narrow (max 1012px)
   .page-header: h1.page-title + .page-subtitle | .actions
-  [filter-pills]          ← 列表页
-  .card > table.data      ← 列表/详情
-  .list-footer            ← 列表页底栏
+  [filter-pills]          ← list pages
+  .card > table.data      ← list/detail
+  .list-footer            ← list page footer
   .footer
 ```
 
 ---
 
-## 3. 页面规格
+## 3. Page Specifications
 
-### 3.1 `/ui/me/` — 概览（仪表盘）
+### 3.1 `/ui/me/` — Overview (dashboard)
 
-**subnav**：概览 active · **顶栏**：我的主页 active
+**subnav**: Overview active · **top bar**: Home active
 
-| 区块 | 内容 |
+| Section | Content |
 |------|------|
-| `.profile-header` | 头像 + 显示名（无 Principal ID、无编辑链接） |
-| `.grid.stats` ×5 | **可点击** stat card |
-| card「我的库」 | ≤5 行 + 「查看全部 →」`/ui/libraries/` |
-| card「最近贡献」 | ≤5 条 + 「查看全部 →」`/ui/me/writes/` |
+| `.profile-header` | avatar + display name (no Principal ID, no edit link) |
+| `.grid.stats` ×5 | **clickable** stat cards |
+| card "My libraries" | ≤5 rows + "View all →" `/ui/libraries/` |
+| card "Recent contributions" | ≤5 items + "View all →" `/ui/me/writes/` |
 
-**Stat cards（5 张，整卡 `<a class="stat-card-link">`）**：
+**Stat cards (5 total, each a full-card `<a class="stat-card-link">`)**:
 
-| 标签 | href |
+| Label | href |
 |------|------|
-| 记录 | `/ui/me/writes/` |
-| 待发布 | `/ui/me/writes/?status=buffered` |
-| 可访问库 | `/ui/libraries/` |
-| 投票 | `/ui/me/votes/` |
+| Records | `/ui/me/writes/` |
+| Pending | `/ui/me/writes/?status=buffered` |
+| Accessible libraries | `/ui/libraries/` |
+| Votes | `/ui/me/votes/` |
 | API Keys | `/ui/keys/` |
 
-计数为 0 仍可点击。
+A count of 0 remains clickable.
 
-### 3.2 `/ui/me/settings/` — 账户
+### 3.2 `/ui/me/settings/` — Account
 
-**subnav**：设置 active
+**subnav**: Settings active
 
-| card | 内容 |
+| card | content |
 |------|------|
-| 显示名 | 只读；注册时在 setup 设定，不可改 |
-| Principal ID | `.id-block` 只读，**无复制** |
+| Display name | read-only; set during setup at registration, cannot be changed |
+| Principal ID | `.id-block` read-only, **no copy** |
 
-### 3.3 `/ui/libraries/` — 库
+### 3.3 `/ui/libraries/` — Libraries
 
-**顶栏**：库 active · **h1**：库
+**top bar**: Libraries active · **h1**: Libraries
 
-表格：`库名(link) | 可见性 | 权限 | 角色`（Stats only 政策不变）。
+Table: `Library name (link) | Visibility | Permission | Role` (Stats-only policy unchanged).
 
-### 3.4 `/ui/me/writes/` — 记录（标准列表页）
+### 3.4 `/ui/me/writes/` — Records (standard list page)
 
-**顶栏**：记录 active · **h1**：记录 · **无 subnav**
+**top bar**: Records active · **h1**: Records · **no subnav**
 
-**Query 契约**：
+**Query contract**:
 
-| 参数 | 默认 | 说明 |
+| Parameter | Default | Description |
 |------|------|------|
-| `page` | 1 | 页码 |
+| `page` | 1 | Page number |
 | `per_page` | 50 | 10 / 25 / 50 / 100 |
-| `sort` | `created_at` | 时间、记录、状态、库、类型、Key |
+| `sort` | `created_at` | Time, record, status, library, kind, key |
 | `dir` | `desc` | asc / desc |
 | `status` | all | all / active / buffered / deleted |
 
-**Filter pills**：全部 · 已发布 · 待发布 · 已删除
+**Filter pills**: All · Published · Pending · Deleted
 
-**表格列**：□（表头 **全选本页** `#writes-select-all`，仅 buffered+owner 行有 checkbox）| 时间 | 记录(link 或已删除占位) | 状态 | 库 | 类型 | Key
+**Table columns**: □ (header **select all on this page** `#writes-select-all`, only buffered+owner rows have a checkbox) | Time | Record (link or deleted placeholder) | Status | Library | Kind | Key
 
-**已删除行**：「记录」列固定文案 **记录内容已完全删除，不可显示**（`.card-muted`）；不展示 problem 原文。
+**Deleted rows**: the "Record" column shows the fixed text **The record content has been fully deleted and cannot be shown** (`.card-muted`); the original problem text is not shown.
 
-**批量操作条**：批量发布 · 批量删除 → `POST /ui/me/writes/batch`
+**Batch action bar**: Publish selected · Delete selected → `POST /ui/me/writes/batch`
 
-- 未选任何行：页内 warning「请先选择至少一条记录」或 303 回列表带 `error`；**不得**返回 JSON `{"detail":...}`
-- POST 保留当前 `status/sort/dir/page/per_page`（hidden fields）
+- If no row is selected: an inline warning "Select at least one record first", or a 303 redirect back to the list with `error`; **must not** return a JSON `{"detail":...}`
+- POST preserves the current `status/sort/dir/page/per_page` (hidden fields)
 
-**list-footer**：共 N 条 · 每页 pill · 上一页/下一页
+**list-footer**: total N items · per-page pill · previous/next page
 
-### 3.5 `/ui/me/votes/` — 投票（标准列表页）
+### 3.5 `/ui/me/votes/` — Votes (standard list page)
 
-**顶栏**：投票 active · **h1**：投票 · **无 subnav**
+**top bar**: Votes active · **h1**: Votes · **no subnav**
 
-**Query**：`page`, `per_page`, `sort`, `dir`, `vote`（all/up/down）
+**Query**: `page`, `per_page`, `sort`, `dir`, `vote` (all/up/down)
 
-**Filter pills**：全部 · 👍 赞同 · 👎 反对
+**Filter pills**: All · 👍 Upvote · 👎 Downvote
 
-**无 checkbox、无批量**；改票仅在 `/ui/records/{id}/`
+**No checkboxes, no batch actions**; changing a vote only via `/ui/records/{id}/`
 
-**list-footer**：同记录页。
+**list-footer**: same as the records page.
 
-### 3.6 `/ui/records/{id}/` — 记录详情
+### 3.6 `/ui/records/{id}/` — Record detail
 
-| 区块 | 条件 |
+| Section | Condition |
 |------|------|
-| buffer 操作 card | status=buffered 且 owner：发布/修改/删除 |
-| 知识条目 + Feedback | active 可投票；非 author buffered → 404 |
+| Buffer action card | status=buffered and owner: publish/edit/delete |
+| Knowledge entry + Feedback | active can be voted on; non-author buffered → 404 |
 
 ### 3.7 `/ui/keys/` — API Keys
 
-**顶栏**：API Keys active
+**top bar**: API Keys active
 
-布局真源：[14-api-key-lifecycle.md](api-keys-ui-and-api.md) §5（列表 Actions 复制/删除；详情统一保存表单 + danger-zone）。
+Layout source of truth: [14-api-key-lifecycle.md](api-keys-ui-and-api.md) §5 (list Actions copy/delete; detail unified save form + danger-zone).
 
 ---
 
-## 4. 共享组件（`ui_theme.py`）
+## 4. Shared Components (`ui_theme.py`)
 
-| 组件 | class / helper | 用途 |
+| Component | class / helper | Purpose |
 |------|----------------|------|
-| Stat 可点 | `a.stat-card-link` | `render_stat_cards((label, value, href))` |
+| Clickable stat | `a.stat-card-link` | `render_stat_cards((label, value, href))` |
 | Filter | `.filter-pills` | `render_filter_pills(items, base, query)` |
-| 排序表头 | `th` + `<a>` | `render_sort_link` → `render_table` **不**二次 esc 表头 HTML |
-| 列表底栏 | `.list-footer` | `render_list_footer(page, total, per_page, query)` |
-| 分页 | `.pagination` | 保留 sort/filter/per_page query |
+| Sortable table header | `th` + `<a>` | `render_sort_link` → `render_table` does **not** double-escape header HTML |
+| List footer | `.list-footer` | `render_list_footer(page, total, per_page, query)` |
+| Pagination | `.pagination` | preserves sort/filter/per_page query |
 
-**原则**：列表 UI 不 hand-roll 在 `routes_portal.py` 多处；query 白名单排序列，防 SQL 注入。
+**Principle**: list UI is not hand-rolled in multiple places in `routes_portal.py`; the query allowlist restricts sortable columns to prevent SQL injection.
 
 ---
 
-## 5. 数据与文案
+## 5. Data and Copy
 
-| 项 | 规则 |
+| Item | Rule |
 |----|------|
-| 个人库名 | `{display_name} 的个人库`；`ensure_personal_library` 自动同步 |
-| 显示名 | design/17：setup 一次性，settings 只读 |
-| 库列表 subtitle | 可保留「仅展示统计，不提供 record 枚举」 |
+| Personal library name | `{display_name}'s personal library`; `ensure_personal_library` auto-syncs |
+| Display name | design/17: set once during setup, read-only in settings |
+| Library list subtitle | may keep "Shows statistics only; record enumeration is not available" |
 
 ---
 
-## 6. 明确不做（v1）
+## 6. Explicitly Not Doing (v1)
 
-- SPA / 客户端路由
-- 非 admin **库内 record 枚举** UI
-- Export 批量导出
-- Org 管理 UI
-- URL 美化 `/ui/records/`、`/ui/votes/`
-- 顶栏 hamburger / responsive 专项（v1 接受 flex 换行）
-- 投票列表 **批量改票**
-- Observatory 中文化
-- 概览页 Principal ID / 编辑显示名
-- subnav「我的贡献 / 我的投票」
+- SPA / client-side routing
+- Non-admin **library record enumeration** UI
+- Batch export
+- Org management UI
+- URL cleanup for `/ui/records/`, `/ui/votes/`
+- Top bar hamburger / dedicated responsive work (v1 accepts flex wrapping)
+- **Batch vote change** in the votes list
+- Observatory localization
+- Overview page Principal ID / edit display name
+- subnav "My contributions / My votes"
 - community browse/search UI
 
 ---
 
-## 7. v1.1 预留
+## 7. Reserved for v1.1
 
-- `/ui/orgs/*`、entitlement resolver 替换启发式
-- `/ui/libraries/{id}/records/` 库管理员枚举
+- `/ui/orgs/*`, entitlement resolver replaces the heuristic
+- `/ui/libraries/{id}/records/` library-admin enumeration
 - `/ui/libraries/{id}/grants`
-- Export、URL 美化、settings 页 Principal ID 复制（可选）
+- Export, URL cleanup, settings page Principal ID copy (optional)

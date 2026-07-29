@@ -1,10 +1,12 @@
-# ma3 v1 — 实现
+# ma3 v1 — Implementation
+
+> Chinese version: [README.zh.md](README.zh.md)
 
 Greenfield server per [../docs/01-product/pitch.md](../docs/01-product/pitch.md) and ADR 001–008.
 
 ## Quick start
 
-See root [README.md §C 本地跑起 server（开发）](../README.md#c-本地跑起-server开发) for the canonical dev setup. In short (paths relative to repo root):
+See root [README.md](../README.md) for the canonical local server setup. In short (paths relative to repo root):
 
 ```bash
 cd code/server
@@ -51,5 +53,5 @@ cd server && .venv/bin/pytest -q tests/unit
 
 1. PostgreSQL + org/library ACL (SaaS profile)
 2. Vector search + `MA3_DISABLE_EMBEDDINGS`
-3. Observatory 完整只读 + 人 — 维护者纠偏 UI
+3. Full read-only Observatory + human–maintainer correction UI
 4. OIDC auth profile

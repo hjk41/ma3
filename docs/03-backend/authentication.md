@@ -1,63 +1,65 @@
-# 认证（Authentication）
+# Authentication
 
-> Session 用于 **Web UI**；MCP 数据路径见 [authorization-and-libraries.md](authorization-and-libraries.md)。
+> Chinese version: [authentication.zh.md](authentication.zh.md)
 
-## 双轨认证
+> Session is used for the **Web UI**; for the MCP data path see [authorization-and-libraries.md](authorization-and-libraries.md).
 
-| 轨 | 凭证 | 用途 |
+## Two authentication tracks
+
+| Track | Credential | Purpose |
 |----|------|------|
-| **人（浏览器）** | Authing OIDC → session cookie | 门户、`/ui/keys/*`、Observatory |
-| **Agent（MCP）** | `X-API-Key` header | 全部 MCP tools |
+| **Human (browser)** | Authing OIDC → session cookie | Portal, `/ui/keys/*`, Observatory |
+| **Agent (MCP)** | `X-API-Key` header | All MCP tools |
 
-Bearer token **不**授予 MCP 数据访问。
+A bearer token does **not** grant MCP data access.
 
-## Authing 登录流
+## Authing login flow
 
 ```text
-GET /ui/me/ (无 session)
+GET /ui/me/ (no session)
   → 302 /auth/login?next=...
   → 302 Authing authorize
   → GET /auth/callback?code=...
   → ensure_user_principal + ensure_personal_library
-  → 若 display_name_locked=0 → 302 /ui/me/setup/
-  → 否则 302 next（默认 /ui/me/）
+  → if display_name_locked=0 → 302 /ui/me/setup/
+  → otherwise 302 next (default /ui/me/)
 ```
 
-配置见 [../06-operations/deployment-authing.md](../06-operations/deployment-authing.md)。
+See [../06-operations/deployment-authing.md](../06-operations/deployment-authing.md) for configuration.
 
-## Session 用户模型
+## Session user model
 
 ```python
 SessionUser:
   principal_id: str      # user:{authing_sub}
   display_name: str
-  is_admin: bool         # MA3_AUTH_ADMIN_USERS 匹配
+  is_admin: bool         # matched against MA3_AUTH_ADMIN_USERS
 ```
 
-## 启动校验
+## Startup validation
 
-当 `settings.authing_configured and not settings.auth_admin_users`：
+When `settings.authing_configured and not settings.auth_admin_users`:
 
-- **拒绝启动**（与 misconfigured DB 同级）
-- `ma3_doctor` 报 fail
-- LAN `authing_enabled=False` **不受限**
+- **Refuses to start** (same severity as a misconfigured DB)
+- `ma3_doctor` reports a failure
+- LAN `authing_enabled=False` is **not restricted**
 
 ## Dev break-glass
 
-| 变量 | 用途 |
+| Variable | Purpose |
 |------|------|
-| `MA3_DEV_AUTH=1` | LAN 跳过 OIDC |
-| `MA3_DEV_API_KEY` | 单 key admin bypass（MCP） |
+| `MA3_DEV_AUTH=1` | Skip OIDC on LAN |
+| `MA3_DEV_API_KEY` | Single-key admin bypass (MCP) |
 
-## Display name 门控
+## Display name gating
 
-未完成 [display-name-registration](../04-frontend/display-name-registration.md) 时：
+Before completing [display-name-registration](../04-frontend/display-name-registration.md):
 
-- 门户路由 → 302 `/ui/me/setup/`
+- Portal routes → 302 `/ui/me/setup/`
 - `GET /api/keys` → 403
 
-## 待补充
+## TODO
 
-- [ ] Session cookie 名称、TTL、安全 flags
-- [ ] Authing 用户属性 → principal 字段映射表
-- [ ] 登出 / session 失效行为
+- [ ] Session cookie name, TTL, security flags
+- [ ] Authing user attribute → principal field mapping table
+- [ ] Logout / session invalidation behavior

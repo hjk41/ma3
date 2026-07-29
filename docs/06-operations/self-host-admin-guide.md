@@ -1,44 +1,46 @@
-# 自托管管理员手册
+# Self-Hosting Administrator Guide
 
-面向**实例管理员**：从 Compose 部署，到首次初始化（Web / Agent），再到邀请同事入组并用 MCP 接入。
+> Chinese version: [self-host-admin-guide.zh.md](self-host-admin-guide.zh.md)
 
-**相关文档**
+For **instance administrators**: from Compose deployment, through first-time initialization (Web / Agent), to inviting colleagues into an org and connecting via MCP.
 
-| 文档 | 用途 |
+**Related documents**
+
+| Document | Purpose |
 |------|------|
-| [self-hosting.md](self-hosting.md) | Compose 参数、安全、OIDC、排障细节 |
-| [self-host-first-run-guide.md](self-host-first-run-guide.md) | 首次引导状态机与设计说明 |
-| [api-overview.md](../03-backend/api-overview.md) | MCP vs REST 全路由表 |
-| 实例上 `GET {BASE}/client/agent-onboarding.md` | 给普通 Agent 的接入说明 |
+| [self-hosting.md](self-hosting.md) | Compose parameters, security, OIDC, troubleshooting details |
+| [self-host-first-run-guide.md](self-host-first-run-guide.md) | first-run state machine and design notes |
+| [api-overview.md](../03-backend/api-overview.md) | full MCP vs REST route table |
+| `GET {BASE}/client/agent-onboarding.md` on the instance | onboarding instructions for regular Agents |
 
-**支持**：社区 best-effort，无 SLA。
+**Support**: community best-effort, no SLA.
 
 ---
 
-## 0. 你要达成的结果
+## 0. The Outcome You Are Aiming For
 
 ```text
-部署实例
-  → 创建管理员账号 + API Key
-  → 创建团队组织（+ 可选库）
-  → 发邀请链接给同事（可预设组织内别名）
-  → 同事注册自动入组、自建 Key、配置 MCP
-  → （建议）关闭开放注册
+Deploy instance
+  → create admin account + API Key
+  → create team org (+ optional libraries)
+  → send invite links to colleagues (org-internal alias can be preset)
+  → colleagues register, auto-join the org, mint their own Keys, configure MCP
+  → (recommended) close open registration
 ```
 
-原则：**知识环走 MCP**（`ma3_context` / `ma3_report` / `ma3_feedback`）；**账号 / 组织 / 邀请走 REST 或 Web**。
+Principle: **the knowledge loop goes over MCP** (`ma3_context` / `ma3_report` / `ma3_feedback`); **accounts / orgs / invites go over REST or the Web**.
 
 ---
 
-## 1. 部署
+## 1. Deployment
 
-### 1.1 环境要求
+### 1.1 Requirements
 
 - Docker + Docker Compose
-- 能访问镜像仓库；若需下载 embedding 模型，容器需能访问 Hugging Face（或配置 `HTTP_PROXY` / `HTTPS_PROXY`）
-- 局域网访问时，在 `.env` 里把 `MA3_PUBLIC_BASE_URL` 设成同事能打开的地址（例如 `http://192.168.x.x:8010`）
+- Access to the image registry; if embedding models need downloading, the container must reach Hugging Face (or configure `HTTP_PROXY` / `HTTPS_PROXY`)
+- For LAN access, set `MA3_PUBLIC_BASE_URL` in `.env` to an address colleagues can open (e.g. `http://192.168.x.x:8010`)
 
-### 1.2 一键启动
+### 1.2 One-Command Startup
 
 ```bash
 git clone https://github.com/hjk41/ma3.git
@@ -46,93 +48,93 @@ cd ma3/deploy/self-host
 cp .env.example .env
 ```
 
-编辑 `.env`，至少修改：
+Edit `.env` and change at least:
 
-| 变量 | 说明 |
+| Variable | Description |
 |------|------|
-| `POSTGRES_PASSWORD` | 数据库密码 |
-| `MA3_API_KEY_ENCRYPTION_SECRET` | 用于加密门户 API Key 的长随机串 |
-| `MA3_PUBLIC_BASE_URL` | 对外访问根 URL（邀请链接会用到） |
-| `MA3_PORT` | 宿主机映射端口（默认 `8000`） |
+| `POSTGRES_PASSWORD` | database password |
+| `MA3_API_KEY_ENCRYPTION_SECRET` | long random string used to encrypt portal API Keys |
+| `MA3_PUBLIC_BASE_URL` | externally reachable root URL (used by invite links) |
+| `MA3_PORT` | host-mapped port (default `8000`) |
 
-然后：
+Then:
 
 ```bash
 ./up.sh
 ./verify.sh
-# 健康检查
+# Health check
 curl -fsS "http://127.0.0.1:${MA3_PORT:-8000}/healthz"
 ```
 
-`./up.sh` 成功后，浏览器可打开 `MA3_PUBLIC_BASE_URL`；若尚无账号，会进入首次设置。
+Once `./up.sh` succeeds, open `MA3_PUBLIC_BASE_URL` in a browser; if no account exists yet, you enter first-time setup.
 
-### 1.3 部署后立刻要知道的两样东西
+### 1.3 Two Things to Know Right After Deployment
 
-1. **Bootstrap API Key**（容器内文件）— 只能用于 **MCP 知识工具**，**不能**管理用户 / 完成 setup / 建组织：
+1. **Bootstrap API Key** (file inside the container) — can only be used for **MCP knowledge tools**; it **cannot** manage users / complete setup / create orgs:
 
    ```bash
    docker compose exec ma3 cat /data/bootstrap_api_key.txt
    ```
 
-2. **本地账号体系**（默认开启）— 未配置 OIDC 时 `MA3_LOCAL_AUTH=1`：第一个注册用户是**实例管理员**。
+2. **Local account system** (enabled by default) — when OIDC is not configured, `MA3_LOCAL_AUTH=1`: the first registered user becomes the **instance administrator**.
 
-> 不要把 bootstrap key 当分发账号；管理员请注册本地账号并 mint 自己的 API Key。
+> Do not treat the bootstrap key as a distribution account; the admin should register a local account and mint their own API Key.
 
-### 1.4 常用运维命令
+### 1.4 Common Ops Commands
 
 ```bash
 cd ma3/deploy/self-host
 docker compose ps
 docker compose logs -f ma3
 docker compose restart ma3
-# 危险：删除数据卷
+# Dangerous: deletes data volumes
 # docker compose down -v
 ```
 
-备份卷：`ma3_pgdata`（数据库）、`ma3_data`（bootstrap key、HF 缓存）。
+Volumes to back up: `ma3_pgdata` (database), `ma3_data` (bootstrap key, HF cache).
 
 ---
 
-## 2. 初始化：Web 页面
+## 2. Initialization: Web UI
 
-适合人工点几下完成首次配置。
+Suitable for finishing first-time configuration with a few clicks.
 
-### 2.1 创建管理员
+### 2.1 Create the Admin
 
-1. 打开 `MA3_PUBLIC_BASE_URL`（或 `/ui/setup/`）。
-2. **创建管理员账号**（用户名 + 密码 + 显示名）。首个本地账号自动成为 admin。
-3. 登录后按设置清单：
-   - 到 `/ui/keys/` **签发 API Key**（给自己的 Agent 用）
-   - 决定是否保持开放注册（局域网建议稍后关闭）
-   - 点击 **完成引导**
+1. Open `MA3_PUBLIC_BASE_URL` (or `/ui/setup/`).
+2. **Create the admin account** (username + password + display name). The first local account automatically becomes admin.
+3. After logging in, follow the setup checklist:
+   - Go to `/ui/keys/` to **issue an API Key** (for your own Agent)
+   - Decide whether to keep open registration (recommended: close it later on a LAN)
+   - Click **Complete setup**
 
-### 2.2 创建组织与库
+### 2.2 Create Orgs and Libraries
 
-1. 打开 `/ui/orgs/` → **新建组织**（需实例管理员或付费计划允许；本地首管理员一般可建）。
-2. 进入组织 → 可创建 **组织库**（默认 private）。
-3. 打开 **成员** 页：可手动加人，或生成邀请（见 §4）。
+1. Open `/ui/orgs/` → **New organization** (requires instance admin or a paid plan that allows it; the first local admin generally can).
+2. Enter the org → you can create an **org library** (private by default).
+3. Open the **Members** page: add people manually, or generate an invite (see §4).
 
-### 2.3 管理员常用入口
+### 2.3 Common Admin Entry Points
 
-| 页面 | 用途 |
+| Page | Purpose |
 |------|------|
-| `/ui/setup/` | 首次引导 |
-| `/ui/keys/` | 自己的 API Key |
-| `/ui/orgs/` | 组织 / 库 / 成员 / 邀请 |
-| `/ui/observatory/` | 观测台（产品管理员） |
-| `/ui/observatory/local-users/` | 本地账号、开/关注册 |
+| `/ui/setup/` | first-run setup |
+| `/ui/keys/` | your own API Keys |
+| `/ui/orgs/` | orgs / libraries / members / invites |
+| `/ui/observatory/` | Observatory (product admins) |
+| `/ui/observatory/local-users/` | local accounts, open/close registration |
 
 ---
 
-## 3. 初始化：Agent / REST（无浏览器）
+## 3. Initialization: Agent / REST (no browser)
 
-适合用 Cursor / 脚本把实例拉到「可邀请同事」状态。以下假设：
+Suitable for bringing the instance to an "invitable" state via Cursor / scripts. Assumes:
 
 ```bash
-BASE=http://192.168.x.x:8010   # 改成你的 MA3_PUBLIC_BASE_URL
+BASE=http://192.168.x.x:8010   # change to your MA3_PUBLIC_BASE_URL
 ```
 
-### 3.1 注册管理员并拿到 Key
+### 3.1 Register the Admin and Get a Key
 
 ```bash
 curl -fsS "$BASE/api/setup/status" | jq
@@ -149,10 +151,11 @@ ADMIN_KEY=$(jq -r '.api_key.plaintext_key' <<<"$REGISTER")
 echo "ADMIN_KEY=$ADMIN_KEY"
 ```
 
-### 3.2 完成 setup
+### 3.2 Complete Setup
 
 ```bash
-# 若暂时要靠「开放注册」拉人，可先 open:true；更推荐用邀请链接（§4），然后关闭注册
+# If you temporarily rely on open registration to bring people in, set open:true first;
+# invite links are preferred (§4) — then close registration
 curl -fsS -X PATCH "$BASE/api/setup/registration" \
   -H "X-API-Key: $ADMIN_KEY" -H 'Content-Type: application/json' \
   -d '{"open":false}' | jq
@@ -161,7 +164,7 @@ curl -fsS -X POST "$BASE/api/setup/complete" \
   -H "X-API-Key: $ADMIN_KEY" | jq
 ```
 
-### 3.3 创建组织与库
+### 3.3 Create Org and Library
 
 ```bash
 ORG=$(curl -fsS -X POST "$BASE/api/orgs" \
@@ -176,38 +179,38 @@ LIB_ID=$(jq -r '.library_id' <<<"$LIB")
 echo "ORG_ID=$ORG_ID LIB_ID=$LIB_ID"
 ```
 
-### 3.4 把 Key 交给管理员自己的 Agent
+### 3.4 Hand the Key to the Admin's Own Agent
 
-配置 MCP（示例）：
+Configure MCP (example):
 
 - `MA3_BASE_URL=$BASE`
 - `X-API-Key=$ADMIN_KEY`
 
-验证：`ma3_whoami` → `ma3_context`（可先空查）→ 需要时再 `ma3_report`。
+Verify: `ma3_whoami` → `ma3_context` (an empty query is fine) → `ma3_report` when needed.
 
-详细工具约定见实例 `GET $BASE/client/agent-onboarding.md`。
+Detailed tool conventions: `GET $BASE/client/agent-onboarding.md` on the instance.
 
 ---
 
-## 4. Onboard 其他成员（推荐：邀请链接）
+## 4. Onboarding Other Members (recommended: invite links)
 
-**推荐路径**：邀请码/链接（关闭开放注册也能用）+ 可选**组织内别名**。
+**Recommended path**: invite codes/links (work even with open registration closed) + optional **org-internal alias**.
 
-### 4.1 Web：生成邀请
+### 4.1 Web: Generate an Invite
 
-1. 打开 `/ui/orgs/{组织}/members/`
-2. 在 **邀请链接** 卡片中填写：
-   - **组织内别名**（可选，例如「小明」— 对方入组后成员列表即显示）
-   - 角色、可用次数（默认 1 次）、有效期（默认 168 小时）
-3. **生成邀请**，复制页面上的 URL，发给同事（明文 token **只显示一次**）。
+1. Open `/ui/orgs/{org}/members/`
+2. In the **Invite link** card, fill in:
+   - **Org-internal alias** (optional, e.g. "Xiao Ming" — shown in the member list once they join)
+   - Role, usage count (default 1), validity period (default 168 hours)
+3. **Generate invite**, copy the URL from the page, and send it to your colleague (the plaintext token is **shown only once**).
 
-同事打开：
+The colleague opens:
 
 `{MA3_PUBLIC_BASE_URL}/auth/register?invite=ma3inv_…`
 
-注册成功后会自动加入该组织；若设了别名，成员页立刻可见。
+After successful registration they automatically join the org; if an alias was set, it appears on the members page immediately.
 
-### 4.2 Agent / REST：生成邀请
+### 4.2 Agent / REST: Generate an Invite
 
 ```bash
 INV=$(curl -fsS -X POST "$BASE/api/orgs/$ORG_ID/invites" \
@@ -216,34 +219,34 @@ INV=$(curl -fsS -X POST "$BASE/api/orgs/$ORG_ID/invites" \
     "role":"member",
     "max_uses":1,
     "expires_in_hours":168,
-    "member_alias":"小明"
+    "member_alias":"Xiao Ming"
   }')
 jq '{invite_url, token, member_alias, expires_at}' <<<"$INV"
 ```
 
-把 `invite_url` 发给同事即可。
+Send `invite_url` to the colleague.
 
-预览（公开）：
+Preview (public):
 
 ```bash
 curl -fsS "$BASE/api/invites/preview?token=ma3inv_…" | jq
 ```
 
-吊销：
+Revoke:
 
 ```bash
 curl -fsS -X DELETE "$BASE/api/orgs/$ORG_ID/invites/{invite_id}" \
   -H "X-API-Key: $ADMIN_KEY"
 ```
 
-### 4.3 同事侧要做什么
+### 4.3 What the Colleague Needs to Do
 
-1. 打开邀请链接 → 注册账号（关闭开放注册时，**只有有效邀请**能注册）。
-2. 登录后到 `/ui/keys/` **创建自己的 API Key**（或注册时用 REST 带 `api_key`）。
-3. 把 `MA3_BASE_URL` + 自己的 Key 配进 MCP。
-4. 若需要写某个**私有组织库**，管理员还需授库权限（见下）。
+1. Open the invite link → register an account (with open registration closed, **only a valid invite** allows registration).
+2. After logging in, go to `/ui/keys/` and **create their own API Key** (or include `api_key` in the REST registration call).
+3. Configure `MA3_BASE_URL` + their own Key into MCP.
+4. To write to a specific **private org library**, the admin must also grant library permissions (see below).
 
-已有账号也可兑换邀请（不新建账号）：
+Existing accounts can also redeem an invite (no new account created):
 
 ```bash
 curl -fsS -X POST "$BASE/api/invites/redeem" \
@@ -251,23 +254,23 @@ curl -fsS -X POST "$BASE/api/invites/redeem" \
   -d '{"token":"ma3inv_…"}'
 ```
 
-### 4.4 组织内别名
+### 4.4 Org-Internal Aliases
 
-| 操作 | 方式 |
+| Operation | Method |
 |------|------|
-| 邀请时预设 | `member_alias` / 邀请表单「组织内别名」 |
-| 事后修改 | `PATCH /api/orgs/{id}/members/{principal_id}` `{"alias":"…"}` |
-| 查看 | `GET /api/orgs/{id}/members` 或成员页表格 |
+| Preset at invite time | `member_alias` / "Org-internal alias" field on the invite form |
+| Change later | `PATCH /api/orgs/{id}/members/{principal_id}` `{"alias":"…"}` |
+| View | `GET /api/orgs/{id}/members` or the members page table |
 
-别名只在**该组织内**显示，与全局显示名无关；同组织内别名不可重复。
+An alias is only displayed **within that org**, independent of the global display name; aliases must be unique within an org.
 
-### 4.5 给组织库授权（可选）
+### 4.5 Granting Access to Org Libraries (optional)
 
-入组 ≠ 自动可写每个 private 库。需要时：
+Joining an org ≠ automatic write access to every private library. When needed:
 
-**Web**：库详情 → Grants。
+**Web**: library detail → Grants.
 
-**REST**：
+**REST**:
 
 ```bash
 curl -fsS -X POST "$BASE/api/libraries/$LIB_ID/grants" \
@@ -275,49 +278,49 @@ curl -fsS -X POST "$BASE/api/libraries/$LIB_ID/grants" \
   -d '{"username":"alice","role":"writer"}'
 ```
 
-### 4.6 备选：开放注册 + 手动加人
+### 4.6 Alternative: Open Registration + Manual Adds
 
-不推荐作为默认（局域网易被随意注册），但可用：
+Not recommended as the default (on a LAN, anyone can register), but usable:
 
-1. `PATCH /api/setup/registration` `{"open":true}` 或观测台打开注册。
-2. 同事自行 `/auth/register`。
-3. 管理员在成员页添加，或 `POST /api/orgs/{id}/members`（可带 `alias`）。
-4. 人齐后 **关闭注册**。
+1. `PATCH /api/setup/registration` `{"open":true}` or open registration in the Observatory.
+2. Colleagues self-register via `/auth/register`.
+3. The admin adds them on the members page, or `POST /api/orgs/{id}/members` (can include `alias`).
+4. Once everyone is in, **close registration**.
 
 ---
 
-## 5. 分工速查（避免用错 Key）
+## 5. Division of Roles Quick Reference (avoid using the wrong Key)
 
-| 凭证 | 能做什么 | 不能做什么 |
+| Credential | Can do | Cannot do |
 |------|----------|------------|
-| Bootstrap key | MCP 知识读写（若授权允许） | 管理用户、完成 setup、建 org、发邀请 |
-| 管理员用户 API Key | Setup、本地用户、组织、邀请、库授权、自己的 keys | — |
-| 普通用户 API Key | 自己的 keys、MCP（按其 grants）、兑换邀请 | 管理他人 / 发 org 邀请（非 org admin） |
+| Bootstrap key | MCP knowledge reads/writes (if grants allow) | manage users, complete setup, create orgs, send invites |
+| Admin user API Key | setup, local users, orgs, invites, library grants, own keys | — |
+| Regular user API Key | own keys, MCP (per its grants), redeem invites | manage others / send org invites (unless org admin) |
 
 ---
 
-## 6. 建议的安全清单
+## 6. Recommended Security Checklist
 
-- [ ] `.env` 中密码与加密密钥已改成强随机值  
-- [ ] `MA3_PUBLIC_BASE_URL` 指向真实可访问地址（邀请链接才正确）  
-- [ ] 管理员已 mint **非 bootstrap** API Key  
-- [ ] 主要用**邀请链接**拉人，人齐后 **关闭开放注册**  
-- [ ] 未在公网裸奔：公网请上 TLS 反代（见 `deploy/self-host/Caddyfile.example`）  
-- [ ] **不要**在公网开启 `MA3_DEV_AUTH`  
-- [ ] 定期备份 `ma3_pgdata` / `ma3_data`
+- [ ] Passwords and encryption secrets in `.env` changed to strong random values  
+- [ ] `MA3_PUBLIC_BASE_URL` points to a genuinely reachable address (so invite links are correct)  
+- [ ] Admin has minted a **non-bootstrap** API Key  
+- [ ] People are onboarded primarily via **invite links**; **close open registration** once everyone is in  
+- [ ] Not exposed bare on the public internet: use a TLS reverse proxy for public exposure (see `deploy/self-host/Caddyfile.example`)  
+- [ ] Do **not** enable `MA3_DEV_AUTH` on the public internet  
+- [ ] Regularly back up `ma3_pgdata` / `ma3_data`
 
 ---
 
-## 7. 故障速查
+## 7. Troubleshooting Quick Reference
 
-| 现象 | 排查 |
+| Symptom | Check |
 |------|------|
-| `/healthz` 不通 | `docker compose ps` / `logs`；端口与防火墙 |
-| 注册 403 | 开放注册已关且无有效邀请 |
-| 邀请 410 | 过期、用尽或已吊销；重新生成 |
-| 邀请链接域名不对 | 修正 `MA3_PUBLIC_BASE_URL` 后重新生成邀请 |
-| bootstrap 调管理 API 403 | 换管理员用户 Key |
-| 入组后 MCP 看不到某库 | 检查 library grants / key grants |
-| embedding 卡住 | 代理、`MA3_DISABLE_EMBEDDINGS=1`（弱机器） |
+| `/healthz` unreachable | `docker compose ps` / `logs`; port and firewall |
+| Registration 403 | open registration closed and no valid invite |
+| Invite 410 | expired, used up, or revoked; regenerate |
+| Invite link has wrong domain | fix `MA3_PUBLIC_BASE_URL`, then regenerate the invite |
+| Bootstrap key calling admin API 403 | switch to an admin user Key |
+| Library not visible over MCP after joining org | check library grants / key grants |
+| Embedding stuck | proxy, `MA3_DISABLE_EMBEDDINGS=1` (weak machines) |
 
-更细的 Compose / OIDC 说明见 [self-hosting.md](self-hosting.md)。
+For more detailed Compose / OIDC notes see [self-hosting.md](self-hosting.md).

@@ -1,72 +1,74 @@
-# ADR-010 — Authing B2C 社交登录（Observatory）
+# ADR-010 — Authing B2C social login (Observatory)
 
-## 状态
+> Chinese version: [010-authing-social-login.zh.md](010-authing-social-login.zh.md)
 
-Accepted（2026-07-01）
+## Status
 
-## 背景
+Accepted (2026-07-01)
 
-v1 需要「普通人友好」的登录方式（微信、手机验证码），Agent 仍用 API key。ADR-001 已定 SaaS 首要形态；ADR-005 定 Observatory 使用 OIDC session。
+## Context
 
-经选型，**Authing 公有云 B2C 免费档（8000 MAU）** 作为首期人登录网关；202 LAN 继续 `MA3_DEV_AUTH`，不强制 Authing。
+v1 needs a "friendly for regular people" login method (WeChat, SMS verification code), while agents continue to use API keys. ADR-001 already settled SaaS as the primary form factor; ADR-005 settled that Observatory uses an OIDC session.
 
-## 决策
+After evaluation, **Authing's public cloud B2C free tier (8000 MAU)** was selected as the initial human login gateway; LAN host 202 continues to use `MA3_DEV_AUTH` and is not required to use Authing.
 
-1. **Observatory / 人维护者 UI** 通过 **Authing OIDC 授权码模式** 登录。
-2. **MCP / Agent** 继续使用 `X-API-Key` / library key，**不经过 Authing**。
-3. 登录成功后 ma3 **upsert `principals`**（`kind=user`），`sso_user` = Authing `sub`。
-4. Session：**HttpOnly cookie** 存 `access_token`，请求时用 Authing **userinfo** 校验并带短期内存缓存。
-5. 启用条件：`MA3_AUTHING_ENABLED=1` 且配置 `MA3_AUTHING_ISSUER`、`MA3_AUTHING_APP_ID`、`MA3_AUTHING_APP_SECRET`。
-6. **管理员**：`MA3_AUTH_ADMIN_USERS`（逗号分隔 sub / 手机 / 邮箱 / 用户名）→ Observatory 显示 admin 标记；library ACL 仍走 `library_access`（v1.1 完善）。
+## Decision
 
-## 环境变量
+1. **Observatory / human maintainer UI** logs in via **Authing OIDC authorization code flow**.
+2. **MCP / agents** continue to use `X-API-Key` / library keys, and **do not go through Authing**.
+3. On successful login, ma3 **upserts `principals`** (`kind=user`), with `sso_user` = the Authing `sub`.
+4. Session: an **HttpOnly cookie** stores `access_token`; requests are validated against Authing's **userinfo** endpoint with a short in-memory cache.
+5. Enable condition: `MA3_AUTHING_ENABLED=1` with `MA3_AUTHING_ISSUER`, `MA3_AUTHING_APP_ID`, `MA3_AUTHING_APP_SECRET` configured.
+6. **Admins**: `MA3_AUTH_ADMIN_USERS` (comma-separated sub / phone / email / username) → shows an admin badge in Observatory; library ACL still goes through `library_access` (to be completed in v1.1).
 
-| 变量 | 必填 | 说明 |
+## Environment variables
+
+| Variable | Required | Description |
 |------|------|------|
-| `MA3_AUTHING_ENABLED` | 启用时 `1` | 打开 Observatory 登录门禁 |
-| `MA3_AUTHING_ISSUER` | ✅ | 如 `https://<pool>.authing.cn/oidc` |
-| `MA3_AUTHING_APP_ID` | ✅ | Authing 应用 ID |
-| `MA3_AUTHING_APP_SECRET` | ✅ | 应用密钥（仅服务端） |
-| `MA3_PUBLIC_BASE_URL` | 推荐 | 生成回调 URL，如 `https://ma3.example.com` |
-| `MA3_AUTHING_REDIRECT_URI` | 可选 | 默认 `{PUBLIC_BASE_URL}/auth/callback` |
-| `MA3_AUTH_SESSION_COOKIE` | 可选 | 默认 `ma3_session` |
-| `MA3_AUTH_ADMIN_USERS` | 可选 | 管理员标识列表 |
-| `MA3_DEV_AUTH` | LAN | `1` 时 MCP dev key 仍可用；与 Authing 可并存 |
+| `MA3_AUTHING_ENABLED` | `1` to enable | Turns on the Observatory login gate |
+| `MA3_AUTHING_ISSUER` | ✅ | e.g. `https://<pool>.authing.cn/oidc` |
+| `MA3_AUTHING_APP_ID` | ✅ | Authing application ID |
+| `MA3_AUTHING_APP_SECRET` | ✅ | Application secret (server-side only) |
+| `MA3_PUBLIC_BASE_URL` | Recommended | Used to generate the callback URL, e.g. `https://ma3.example.com` |
+| `MA3_AUTHING_REDIRECT_URI` | Optional | Defaults to `{PUBLIC_BASE_URL}/auth/callback` |
+| `MA3_AUTH_SESSION_COOKIE` | Optional | Defaults to `ma3_session` |
+| `MA3_AUTH_ADMIN_USERS` | Optional | List of admin identifiers |
+| `MA3_DEV_AUTH` | LAN | When `1`, the MCP dev key still works; can coexist with Authing |
 
-## Authing 控制台配置
+## Authing console configuration
 
-1. 创建 **B2C 用户池** + **自建应用**（Web）。
-2. 授权模式：勾选 **authorization_code**，返回类型 **code**。
-3. 登录回调 URL：`{MA3_PUBLIC_BASE_URL}/auth/callback`
-4. 登出回调 URL：`{MA3_PUBLIC_BASE_URL}/ui/observatory/`
-5. 登录方式：开启 **微信**、**手机号验证码**（按控制台指引配短信）。
-6. Scope：`openid profile phone email`（按需）。
+1. Create a **B2C user pool** + a **self-built application** (Web).
+2. Authorization mode: enable **authorization_code**, response type **code**.
+3. Login callback URL: `{MA3_PUBLIC_BASE_URL}/auth/callback`
+4. Logout callback URL: `{MA3_PUBLIC_BASE_URL}/ui/observatory/`
+5. Login methods: enable **WeChat** and **phone number verification code** (configure SMS per console instructions).
+6. Scope: `openid profile phone email` (as needed).
 
-## ma3 路由
+## ma3 routes
 
-| 路由 | 说明 |
+| Route | Description |
 |------|------|
-| `GET /auth/login` | 跳转 Authing 授权页 |
-| `GET /auth/callback` | 授权码换 token，写 cookie，重定向 `next` |
-| `POST /auth/logout` | 清 cookie，跳转 Authing 登出（可选） |
-| `GET /auth/whoami` | 当前登录用户 JSON |
+| `GET /auth/login` | Redirects to the Authing authorization page |
+| `GET /auth/callback` | Exchanges the authorization code for a token, sets the cookie, redirects to `next` |
+| `POST /auth/logout` | Clears the cookie, redirects to Authing logout (optional) |
+| `GET /auth/whoami` | JSON for the currently logged-in user |
 
-Observatory：`MA3_AUTHING_ENABLED=1` 时未登录访问 `/ui/observatory/*` → 302 `/auth/login`。
+Observatory: when `MA3_AUTHING_ENABLED=1`, unauthenticated access to `/ui/observatory/*` → 302 to `/auth/login`.
 
-## 后果
+## Consequences
 
-### 正面
+### Positive
 
-- 用户只见微信/短信按钮（Authing 托管登录页）
-- 免费档可支撑早期 MAU
-- Agent 路径零改动
+- Users only see WeChat/SMS buttons (Authing-hosted login page)
+- The free tier can support early MAU
+- Zero changes to the agent path
 
-### 负面
+### Negative
 
-- 依赖 Authing 可用性；需单独配短信/微信开放平台
-- 海外社交（Google/Apple）后续可加 Authing 连接器或第二 issuer（v1.1）
+- Depends on Authing's availability; SMS/WeChat open platform must be configured separately
+- Overseas social logins (Google/Apple) can be added later via an Authing connector or a second issuer (v1.1)
 
-### 关联
+### Related
 
-- ADR-001、005、008
+- ADR-001, 005, 008
 - [deployment-authing.md](../../06-operations/deployment-authing.md)

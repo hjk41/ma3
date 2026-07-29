@@ -1,35 +1,37 @@
-# ADR-004 — Vector 搜索默认开启，可关闭
+# ADR-004 — Vector search enabled by default, can be turned off
 
-## 状态
+> Chinese version: [004-vector-default-optional-off.zh.md](004-vector-default-optional-off.zh.md)
 
-Accepted（2026-07-01）
+## Status
 
-## 背景
+Accepted (2026-07-01)
 
-LAN 202 曾因 HF 模型路径与 rsync 删 cache 导致 uvicorn 挂起。Q9 需在「体验完整」与「部署简单」间取舍。
+## Context
 
-## 决策
+LAN host 202 once hung uvicorn on startup due to HF model path issues combined with rsync deleting the cache. Q9 required weighing "full experience" against "simple deployment."
 
-- **v1 默认启用 embedding + vector search**（与 FTS 混合）
-- **关闭开关**：`MA3_DISABLE_EMBEDDINGS=1` → FTS-only，启动不拉 HF
-- 完整模式部署 **必须**：
-  - prewarm 到 `HF_HOME/.../hub/`
-  - 生产设置 `HF_HUB_OFFLINE=1`
-  - rsync/deploy exclude `data/`
+## Decision
 
-## 后果
+- **v1 enables embedding + vector search by default** (hybrid with FTS)
+- **Off switch**: `MA3_DISABLE_EMBEDDINGS=1` → FTS-only, no HF pull at startup
+- Full-mode deployments **must**:
+  - Prewarm to `HF_HOME/.../hub/`
+  - Set `HF_HUB_OFFLINE=1` in production
+  - Exclude `data/` from rsync/deploy
 
-### 正面
+## Consequences
 
-- 生产/SaaS 搜索质量与旧设计一致
-- LAN dev 仍可在无模型时快速起服务
+### Positive
 
-### 负面
+- Production/SaaS search quality matches the old design
+- LAN dev can still start the service quickly without the model
 
-- 默认部署文档必须包含 HF cache 章节（见 `profile-common.md`）
-- CI 需 FTS-only 与 vector 两套 job 或 mock embed
+### Negative
 
-### 关联
+- Default deployment docs must include an HF cache section (see `profile-common.md`)
+- CI needs separate FTS-only and vector jobs, or a mock embedder
+
+### Related
 
 - Q9
-- 旧 `deploy/DEPLOY_RUNBOOK.md`、`prewarm_embedding_model.sh`
+- Old `deploy/DEPLOY_RUNBOOK.md`, `prewarm_embedding_model.sh`

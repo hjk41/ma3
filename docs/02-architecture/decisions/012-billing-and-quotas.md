@@ -1,117 +1,119 @@
-# ADR-012 — 付费套餐与配额（Billing & Quotas）
+# ADR-012 — Paid Plans and Quotas (Billing & Quotas)
 
-## 状态
+> Chinese version: [012-billing-and-quotas.zh.md](012-billing-and-quotas.zh.md)
 
-Accepted（2026-07-02）
+## Status
 
-## 背景
+Accepted (2026-07-02)
 
-[ADR-011](011-kb-access-and-org-isolation.md) 已定：强制 API key、默认 read+write、read-only key 为付费特权、Organization 与 library 隔离。产品提出五类付费触发：
+## Context
 
-1. Read-only key 特权  
-2. 知识库容量超阈值  
-3. 知识库数量超阈值  
-4. 单账号访问量超阈值  
-5. Organization 成员 > 1  
+[ADR-011](011-kb-access-and-org-isolation.md) settled: mandatory API keys, read+write by default, read-only keys as a paid privilege, Organization and library isolation. Product proposed five paid triggers:
 
-Fable 与 GPT 5.5 联合评审结论：
+1. Read-only key privilege  
+2. Knowledge base capacity over threshold  
+3. Knowledge base count over threshold  
+4. Per-account access volume over threshold  
+5. Organization members > 1  
 
-- 五维覆盖面正确，但**不应作为五路独立收费**，易重复计费、伤害「贡献优先」叙事  
-- 收敛为 **Free / Pro / Team 三档套餐 + quota 上限**  
-- 需引入 **`billing_account` 一等实体**；每用户隐式 **personal org**  
-- **写路径与公共库写回**不得反向惩罚贡献者  
+Joint review conclusion (Fable and GPT 5.5):
 
-v1 **不接入** Stripe；`plan_code` 由平台管理员手工设置。
+- The five dimensions cover the right ground, but **should not be five independently billed lines** — that risks double-charging and hurts the "contribution first" narrative  
+- Converge to **three plans: Free / Pro / Team + quota caps**  
+- Introduce **`billing_account` as a first-class entity**; every user gets an implicit **personal org**  
+- **Write paths and public-library write-backs** must not punish contributors  
 
-## 决策
+v1 does **not** integrate Stripe; `plan_code` is set manually by platform admins.
 
-### 1. 三档套餐（Free / Pro / Team）
+## Decision
 
-| 维度 | Free | Pro | Team |
+### 1. Three plans (Free / Pro / Team)
+
+| Dimension | Free | Pro | Team |
 |------|------|-----|------|
-| Read-only key | ❌（public grant 强制 RW） | ✅ 个人 billing account | ✅ org-billed key |
-| Library 数量 | personal：**1**；public grant 不计 | personal：**5** | org：**10** |
-| Library 容量 | **1,000** active records/库，personal 合计 **3,000** | **10,000**/库，合计 **50,000** | org pooled **100,000** |
-| 访问量（read units/月） | **10,000** | **100,000** | org pooled **500,000** |
-| Org 成员 | personal org **1 人** | 同左；可被邀请进 Team | **含 5 seats** |
-| 防误删（回收站/恢复） | ❌ | ❌ | ✅ 对 org 拥有库可开启（见 [ADR-013](013-write-confirmation-audit-delete.md)） |
+| Read-only key | ❌ (public grant forced RW) | ✅ personal billing account | ✅ org-billed key |
+| Library count | personal: **1**; public grants don't count | personal: **5** | org: **10** |
+| Library capacity | **1,000** active records/library, personal total **3,000** | **10,000**/library, total **50,000** | org pooled **100,000** |
+| Access volume (read units/month) | **10,000** | **100,000** | org pooled **500,000** |
+| Org members | personal org **1 person** | same; can be invited into a Team | **includes 5 seats** |
+| Deletion protection (recycle bin/restore) | ❌ | ❌ | ✅ can be enabled on org-owned libraries (see [ADR-013](013-write-confirmation-audit-delete.md)) |
 | Rate limit | 60 req/min/key | 120 | 300 |
 
-具体数字存于 `plans` 表，可运营调整。
+Concrete numbers live in the `plans` table and can be tuned operationally.
 
-**Read unit**：`ma3_context` / `ma3_case` 成功响应各计 1 unit；返回 records >10 时按 `ceil(n/10)` 计。（`ma3_search_explain` 已下线为内部接口，不经 MCP、不计费。）`ma3_report`、`ma3_feedback`、`ma3_validate`、maintainer 工具 **不计** billable units。
+**Read unit**: each successful `ma3_context` / `ma3_case` response counts 1 unit; responses returning >10 records count `ceil(n/10)`. (`ma3_search_explain` has been retired to an internal interface — not via MCP, not billed.) `ma3_report`, `ma3_feedback`, `ma3_validate`, and maintainer tools do **not** count billable units.
 
-### 2. Billing account（一等实体）
+### 2. Billing account (first-class entity)
 
-- 表 `billing_accounts`：`owner_type`（principal | org）、`owner_id`、`plan_code`、`status`、计费周期字段  
-- 用户首次 Authing 登录 → 创建 **implicit personal org**（`org_personal_{sub}`）+ personal `billing_account(plan=free)`  
-- 显式创建 Team org → 独立 `billing_account(plan=team)`  
-- **`api_keys.billing_account_id` 必填**；创建 key 时选择 Personal 或某 Team org（须为成员）  
-- 访问量计入 **key 的 billing_account**；存储/库数计入 **library owner org 的 billing_account**
+- Table `billing_accounts`: `owner_type` (principal | org), `owner_id`, `plan_code`, `status`, billing-cycle fields  
+- First Authing login → create an **implicit personal org** (`org_personal_{sub}`) + personal `billing_account(plan=free)`  
+- Explicitly created Team org → its own `billing_account(plan=team)`  
+- **`api_keys.billing_account_id` is required**; when creating a key, choose Personal or a Team org (must be a member)  
+- Access volume is billed to the **key's billing_account**; storage/library count is billed to the **library owner org's billing_account**
 
-### 3. 贡献优先 invariant（不可违反）
+### 3. Contribution-first invariant (must not be violated)
 
-1. 写入 **public library**（`lib_default`）→ storage 归 platform，**不计** writer 的 storage quota  
-2. **`ma3_report` 等写路径** → 不计 read usage  
-3. Free 用户 grant public library → **`can_write` 强制 true**（ADR-011）  
-4. Read-only grant → 仅当 `billing_account.allow_readonly_grants == true`（Pro personal 或 Team org-billed key）
+1. Writes to the **public library** (`lib_default`) → storage belongs to the platform, **not counted** against the writer's storage quota  
+2. **Write paths such as `ma3_report`** → do not count as read usage  
+3. Free users granting the public library → **`can_write` forced true** (ADR-011)  
+4. Read-only grants → only when `billing_account.allow_readonly_grants == true` (Pro personal or Team org-billed key)
 
-### 4. Read-only 与 billing context（收窄 ADR-011）
+### 4. Read-only and billing context (narrowing ADR-011)
 
-- ADR-011「paid org 成员可开 RO key」**收窄**为：仅 **org-billed key**（`billing_account` 指向 Team org）或 org admin 明确授权的 org context  
-- 避免 Team 订阅外溢到成员个人 free billing account  
+- ADR-011's "paid-org members may create RO keys" is **narrowed** to: only **org-billed keys** (`billing_account` pointing at a Team org) or an org context explicitly authorized by an org admin  
+- Prevents a Team subscription from leaking into members' personal free billing accounts  
 
-### 5. 五维 enforcement
+### 5. Five-dimension enforcement
 
-| 维度 | 时机 | 超限 |
+| Dimension | When | Over limit |
 |------|------|------|
-| RO grant | key/grant 创建 | 403；Free FORCE RW |
-| Library 数量 | create_library | 403 + upgrade |
-| Storage | ma3_report 写 **owned** library | 80% 软警告；**超 cap（≥100%）该库转只读**：禁写，读不受影响 |
-| Read usage | MCP 读成功 | 月度超限 429；Team 可选 overage（v1.1） |
-| Org members | invite accept | free personal 第 2 人 403；Team 超 seat 403 |
+| RO grant | key/grant creation | 403; Free FORCE RW |
+| Library count | create_library | 403 + upgrade |
+| Storage | ma3_report writing to an **owned** library | Soft warning at 80%; **over cap (≥100%) library becomes read-only**: writes blocked, reads unaffected |
+| Read usage | Successful MCP read | Monthly overage 429; Team may opt into overage (v1.1) |
+| Org members | Invite accept | 2nd person on free personal 403; Team over seats 403 |
 
-**降级/欠费**：读永远可用；写/建库/invite 受限；存量 RO key 宽限 30 天后转 RW 或 revoke；**系统不自动删 record**（用户可经 [ADR-013](013-write-confirmation-audit-delete.md) 硬删自己的 record）。
+**Downgrade/non-payment**: reads always available; writes/library creation/invites restricted; existing RO keys get a 30-day grace period then become RW or are revoked; **the system never auto-deletes records** (users may hard-delete their own records per [ADR-013](013-write-confirmation-audit-delete.md)).
 
-### 6. Quota 与 rate-limit 分离
+### 6. Quota and rate limits are separate
 
-- **Rate limit**（req/min）：防滥用，各档不同  
-- **Monthly read units**：商业化配额，独立计量  
+- **Rate limit** (req/min): abuse prevention, differs per plan  
+- **Monthly read units**: commercial quota, metered independently  
 
-### 7. 外部协作者
+### 7. External collaborators
 
-- `library_grants` **不算** org seat  
-- Free：每库 **2** 个外部 grant 上限（v1.1 可配置，设计预留）
+- `library_grants` do **not** count as org seats  
+- Free: cap of **2** external grants per library (configurable in v1.1, design reserved)
 
-### 8. `entitlement` 字段迁移
+### 8. `entitlement` field migration
 
-- `principals.entitlement` / `organizations.entitlement`（ADR-011）保留为 **derived 兼容投影**  
-- 真源：`billing_account.plan_code` + `plans` quota 列 + `quota_overrides`
+- `principals.entitlement` / `organizations.entitlement` (ADR-011) remain as **derived compatibility projections**  
+- Source of truth: `billing_account.plan_code` + `plans` quota columns + `quota_overrides`
 
-## 后果
+## Consequences
 
-### 正面
+### Positive
 
-- 套餐清晰：Free 贡献、Pro 个人灵活、Team 组织资产  
-- 五维映射成本，又不重复收费  
-- billing_account 解耦 key 用量与 org 资源  
-- 为 Stripe v1.1 预留 schema  
+- Clear plans: Free for contribution, Pro for personal flexibility, Team for organizational assets  
+- The five dimensions map to cost without double-charging  
+- billing_account decouples key usage from org resources  
+- Schema reserved for Stripe in v1.1  
 
-### 负面
+### Negative
 
-- 实现复杂度高于二元 `paid` flag  
-- implicit personal org 增加 onboarding 与 UI 解释成本  
-- 需 usage rollup 与 enforcement 联调  
+- Implementation complexity higher than a binary `paid` flag  
+- The implicit personal org adds onboarding and UI explanation cost  
+- Requires usage rollup and enforcement to be integrated together  
 
-### 关联
+### Related
 
-- [ADR-011](011-kb-access-and-org-isolation.md) — ACL 前置  
-- [ADR-013](013-write-confirmation-audit-delete.md) — owner 硬删与 tombstone（修订「不删 record」）  
-- [billing-and-quotas.md](../../03-backend/billing-and-quotas.md) — schema 与分阶段实现  
-- [pricing-and-plans.md](../../07-commercial/pricing-and-plans.md) — 商业叙事  
+- [ADR-011](011-kb-access-and-org-isolation.md) — ACL prerequisite  
+- [ADR-013](013-write-confirmation-audit-delete.md) — owner hard delete and tombstone (amends "records are not deleted")  
+- [billing-and-quotas.md](../../03-backend/billing-and-quotas.md) — schema and phased implementation  
+- [pricing-and-plans.md](../../07-commercial/pricing-and-plans.md) — commercial narrative  
 
-## 实现顺序
+## Implementation order
 
-1. ADR-011 Phase 1–3（schema + key auth + entitlement 耦合）  
-2. ADR-012 Phase B1–B3（billing schema → metering → enforcement）  
-3. ADR-012 Phase B4（Observatory billing UI + Stripe stub，v1.1 接支付）  
+1. ADR-011 Phase 1–3 (schema + key auth + entitlement coupling)  
+2. ADR-012 Phase B1–B3 (billing schema → metering → enforcement)  
+3. ADR-012 Phase B4 (Observatory billing UI + Stripe stub; payment integration in v1.1)  

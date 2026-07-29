@@ -1,73 +1,75 @@
-# 11 — MCP 错误契约：所有错误必须可自纠
+# 11 — MCP Error Contract: Every Error Must Be Self-Correctable
 
-> **ADR**：[ADR-014](../02-architecture/decisions/014-mcp-error-self-correction.md)  
-> **状态**：实现完成（2026-07-03）  
-> **真源**：本文 + ADR-014；实现见 `code/server/app/api/routes_mcp.py`
+> Chinese version: [error-handling.zh.md](error-handling.zh.md)
+
+> **ADR**: [ADR-014](../02-architecture/decisions/014-mcp-error-self-correction.md)  
+> **Status**: implementation complete (2026-07-03)  
+> **Source of truth**: this doc + ADR-014; implementation in `code/server/app/api/routes_mcp.py`
 
 ---
 
-## 1. 目标与约束
+## 1. Goals and Constraints
 
-| 项 | 说明 |
+| Item | Description |
 |----|------|
-| **核心约束** | **每个 MCP 错误都必须在 `error.message` 里携带足以让 Agent 自纠的信息** |
-| 单一可见字段 | `error.message` 是唯一可假定被模型读到的字段（宿主常丢弃 `error.data`） |
-| 结构化副本 | `error.data` 保留机器可读诊断，但**不是** Agent 自纠的唯一载体 |
-| 逐字段 | 校验错误必须逐字段说明 missing / unexpected / 类型错误 |
-| 定向提示 | 识别到常见误用（如 payload 套进 `arguments`）时给出针对性修正建议 |
-| 不泄密 | message 不含 secrets、堆栈、SQL、原始异常链 |
+| **Core constraint** | **Every MCP error must carry enough information in `error.message` for the Agent to self-correct** |
+| Single visible field | `error.message` is the only field we can assume the model will see (hosts often drop `error.data`) |
+| Structured copy | `error.data` keeps machine-readable diagnostics, but is **not** the sole vehicle for Agent self-correction |
+| Field-by-field | Validation errors must state missing / unexpected / type errors per field |
+| Targeted hints | When a common misuse is detected (e.g. payload nested inside `arguments`), give a targeted correction suggestion |
+| No leaks | messages must not contain secrets, stack traces, SQL, or raw exception chains |
 
-### 1.1 背景
+### 1.1 Background
 
-MCP 宿主（Cursor / Claude Code / Codex 等）只把 JSON-RPC `error.message` 传给模型；`error.data` 往往被丢弃。这与 `structuredContent` 不可见是**同一类**宿主行为。
+MCP hosts (Cursor / Claude Code / Codex, etc.) only pass the JSON-RPC `error.message` to the model; `error.data` is often dropped. This is the **same class** of host behavior as `structuredContent` being invisible.
 
-**实证**：评测中 Claude 把 `ma3_report` payload 误套进 `arguments`（照抄 `ma3_validate` 的 `{tool_name, arguments}` 信封），只读到 `-32602 "Invalid params"`，连试 6 次相同错误后放弃、未写回。修复后同场景 Agent 一次写回成功。
+**Evidence**: in evaluations, Claude mistakenly nested the `ma3_report` payload inside `arguments` (copying the `{tool_name, arguments}` envelope of `ma3_validate`), only saw `-32602 "Invalid params"`, retried the same error 6 times, then gave up without writing back. After the fix, the Agent succeeded in a single write-back in the same scenario.
 
 ---
 
-## 2. 错误分类与契约
+## 2. Error Classification and Contract
 
-所有 `tools/call` 及传输层错误统一经 `routes_mcp.py::_jsonrpc_error` 构造。
+All `tools/call` and transport-layer errors are uniformly constructed via `routes_mcp.py::_jsonrpc_error`.
 
-| JSON-RPC code | 触发 | message 必含 |
+| JSON-RPC code | Trigger | message must contain |
 |---------------|------|-------------|
-| `-32700` Parse error | body 非 JSON | "request body is not valid JSON" |
-| `-32600` Invalid Request | JSON-RPC 信封字段错误 | 折叠后的字段级摘要 |
-| `-32601` Method not found | 未知 method | 未知 method 名 + 支持列表 |
-| `-32601`（映射自 404） | 未知工具 / record / case 不存在 | `HTTPException.detail` |
-| `-32602` Invalid params | `params.name` 缺失 | "requires a string params.name" |
-| `-32602` Invalid params | `params.arguments` 非对象 | "must be a JSON object" |
-| `-32602` Invalid params | **payload 校验失败** | 逐字段 missing/unexpected + 定向提示（见 §3） |
-| `-32602` Invalid params | 工具内 `ValueError` | `Invalid params: {原因}` |
-| `-32001`（映射自 401） | 凭证无效/撤销/过期 | "check your X-API-Key with the ma3 administrator" |
-| `-32001`（映射自 403） | 权限不足 | `HTTPException.detail` |
-| `-32029`（映射自 429） | 限流 | `HTTPException.detail` |
-| `-32000`（其它 5xx/HTTPException） | 兜底 | `HTTPException.detail` |
+| `-32700` Parse error | body is not JSON | "request body is not valid JSON" |
+| `-32600` Invalid Request | JSON-RPC envelope field error | folded field-level summary |
+| `-32601` Method not found | unknown method | unknown method name + supported list |
+| `-32601` (mapped from 404) | unknown tool / record / case not found | `HTTPException.detail` |
+| `-32602` Invalid params | `params.name` missing | "requires a string params.name" |
+| `-32602` Invalid params | `params.arguments` is not an object | "must be a JSON object" |
+| `-32602` Invalid params | **payload validation failed** | per-field missing/unexpected + targeted hint (see §3) |
+| `-32602` Invalid params | in-tool `ValueError` | `Invalid params: {reason}` |
+| `-32001` (mapped from 401) | credential invalid/revoked/expired | "check your X-API-Key with the ma3 administrator" |
+| `-32001` (mapped from 403) | insufficient permission | `HTTPException.detail` |
+| `-32029` (mapped from 429) | rate limited | `HTTPException.detail` |
+| `-32000` (other 5xx/HTTPException) | fallback | `HTTPException.detail` |
 
-**规则**：
+**Rules**:
 
-- HTTPException 路径：`str(detail)` 即 message；detail 文案必须本身可操作。
-- 非 HTTPException 路径**必须**显式把 detail 折叠进 message。
+- HTTPException path: `str(detail)` is the message; detail copy must itself be actionable.
+- Non-HTTPException paths **must** explicitly fold detail into the message.
 
 ---
 
-## 3. 校验错误摘要器
+## 3. Validation Error Summarizer
 
-`routes_mcp.py::_summarize_validation_errors(tool_name, errors)` 把 Pydantic `errors()` 折叠成单条可操作 message。
+`routes_mcp.py::_summarize_validation_errors(tool_name, errors)` folds Pydantic `errors()` into a single actionable message.
 
-### 3.1 算法
+### 3.1 Algorithm
 
 ```text
-输入: tool_name, pydantic_errors[]
-分桶:
+Input: tool_name, pydantic_errors[]
+Bucketing:
   missing  ← type ∈ {missing, value_error.missing}         → loc
   extra    ← type ∈ {extra_forbidden, value_error.extra}   → loc
-  other    ← 其余                                            → "loc: msg"
-构造:
+  other    ← the rest                                       → "loc: msg"
+Construction:
   prefix = "Invalid params for {tool_name}"
-  段落 = [missing 段, extra 段, other 段]
-  message = prefix + ": " + 段落
-定向提示:
+  segments = [missing segment, extra segment, other segment]
+  message = prefix + ": " + segments
+Targeted hint:
   IF tool_name ∉ {ma3_validate} AND "arguments" ∈ extra:
       + "Hint: {tool_name} takes a FLAT payload (the fields directly),
          NOT {tool_name, arguments} like ma3_validate. Move the inner
@@ -76,9 +78,9 @@ MCP 宿主（Cursor / Claude Code / Codex 等）只把 JSON-RPC `error.message` 
       + "Fix these fields and retry; ma3_validate offers a dry-run check."
 ```
 
-### 3.2 示例
+### 3.2 Examples
 
-**信封混淆**：
+**Envelope confusion**:
 
 ```
 -32602: Invalid params for ma3_report: missing required field(s):
@@ -88,7 +90,7 @@ Hint: ma3_report takes a FLAT payload (the fields directly), NOT
 to the top level and retry.
 ```
 
-**缺字段**：
+**Missing fields**:
 
 ```
 -32602: Invalid params for ma3_report: missing required field(s):
@@ -96,52 +98,52 @@ outcome, result_summary. Fix these fields and retry; ma3_validate
 offers a dry-run check.
 ```
 
-`error.data` 仍并存 `{tool_name, validation_errors[], schema_hint}` 供程序化客户端。
+`error.data` still coexists with `{tool_name, validation_errors[], schema_hint}` for programmatic clients.
 
 ---
 
-## 4. `error.data` 结构（保留）
+## 4. `error.data` Structure (retained)
 
-| 字段 | 出现于 | 内容 |
+| Field | Appears in | Content |
 |------|--------|------|
-| `validation_errors` | 校验类 -32602 | Pydantic `errors()` 原始列表 |
-| `schema_hint` | 校验类 -32602 | 指向 `tools/list` inputSchema + `ma3_validate` |
-| `tool_name` | 校验类 -32602 | 目标工具 |
-| `status_code` | 由 HTTP 映射 | 原 HTTP 状态码 |
-| `detail` | name/arguments/ValueError | 原因串 |
+| `validation_errors` | validation-class -32602 | raw list from Pydantic `errors()` |
+| `schema_hint` | validation-class -32602 | points to `tools/list` inputSchema + `ma3_validate` |
+| `tool_name` | validation-class -32602 | target tool |
+| `status_code` | mapped from HTTP | original HTTP status code |
+| `detail` | name/arguments/ValueError | reason string |
 
-> `data` 是**冗余增强**，不是自纠的必要条件。删除 `data` 后 Agent 仍应能只凭 message 纠错。
-
----
-
-## 5. 安全约束
-
-- message / data **不得**包含：API key 明文、私钥、订阅 URL、数据库连接串、SQL、Python 堆栈、原始异常 `repr`。
-- 工具内异常一律转 `HTTPException(detail=<安全文案>)` 或 `ValueError(<安全文案>)`。
-- `unknown tool` / `not found` 类 message 只回显调用者已提供的标识符，不泄露其它库/记录的存在性（与 [writes-audit-and-deletion.md](../03-backend/writes-audit-and-deletion.md) 的 existence-oracle 约束一致）。
+> `data` is a **redundant enhancement**, not a prerequisite for self-correction. Even with `data` removed, the Agent should still be able to correct itself from the message alone.
 
 ---
 
-## 6. 测试要求（回归门禁）
+## 5. Security Constraints
 
-`tests/integration/test_mcp_integration.py`：
+- message / data must **not** contain: plaintext API keys, private keys, subscription URLs, database connection strings, SQL, Python stack traces, raw exception `repr`.
+- Exceptions inside tools are always converted to `HTTPException(detail=<safe copy>)` or `ValueError(<safe copy>)`.
+- `unknown tool` / `not found` class messages only echo identifiers the caller already provided, and do not reveal the existence of other libraries/records (consistent with the existence-oracle constraint in [writes-audit-and-deletion.md](../03-backend/writes-audit-and-deletion.md)).
 
-| 测试 | 断言 |
+---
+
+## 6. Test Requirements (regression gate)
+
+`tests/integration/test_mcp_integration.py`:
+
+| Test | Assertion |
 |------|------|
-| report 缺字段 | -32602 且 `message` 含 `ma3_report` + `missing required field` |
-| `test_ma3_report_envelope_confusion_message` | message 含 `unexpected field` + `arguments` + `FLAT payload` |
-| `test_method_not_found_message_lists_methods` | -32601 且 message 含 `tools/call` |
-| 既有 -32001 用例 | 凭证/权限错误码稳定 |
+| report missing fields | -32602 and `message` contains `ma3_report` + `missing required field` |
+| `test_ma3_report_envelope_confusion_message` | message contains `unexpected field` + `arguments` + `FLAT payload` |
+| `test_method_not_found_message_lists_methods` | -32601 and message contains `tools/call` |
+| existing -32001 cases | credential/permission error codes stable |
 
-**新增错误路径的验收标准**：必须有一条断言检查 `error.message`（而非仅 `error.data`）含可操作信息。
+**Acceptance criterion for new error paths**: there must be at least one assertion checking that `error.message` (not just `error.data`) contains actionable information.
 
 ---
 
-## 7. 映射文件
+## 7. File Mapping
 
-| 文件 | 职责 |
+| File | Responsibility |
 |------|------|
-| `code/server/app/api/routes_mcp.py` | `_jsonrpc_error`、`_summarize_validation_errors` |
+| `code/server/app/api/routes_mcp.py` | `_jsonrpc_error`, `_summarize_validation_errors` |
 | `code/server/app/models/mcp.py` | `McpToolValidationError` |
-| `code/server/app/services/mcp_tool_service.py` | 工具内以 `HTTPException`/`ValueError` 抛出安全文案 |
-| `code/server/tests/integration/test_mcp_integration.py` | 错误 message 回归 |
+| `code/server/app/services/mcp_tool_service.py` | tools raise safe copy via `HTTPException`/`ValueError` |
+| `code/server/tests/integration/test_mcp_integration.py` | error message regression |

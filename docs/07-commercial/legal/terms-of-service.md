@@ -1,64 +1,66 @@
-# ma3 服务条款（Terms of Service）
+# ma3 Terms of Service
 
-> **English note**: Draft Terms of Service for the ma3 hosted service (ma3.io).
-> Primary language is Chinese. **Draft — not lawyer-reviewed.** Support for all
+> Chinese version: [terms-of-service.zh.md](terms-of-service.zh.md)
+
+> Draft Terms of Service for the ma3 hosted service (ma3.io).
+> **Draft — not lawyer-reviewed.** Support for all
 > tiers is currently best-effort with no formal SLA (formal SLA planned for v1.1+).
 
-> **状态：草案。未经律师审阅。生效日期：待定。**
+> **Status: draft. Not lawyer-reviewed. Effective date: TBD.**
 
-## 1. 定义与适用范围
+## 1. Definitions and scope
 
-- **服务**：由 ma3 维护者运营的托管服务 **ma3.io**（含 Web 门户、MCP API、客户端 bundle）。
-- **自托管实例**：任何第三方基于本仓库开源代码自行部署的 ma3 实例。
-  **本条款不适用于自托管实例**——自托管运营者须自行向其用户提供条款，
-  并对其实例的运营与数据负全责。
-- **用户**：通过 OIDC/社交登录注册、或持有 API Key 调用服务的个人或组织。
-- **记录（record）**：用户或其 Agent 通过 `ma3_report` 等接口写入知识库的内容。
+- **Service**: the hosted service **ma3.io** operated by the ma3 maintainers (including the web portal, MCP API, and client bundle).
+- **Self-hosted instance**: any ma3 instance deployed by a third party from this repository's open-source code.
+  **These terms do not apply to self-hosted instances** — self-host operators must provide their
+  own terms to their users and bear full responsibility for their instance's operation and data.
+- **User**: an individual or organization that registers via OIDC/social login, or calls the service with an API key.
+- **Record**: content written to a knowledge library by a user or their agent via interfaces such as `ma3_report`.
 
-## 2. 账户与 API Key
+## 2. Accounts and API keys
 
-1. 注册通过第三方身份提供方（OIDC，如 Authing）完成；你须保证登录凭据安全。
-2. API Key 与你的账户（principal）绑定；由 Key 发起的写入、投票等操作视为你的操作。
-3. Key 泄露时应立即在门户（`/ui/keys/`）撤销；撤销后审计日志保留历史 Key 标识（见数据保留文档）。
+1. Registration is completed through a third-party identity provider (OIDC, e.g. Authing); you must keep your login credentials secure.
+2. API keys are bound to your account (principal); writes, votes, and other operations initiated with a key are treated as your actions.
+3. If a key is leaked, revoke it immediately in the portal (`/ui/keys/`); after revocation, the audit log retains the historical key identifier (see the data retention document).
 
-## 3. 内容与许可
+## 3. Content and license
 
-1. 你写入的记录归你所有；你授予服务为「存储、索引（含向量化）、检索、
-   向其他有权限的用户/Agent 展示」目的所需的许可。
-2. 写入**公共社区库**（community library）的记录会向其他用户公开展示与检索；
-   写入**个人/组织库**的记录仅按库的可见性与 ACL 展示（ADR-011）。
-3. 禁止写入：违法内容、恶意指令（诱导 Agent 执行破坏性操作）、他人机密、
-   API 密钥/私钥等 secrets（policy 已明确禁止）。
-4. 你对自己的记录有删除权（`ma3_delete_record`，ADR-013）。
-   维护者可依据治理规则（Observatory / 维护者纠偏，ADR-007/008）对公共库内容
-   做下架、隔离或删除；**下架流程当前未自动化**，投诉请通过维护者 GitHub
-   个人资料页所列邮箱联系。
+1. Records you write belong to you; you grant the service the license needed for the purposes of
+   "storing, indexing (including vectorization), retrieving, and displaying to other authorized users/agents".
+2. Records written to the **public community library** are publicly displayed and retrievable by other users;
+   records written to **personal/organization libraries** are displayed only per the library's visibility and ACL (ADR-011).
+3. Prohibited content: illegal content, malicious instructions (inducing agents to perform destructive operations),
+   others' confidential information, and secrets such as API keys/private keys (explicitly prohibited by policy).
+4. You have the right to delete your own records (`ma3_delete_record`, ADR-013).
+   Maintainers may take down, quarantine, or delete public library content per the governance rules
+   (Observatory / maintainer correction, ADR-007/008); **the takedown process is currently not automated** —
+   submit complaints via the email listed on the maintainer's GitHub profile page.
 
-## 4. 付费与支持（诚实声明）
+## 4. Payment and support (honest statement)
 
-1. 付费档位（Pro / Team）提供的是**私有库与治理能力**（私有/组织库、配额、
-   删除保护等，见 [pricing-and-plans.md](../pricing-and-plans.md)），
-   **不是**正式的可用性承诺。
-2. **当前所有档位（含付费）支持均为 best-effort，无正式 SLA**。
-   正式 SLA 计划在 **v1.1+** 提供；届时以单独签署的 SLA 文本为准。
-3. 服务可能因维护、升级或不可抗力中断；我们尽力提前通知但不作保证。
+1. Paid tiers (Pro / Team) provide **private libraries and governance capabilities**
+   (private/org libraries, quotas, deletion protection, etc., see [pricing-and-plans.md](../pricing-and-plans.md));
+   they are **not** a formal availability commitment.
+2. **Support for all tiers (including paid) is currently best-effort, with no formal SLA.**
+   A formal SLA is planned for **v1.1+**; at that point, the separately signed SLA text governs.
+3. The service may be interrupted by maintenance, upgrades, or force majeure; we try to give advance notice but make no guarantee.
 
-## 5. 免责声明与责任限制
+## 5. Disclaimers and limitation of liability
 
-1. 服务按「现状（AS IS）」提供，不对知识库内容的正确性、适用性作任何担保——
-   记录是社区/Agent 贡献的经验，**使用前应自行验证**（policy 亦如此要求）。
-2. 在法律允许的最大范围内，维护者对间接损失、数据丢失、业务中断不承担责任；
-   累计责任以你过去 12 个月支付的服务费用为上限（免费用户为 0）。
+1. The service is provided "AS IS", with no warranty as to the correctness or fitness of knowledge library content —
+   records are experience contributed by the community/agents and **should be verified before use** (the policy requires this too).
+2. To the maximum extent permitted by law, the maintainers are not liable for indirect losses, data loss, or business interruption;
+   cumulative liability is capped at the service fees you paid in the past 12 months (0 for free users).
 
-## 6. 终止
+## 6. Termination
 
-1. 你可随时停用账户并删除自己的记录（见数据保留与删除文档）。
-2. 违反第 3 条的账户可能被限制或终止；我们会在可行时提前通知。
+1. You may deactivate your account and delete your own records at any time (see the data retention and deletion document).
+2. Accounts violating Section 3 may be restricted or terminated; we will give advance notice when feasible.
 
-## 7. 条款变更
+## 7. Changes to these terms
 
-条款更新将在仓库与 ma3.io 上公布；重大变更会在门户提示。继续使用即视为接受。
+Updates to these terms are announced in the repository and on ma3.io; material changes are flagged in the portal. Continued use constitutes acceptance.
 
-## 8. 联系方式
+## 8. Contact
 
-维护者邮箱见 GitHub 个人资料页（参见 [SECURITY.md](../../../SECURITY.md)）。
+The maintainer's email is on their GitHub profile page (see [SECURITY.md](../../../SECURITY.md)).
