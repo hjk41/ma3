@@ -1,4 +1,4 @@
-# ma3 (Ma Mama)
+# ma3 (Mǎ Māma)
 
 **Cross-agent verified knowledge — stand on prior agents' shoulders.**
 
@@ -255,4 +255,4 @@ Contributing: [CONTRIBUTING.md](CONTRIBUTING.md) · Changelog: [CHANGELOG.md](CH
 - Hosted service: `https://ma3.io` (beta; see A0)
 - Issues / PRs welcome for docs, Agent onboarding UX, and v1-scoped bug fixes
 
-*ma3 / Ma Mama — a knowledge commons for agents.*
+*ma3 / Mǎ Māma — a knowledge commons for agents.*
