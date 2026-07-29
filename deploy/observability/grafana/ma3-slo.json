@@ -1,0 +1,188 @@
+{
+  "annotations": {
+    "list": [
+      {
+        "builtIn": 1,
+        "datasource": { "type": "grafana", "uid": "-- Grafana --" },
+        "enable": true,
+        "type": "dashboard"
+      }
+    ]
+  },
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 1,
+  "id": null,
+  "links": [],
+  "panels": [
+    {
+      "title": "SLO-1 API availability (5m)",
+      "type": "stat",
+      "gridPos": { "h": 4, "w": 6, "x": 0, "y": 0 },
+      "targets": [
+        {
+          "expr": "ma3:slo1:success_rate:5m",
+          "legendFormat": "success",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "red", "value": null },
+              { "color": "yellow", "value": 0.99 },
+              { "color": "green", "value": 0.995 }
+            ]
+          }
+        }
+      },
+      "datasource": { "type": "prometheus", "uid": "ma3-prom" }
+    },
+    {
+      "title": "SLO-1 error budget remaining (30d)",
+      "type": "stat",
+      "gridPos": { "h": 4, "w": 6, "x": 6, "y": 0 },
+      "targets": [
+        {
+          "expr": "ma3:slo1:error_budget_remaining:30d",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "min": 0,
+          "max": 1,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "red", "value": null },
+              { "color": "yellow", "value": 0.2 },
+              { "color": "green", "value": 0.5 }
+            ]
+          }
+        }
+      },
+      "datasource": { "type": "prometheus", "uid": "ma3-prom" }
+    },
+    {
+      "title": "SLO-2 scrape up (5m avg)",
+      "type": "stat",
+      "gridPos": { "h": 4, "w": 6, "x": 12, "y": 0 },
+      "targets": [
+        {
+          "expr": "ma3:slo2:up:5m",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "red", "value": null },
+              { "color": "green", "value": 0.995 }
+            ]
+          }
+        }
+      },
+      "datasource": { "type": "prometheus", "uid": "ma3-prom" }
+    },
+    {
+      "title": "SLO-3 ma3_context p95 (5m)",
+      "type": "stat",
+      "gridPos": { "h": 4, "w": 6, "x": 18, "y": 0 },
+      "targets": [
+        {
+          "expr": "ma3:slo3:context_p95:5m",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 2.5 },
+              { "color": "red", "value": 5 }
+            ]
+          }
+        }
+      },
+      "datasource": { "type": "prometheus", "uid": "ma3-prom" }
+    },
+    {
+      "title": "HTTP request rate by status",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 4 },
+      "targets": [
+        {
+          "expr": "sum by (status) (rate(ma3_http_requests_total[5m]))",
+          "legendFormat": "{{status}}",
+          "refId": "A"
+        }
+      ],
+      "datasource": { "type": "prometheus", "uid": "ma3-prom" }
+    },
+    {
+      "title": "MCP tool call rate by tool/outcome",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 4 },
+      "targets": [
+        {
+          "expr": "sum by (tool, outcome) (rate(ma3_mcp_tool_calls_total[5m]))",
+          "legendFormat": "{{tool}} {{outcome}}",
+          "refId": "A"
+        }
+      ],
+      "datasource": { "type": "prometheus", "uid": "ma3-prom" }
+    },
+    {
+      "title": "ma3_context latency percentiles",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 12 },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.50, sum by (le) (rate(ma3_mcp_tool_duration_seconds_bucket{tool=\"ma3_context\"}[5m])))",
+          "legendFormat": "p50",
+          "refId": "A"
+        },
+        {
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(ma3_mcp_tool_duration_seconds_bucket{tool=\"ma3_context\"}[5m])))",
+          "legendFormat": "p95",
+          "refId": "B"
+        },
+        {
+          "expr": "histogram_quantile(0.99, sum by (le) (rate(ma3_mcp_tool_duration_seconds_bucket{tool=\"ma3_context\"}[5m])))",
+          "legendFormat": "p99",
+          "refId": "C"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "s" } },
+      "datasource": { "type": "prometheus", "uid": "ma3-prom" }
+    },
+    {
+      "title": "Notes",
+      "type": "text",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 12 },
+      "options": {
+        "mode": "markdown",
+        "content": "**Internal SLOs (not a public SLA)**\n\n- SLO-1 target ≥ 99.5% non-5xx on `/mcp`, `/healthz`, `/api/*` (30d)\n- SLO-2 external reachability is measured by the **off-host probe on host 202**; this panel shows scrape `up` as a secondary signal\n- SLO-3 `ma3_context` p95 ≤ 2.5s (30d)\n\nPrometheus: `127.0.0.1:9090` · Alertmanager: `127.0.0.1:9093` · Grafana: `127.0.0.1:3000`"
+      }
+    }
+  ],
+  "schemaVersion": 39,
+  "tags": ["ma3", "slo"],
+  "templating": { "list": [] },
+  "time": { "from": "now-6h", "to": "now" },
+  "timezone": "browser",
+  "title": "ma3 SLO overview",
+  "uid": "ma3-slo",
+  "version": 1
+}

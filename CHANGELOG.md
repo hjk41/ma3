@@ -15,6 +15,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - `scripts/file_design_backlog_issues.sh` to turn design backlog into GitHub Issues
 - Phase 0 off-host uptime probe: `deploy/observability/probe_ma3.sh` (+ systemd examples)
 - Phase 1 Prometheus metrics: `GET /metrics` (`MA3_METRICS_ENABLED`, default off), HTTP + MCP tool series, SaaS scrape compose under `deploy/observability/`
+- Phase 2/3 observability: Alertmanager alerts, SLO-1–3 recording rules, Grafana dashboard, `run_saas_stack.sh`
 
 ### Changed
 

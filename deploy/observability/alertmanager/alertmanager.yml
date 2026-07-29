@@ -1,0 +1,35 @@
+global:
+  resolve_timeout: 5m
+  smtp_smarthost: 'localhost:25'
+  smtp_from: 'alertmanager@ma3.io'
+
+route:
+  receiver: feishu-webhook
+  group_by: ['alertname', 'severity']
+  group_wait: 30s
+  group_interval: 5m
+  repeat_interval: 4h
+  routes:
+    - matchers:
+        - severity = page
+      receiver: feishu-webhook
+      continue: false
+    - matchers:
+        - severity = ticket
+      receiver: feishu-webhook
+      # Tickets are manual follow-up; still notify once, longer repeat.
+      repeat_interval: 24h
+
+inhibit_rules:
+  - source_matchers:
+      - severity = page
+    target_matchers:
+      - severity = ticket
+    equal: ['service']
+
+receivers:
+  - name: feishu-webhook
+    webhook_configs:
+      - url: 'http://127.0.0.1:8787/alertmanager'
+        send_resolved: true
+        max_alerts: 10

@@ -7,7 +7,6 @@ Type=simple
 Environment=MA3_ALERT_SINK_HOST=127.0.0.1
 Environment=MA3_ALERT_SINK_PORT=8787
 Environment=MA3_ALERT_SINK_LOG=/var/log/ma3/probe-alerts.jsonl
-# Local only (not in git): FEISHU_APP_ID / FEISHU_APP_SECRET / FEISHU_CHAT_ID(S)
 EnvironmentFile=-/etc/ma3/feishu.env
 ExecStart=/usr/bin/python3 /usr/local/lib/ma3/local_webhook_sink.py
 Restart=on-failure

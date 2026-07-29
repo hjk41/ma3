@@ -43,24 +43,32 @@ Script and install notes: [`deploy/observability/`](../../deploy/observability/R
 
 Exact PromQL recording rules ship with Phase 1–3. **Deferred:** write-acceptance and publish-freshness SLOs until the required metrics exist.
 
-## Phase 1 — application metrics
+## Phase 2 — alerting
 
-| Item | Policy |
-|------|--------|
-| Library | `prometheus-client` + hand-rolled middleware |
-| Endpoint | `GET /metrics` when `MA3_METRICS_ENABLED=1` |
-| Self-host default | **OFF** (`MA3_METRICS_ENABLED` unset/0) |
-| SaaS | Enable on loopback uvicorn; **do not** proxy `/metrics` via Caddy |
-| Series (Phase 1) | `ma3_http_*`, `ma3_mcp_tool_*`, `ma3_build_info` |
+| Item | Location |
+|------|----------|
+| Rules | `deploy/observability/prometheus/alerts.yml` |
+| Alertmanager | `deploy/observability/alertmanager/alertmanager.yml` → `http://127.0.0.1:8787/alertmanager` |
+| Channel | Feishu via local sink (`/etc/ma3/feishu.env`); ticket follow-up remains **manual** |
 
-Scrape compose (SaaS host, loopback Prometheus UI on `:9090`):
+Starter alerts: `Ma3ScrapeDown`, `Ma3High5xx`, `Ma3ContextSlow`, `Ma3AvailabilityFastBurn`.
 
-```bash
-# On the ma3.io application host, with MA3_METRICS_ENABLED=1:
-cd deploy/observability && docker compose -f docker-compose.prometheus.yml up -d
-```
+## Phase 3 — internal SLOs + Grafana
 
-`verify_ma3_prod.sh` asserts the **public** URL does not serve Prometheus exposition text at `/metrics`.
+| SLO | Recording rules | Target |
+|-----|-----------------|--------|
+| SLO-1 API availability | `ma3:slo1:*` | ≥ 99.5% non-5xx on `/mcp`, `/healthz`, `/api/*` |
+| SLO-2 reachability | `ma3:slo2:up:*` (scrape); **external** still = off-host probe on 202 | ≥ 99.5% |
+| SLO-3 retrieval latency | `ma3:slo3:context_p95:*` | p95 ≤ 2.5s for `ma3_context` |
+
+Dashboard: Grafana `ma3 SLO overview` (provisioned). Stack launcher: `bash deploy/observability/run_saas_stack.sh` (app host).
+
+| Port (loopback only) | Service |
+|----------------------|---------|
+| `:9090` | Prometheus |
+| `:9093` | Alertmanager |
+| `:3000` | Grafana |
+| `:8787` | Feishu webhook sink |
 
 ## Log field conventions (document first)
 

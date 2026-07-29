@@ -1,0 +1,56 @@
+groups:
+  - name: ma3.slo
+    interval: 30s
+    rules:
+      # ---- SLO-1: API availability (eligible: /mcp, /healthz, /api/*) ----
+      # Success = non-5xx. 4xx count as available (client/auth errors).
+      - record: ma3:slo1:success_rate:5m
+        expr: |
+          sum(rate(ma3_http_requests_total{route=~"/mcp|/healthz|/api/.*",status!="5xx"}[5m]))
+          /
+          clamp_min(sum(rate(ma3_http_requests_total{route=~"/mcp|/healthz|/api/.*"}[5m])), 1e-9)
+
+      - record: ma3:slo1:success_rate:30d
+        expr: |
+          sum(rate(ma3_http_requests_total{route=~"/mcp|/healthz|/api/.*",status!="5xx"}[30d]))
+          /
+          clamp_min(sum(rate(ma3_http_requests_total{route=~"/mcp|/healthz|/api/.*"}[30d])), 1e-9)
+
+      - record: ma3:slo1:error_budget_remaining:30d
+        # Target 99.5% → budget 0.5%. Remaining = 1 - (error_rate / 0.005), clamped.
+        expr: |
+          clamp_max(
+            1 - (
+              (1 - ma3:slo1:success_rate:30d) / 0.005
+            ),
+            1
+          )
+
+      # ---- SLO-2: scrape/process reachability (host-local). ----
+      # True external reachability remains the off-host probe on host 202;
+      # this series tracks "uvicorn answers /metrics" for dashboards.
+      - record: ma3:slo2:up:5m
+        expr: avg_over_time(up{job="ma3"}[5m])
+
+      - record: ma3:slo2:up:30d
+        expr: avg_over_time(up{job="ma3"}[30d])
+
+      # ---- SLO-3: ma3_context p95 latency ----
+      - record: ma3:slo3:context_p95:5m
+        expr: |
+          histogram_quantile(
+            0.95,
+            sum by (le) (rate(ma3_mcp_tool_duration_seconds_bucket{tool="ma3_context"}[5m]))
+          )
+
+      - record: ma3:slo3:context_p95:30d
+        expr: |
+          histogram_quantile(
+            0.95,
+            sum by (le) (rate(ma3_mcp_tool_duration_seconds_bucket{tool="ma3_context"}[30d]))
+          )
+
+      - record: ma3:slo3:within_target:5m
+        # 1 when p95 <= 2.5s (or no data → absent)
+        expr: |
+          (ma3:slo3:context_p95:5m <= 2.5)

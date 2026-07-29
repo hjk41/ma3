@@ -1,0 +1,63 @@
+groups:
+  - name: ma3.phase2
+    rules:
+      # App process unreachable from Prometheus (host-local scrape).
+      - alert: Ma3ScrapeDown
+        expr: up{job="ma3"} == 0
+        for: 2m
+        labels:
+          severity: page
+          service: ma3
+        annotations:
+          summary: "ma3 /metrics scrape is down"
+          description: "Prometheus cannot scrape {{ $labels.instance }} for >2m. Check uvicorn / journalctl."
+
+      # High 5xx ratio with a small absolute floor (avoid divide-by-near-zero noise).
+      - alert: Ma3High5xx
+        expr: |
+          (
+            sum(rate(ma3_http_requests_total{status="5xx"}[10m]))
+            /
+            clamp_min(sum(rate(ma3_http_requests_total[10m])), 0.01)
+          ) > 0.05
+          and sum(rate(ma3_http_requests_total[10m])) > 1
+        for: 10m
+        labels:
+          severity: page
+          service: ma3
+        annotations:
+          summary: "ma3 HTTP 5xx ratio > 5%"
+          description: "5xx share over 10m exceeds 5% with >1 req/s. Check recent deploy, DB, embeddings via ma3_doctor."
+
+      # SLO-3 burn: ma3_context p95 above 5s (ticket severity; SLO target is 2.5s).
+      - alert: Ma3ContextSlow
+        expr: |
+          histogram_quantile(
+            0.95,
+            sum by (le) (rate(ma3_mcp_tool_duration_seconds_bucket{tool="ma3_context"}[30m]))
+          ) > 5
+        for: 30m
+        labels:
+          severity: ticket
+          service: ma3
+        annotations:
+          summary: "ma3_context p95 > 5s"
+          description: "Retrieval latency p95 exceeded 5s for 30m. Check embedding service and DB plans."
+
+      # Fast burn of API availability error budget (SLO-1, 30d 99.5% → ~3.6h/month).
+      - alert: Ma3AvailabilityFastBurn
+        expr: |
+          (
+            1 - (
+              sum(rate(ma3_http_requests_total{route=~"/mcp|/healthz|/api/.*",status!="5xx"}[1h]))
+              /
+              clamp_min(sum(rate(ma3_http_requests_total{route=~"/mcp|/healthz|/api/.*"}[1h])), 0.01)
+            )
+          ) > (14.4 * (1 - 0.995))
+        for: 5m
+        labels:
+          severity: page
+          service: ma3
+        annotations:
+          summary: "ma3 SLO-1 fast error-budget burn"
+          description: "1h burn rate > 14.4x the 30d 99.5% budget. Investigate 5xx on /mcp,/healthz,/api/*."

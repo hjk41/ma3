@@ -72,6 +72,6 @@ cd deploy/observability && docker compose -f docker-compose.prometheus.yml up -d
 | Phase | 状态 | 交付 |
 |-------|--------|-------------|
 | 0 | **已完成（主机 202）** | 站外探活 + webhook/飞书 + 文档 |
-| 1 | **代码已落地** | `prometheus-client`、`/metrics`、HTTP+MCP 埋点、SaaS scrape compose |
-| 2 | 计划中 | Alertmanager 最小规则 |
-| 3 | 计划中 | SLO-1–3 recording rules + Grafana |
+| 1 | **已完成（ma3.io）** | `/metrics`、HTTP+MCP、Prometheus scrape |
+| 2 | **已完成** | Alertmanager + 飞书 webhook + 起步告警 |
+| 3 | **已完成** | SLO-1–3 recording rules + Grafana |

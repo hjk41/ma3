@@ -74,6 +74,22 @@ def get_tenant_token() -> str:
 
 
 def format_alert_text(payload: dict[str, Any]) -> str:
+    # Alertmanager webhook: {"version":"4","status":"...","alerts":[...], ...}
+    if isinstance(payload.get("alerts"), list):
+        status = str(payload.get("status") or "unknown")
+        title = "🔴 ma3 ALERT" if status == "firing" else "🟢 ma3 RESOLVED"
+        lines = [title, f"status: {status}"]
+        for a in payload["alerts"][:8]:
+            if not isinstance(a, dict):
+                continue
+            labels = a.get("labels") or {}
+            ann = a.get("annotations") or {}
+            name = labels.get("alertname") or "alert"
+            sev = labels.get("severity") or ""
+            summary = ann.get("summary") or ann.get("description") or ""
+            lines.append(f"- [{sev}] {name}: {summary}")
+        return "\n".join(lines)
+
     event = str(payload.get("event") or "ma3_alert")
     detail = str(payload.get("detail") or "")
     base = str(payload.get("base_url") or "")
