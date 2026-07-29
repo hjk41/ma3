@@ -200,6 +200,19 @@ else
 fi
 ok "pytest gates"
 
+# ---- 5b. /metrics must not be public (decision A) ---------------------------
+echo "==> [5b] /metrics not publicly exposed"
+metrics_code="$(curl -s -o /dev/null -w '%{http_code}' "${MA3_BASE_URL}/metrics" || true)"
+# Accept 404 (disabled or not proxied) or any non-200. A public 200 Prometheus
+# text exposition would leak operational data.
+if [[ "${metrics_code}" == "200" ]]; then
+  body="$(curl -sf "${MA3_BASE_URL}/metrics" | head -c 200 || true)"
+  if echo "${body}" | grep -q 'ma3_http_requests_total\|TYPE ma3_'; then
+    fail "/metrics is publicly scraping Prometheus text (status 200) — Caddy must not proxy it"
+  fi
+fi
+ok "/metrics not publicly exposing Prometheus text (http=${metrics_code})"
+
 # ---- 6. summary -------------------------------------------------------------
 echo "==> [6/6] Production verification PASSED"
 echo "    url=${MA3_BASE_URL} instance=${MA3_EXPECT_INSTANCE_ID} commit=$(python3 -c 'import json;print(json.load(open("/tmp/ma3-prod-healthz.json")).get("git_commit"))')"

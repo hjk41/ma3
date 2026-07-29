@@ -1,0 +1,12 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+scrape_configs:
+  - job_name: ma3
+    metrics_path: /metrics
+    static_configs:
+      # Uvicorn on the Docker host (SaaS: 127.0.0.1:8000 behind Caddy).
+      - targets: ["host.docker.internal:8000"]
+        labels:
+          service: ma3

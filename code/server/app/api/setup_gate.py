@@ -20,7 +20,7 @@ def _path_allowed_during_needs_owner(path: str) -> bool:
         return True
     if path == "/auth/login" or path.startswith("/auth/login/"):
         return True
-    if path in {"/healthz", "/openapi.json", "/favicon.ico"}:
+    if path in {"/healthz", "/metrics", "/openapi.json", "/favicon.ico"}:
         return True
     if path.startswith("/docs") or path.startswith("/redoc"):
         return True

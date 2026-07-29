@@ -268,6 +268,26 @@ def _record_visible(record: dict[str, Any], auth: McpAuthContext, caller_princip
 
 
 def call_mcp_tool(name: str, arguments: dict[str, Any], auth: McpAuthContext) -> McpToolResult:
+    from app.core import metrics as metrics_mod
+
+    timer = metrics_mod.Timer()
+    outcome = "ok"
+    try:
+        return _call_mcp_tool_impl(name, arguments, auth)
+    except McpToolValidationError:
+        outcome = "invalid_args"
+        raise
+    except HTTPException as exc:
+        outcome = metrics_mod.outcome_from_http_status(exc.status_code)
+        raise
+    except Exception:
+        outcome = "error"
+        raise
+    finally:
+        metrics_mod.observe_mcp_tool(tool=name, outcome=outcome, duration_sec=timer.seconds())
+
+
+def _call_mcp_tool_impl(name: str, arguments: dict[str, Any], auth: McpAuthContext) -> McpToolResult:
     raw_args, client_report = extract_client_report(arguments)
     payload = _validate_args(name, raw_args)
 

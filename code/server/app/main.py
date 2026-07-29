@@ -11,6 +11,8 @@ from app.api.routes_org_portal import router as org_portal_router
 from app.api.routes_auth import router as auth_router
 from app.api.routes_client import router as client_router
 from app.api.routes_health import router as health_router
+from app.api.routes_metrics import router as metrics_router
+from app.api.metrics_middleware import PrometheusHTTPMiddleware
 from app.api.routes_keys import router as keys_router
 from app.api.routes_mcp import router as mcp_router
 from app.api.routes_ui import router as ui_router
@@ -94,8 +96,10 @@ app = FastAPI(
 )
 
 app.add_middleware(NeedsOwnerSetupRedirectMiddleware)
+app.add_middleware(PrometheusHTTPMiddleware)
 
 app.include_router(health_router)
+app.include_router(metrics_router)
 app.include_router(auth_router)
 app.include_router(setup_router)
 app.include_router(local_auth_api_router)

@@ -14,6 +14,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - `CONTRIBUTING.md`, Issue/PR templates, English README gateway
 - `scripts/file_design_backlog_issues.sh` to turn design backlog into GitHub Issues
 - Phase 0 off-host uptime probe: `deploy/observability/probe_ma3.sh` (+ systemd examples)
+- Phase 1 Prometheus metrics: `GET /metrics` (`MA3_METRICS_ENABLED`, default off), HTTP + MCP tool series, SaaS scrape compose under `deploy/observability/`
 
 ### Changed
 

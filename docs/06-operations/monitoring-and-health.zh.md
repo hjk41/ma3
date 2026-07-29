@@ -43,12 +43,21 @@
 
 精确 PromQL 随 Phase 1–3 提交。**推迟：** 写入接受率、发布新鲜度 SLO（待指标就绪）。
 
-## Metrics 暴露（Phase 1，已决策）
+## Metrics 暴露（Phase 1）
 
-| 形态 | 策略 |
-|---------|--------|
-| SaaS | `/metrics` 仅 loopback / 不经 Caddy 反代 |
-| 自托管 | 默认 `MA3_METRICS_ENABLED=0` |
+| 项 | 策略 |
+|------|--------|
+| 库 | `prometheus-client` + 自研 middleware |
+| 端点 | `MA3_METRICS_ENABLED=1` 时提供 `GET /metrics` |
+| 自托管默认 | **关闭** |
+| SaaS | loopback 开启；**不要**经 Caddy 反代 `/metrics` |
+| 指标（Phase 1） | `ma3_http_*`、`ma3_mcp_tool_*`、`ma3_build_info` |
+
+SaaS 主机 scrape：
+
+```bash
+cd deploy/observability && docker compose -f docker-compose.prometheus.yml up -d
+```
 
 ## 日志字段约定（先文档化）
 
@@ -62,7 +71,7 @@
 
 | Phase | 状态 | 交付 |
 |-------|--------|-------------|
-| 0 | **脚本已落地** | 站外探活 + webhook + 文档 |
-| 1 | 计划中 | `prometheus-client`、`/metrics`、HTTP+MCP 埋点、SaaS scrape |
+| 0 | **已完成（主机 202）** | 站外探活 + webhook/飞书 + 文档 |
+| 1 | **代码已落地** | `prometheus-client`、`/metrics`、HTTP+MCP 埋点、SaaS scrape compose |
 | 2 | 计划中 | Alertmanager 最小规则 |
 | 3 | 计划中 | SLO-1–3 recording rules + Grafana |

@@ -39,6 +39,8 @@ Implementation defaults (accepted with the plan, not re-voted):
 | Ops docs | `docs/06-operations/monitoring-and-health.md` (+ `.zh.md`) |
 | Later: metrics module | `code/server/app/core/metrics.py`, `routes_metrics.py` |
 | Later: SaaS scrape stack | `deploy/observability/` compose + Prometheus rules |
+| Phase 1 metrics (landed) | `app/core/metrics.py`, `routes_metrics.py`, `metrics_middleware.py`; enable with `MA3_METRICS_ENABLED=1` |
+| Phase 1 SaaS scrape | `deploy/observability/docker-compose.prometheus.yml` |
 
 ## Historical drafts
 

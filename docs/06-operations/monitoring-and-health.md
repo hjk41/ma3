@@ -43,12 +43,24 @@ Script and install notes: [`deploy/observability/`](../../deploy/observability/R
 
 Exact PromQL recording rules ship with Phase 1–3. **Deferred:** write-acceptance and publish-freshness SLOs until the required metrics exist.
 
-## Metrics exposure (Phase 1, decided)
+## Phase 1 — application metrics
 
-| Profile | Policy |
-|---------|--------|
-| SaaS | `/metrics` on loopback / not proxied by Caddy |
-| Self-host | `MA3_METRICS_ENABLED=0` by default |
+| Item | Policy |
+|------|--------|
+| Library | `prometheus-client` + hand-rolled middleware |
+| Endpoint | `GET /metrics` when `MA3_METRICS_ENABLED=1` |
+| Self-host default | **OFF** (`MA3_METRICS_ENABLED` unset/0) |
+| SaaS | Enable on loopback uvicorn; **do not** proxy `/metrics` via Caddy |
+| Series (Phase 1) | `ma3_http_*`, `ma3_mcp_tool_*`, `ma3_build_info` |
+
+Scrape compose (SaaS host, loopback Prometheus UI on `:9090`):
+
+```bash
+# On the ma3.io application host, with MA3_METRICS_ENABLED=1:
+cd deploy/observability && docker compose -f docker-compose.prometheus.yml up -d
+```
+
+`verify_ma3_prod.sh` asserts the **public** URL does not serve Prometheus exposition text at `/metrics`.
 
 ## Log field conventions (document first)
 
@@ -62,8 +74,8 @@ Do **not** put secrets or raw API keys in logs. Per-tenant detail stays in logs/
 
 | Phase | Status | Deliverable |
 |-------|--------|-------------|
-| 0 | **In progress / scripts landed** | Off-host probe + webhook + docs |
-| 1 | Planned | `prometheus-client`, `/metrics`, HTTP + MCP instrumentation, SaaS scrape |
+| 0 | **Done** (host 202) | Off-host probe + webhook/Feishu + docs |
+| 1 | **Landed in tree** | `prometheus-client`, `/metrics`, HTTP + MCP instrumentation, SaaS scrape compose |
 | 2 | Planned | Alertmanager minimal rules |
 | 3 | Planned | SLO-1–3 recording rules + Grafana; rewrite complete |
 

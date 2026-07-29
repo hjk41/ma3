@@ -70,9 +70,10 @@ This machine (`192.168.31.202`) runs the off-host probe for SaaS `https://ma3.io
 
 | Unit | Role |
 |------|------|
-| `ma3-alert-sink.service` | Local webhook on `127.0.0.1:8787` → `/var/log/ma3/probe-alerts.jsonl` |
+| `ma3-alert-sink.service` | Local webhook on `127.0.0.1:8787` → `/var/log/ma3/probe-alerts.jsonl` (+ optional Feishu forward) |
 | `ma3-probe.timer` | Every ~60s runs `ma3-probe.service` |
 | `/etc/ma3/probe.env` | Target URL / instance / webhook (not in git) |
+| `/etc/ma3/feishu.env` | `FEISHU_APP_ID` / `FEISHU_APP_SECRET` / `FEISHU_CHAT_ID(S)` (not in git) |
 | `/usr/local/bin/ma3-probe.sh` | Installed copy of `probe_ma3.sh` |
 
 Useful commands:
@@ -83,10 +84,33 @@ journalctl -u ma3-probe.service -n 50
 sudo tail -f /var/log/ma3/probe-alerts.jsonl
 ```
 
-To switch the webhook to Slack/Discord/Feishu later, change only `MA3_PROBE_WEBHOOK_URL` in `/etc/ma3/probe.env`.
+### Feishu (Open API app)
 
-## Later phases (not in this directory yet)
+Probe still POSTs to `MA3_PROBE_WEBHOOK_URL=http://127.0.0.1:8787/`. The sink forwards to Feishu when `/etc/ma3/feishu.env` is present:
 
-- Phase 1: `GET /metrics` (SaaS loopback; self-host `MA3_METRICS_ENABLED=0` by default) + Prometheus scrape compose
+```bash
+FEISHU_APP_ID=cli_...
+FEISHU_APP_SECRET=...
+FEISHU_CHAT_ID=oc_...          # primary
+# optional: FEISHU_CHAT_IDS=oc_a,oc_b
+```
+
+List chats the bot can message (after `tenant_access_token`):
+
+```bash
+curl -s 'https://open.feishu.cn/open-apis/im/v1/chats?page_size=50' \
+  -H "Authorization: Bearer $TOKEN"
+```
+
+Manual test:
+
+```bash
+curl -s -X POST http://127.0.0.1:8787/ -H 'Content-Type: application/json' \
+  -d '{"event":"ma3_probe_fail","base_url":"https://ma3.io","instance_id":"ma3-v1-hk","detail":"test","ts":"…"}'
+```
+
+## Later phases
+
+- Phase 1: **landed** — `GET /metrics` (`MA3_METRICS_ENABLED`), HTTP + MCP series; SaaS scrape via `docker-compose.prometheus.yml`
 - Phase 2: Alertmanager rules
-- Phase 3: SLO recording rules + Grafana for SLO-1–3
+- Phase 3: SLO-1–3 recording rules + Grafana

@@ -1,0 +1,28 @@
+# Prometheus scrape stack for SaaS (Phase 1) — run on the ma3.io *application* host.
+# Scrapes loopback uvicorn only. Keep /metrics off the public Caddy site.
+#
+#   cd deploy/observability && docker compose -f docker-compose.prometheus.yml up -d
+#
+# Requires the ma3 process with MA3_METRICS_ENABLED=1 listening on 127.0.0.1:8000
+# (or set MA3_METRICS_SCRAPE_TARGET).
+
+services:
+  prometheus:
+    image: prom/prometheus:v2.54.1
+    restart: unless-stopped
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --storage.tsdb.retention.time=30d
+      - --web.enable-lifecycle
+    volumes:
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ma3_prom_data:/prometheus
+    # Loopback-only on the host — operators curl via SSH tunnel if needed.
+    ports:
+      - "127.0.0.1:9090:9090"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+volumes:
+  ma3_prom_data:

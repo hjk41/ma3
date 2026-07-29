@@ -60,6 +60,8 @@ class Settings:
     maintainer_api_keys: tuple[str, ...] = field(default_factory=lambda: tuple())
     vector_scan_limit: int = field(default_factory=lambda: int(os.environ.get("MA3_VECTOR_SCAN_LIMIT", "500")))
     disable_embeddings: bool = field(default_factory=lambda: _env_bool("MA3_DISABLE_EMBEDDINGS", False))
+    # Prometheus /metrics (Phase 1). Default OFF — self-host safe; SaaS sets MA3_METRICS_ENABLED=1 on loopback.
+    metrics_enabled: bool = field(default_factory=lambda: _env_bool("MA3_METRICS_ENABLED", False))
 
     # Search ranking (design/12 — Scheme B Gate-Then-Nudge). See validate_ranking_config().
     search_wilson_z: float = field(default_factory=lambda: _env_float("MA3_SEARCH_WILSON_Z", 1.96))
@@ -341,6 +343,8 @@ class Settings:
             flags.append("local_auth")
         if not self.oidc_configured and self.bootstrap_selfhost:
             flags.append("bootstrap_selfhost")
+        if self.metrics_enabled:
+            flags.append("metrics")
         return tuple(flags)
 
 
