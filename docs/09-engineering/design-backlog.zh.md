@@ -17,6 +17,16 @@
 
 重新建 Issue：`bash scripts/file_design_backlog_issues.sh`（会新建而非去重，慎用）。
 
+
+## 运维 / 质量债（持续改进）
+
+| ID | Issue | 摘要 |
+|----|-------|------|
+| O1 | https://github.com/hjk41/ma3/issues/5 | 指标、告警、内部 SLO |
+| O2 | https://github.com/hjk41/ma3/issues/6 | 补全生产 Runbook |
+| O3 | https://github.com/hjk41/ma3/issues/7 | Playwright 门户回归范围 |
+| O4 | https://github.com/hjk41/ma3/issues/8 | Agent eval 固定节奏 |
+
 ## 已决策（追溯用，已落文档）
 
 - **防误删 = 付费功能**：仅付费 org 可对其**拥有**的库开启（回收站/恢复）；默认硬删不可恢复。→ ADR-013 / design-10

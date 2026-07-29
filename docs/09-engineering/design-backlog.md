@@ -19,6 +19,16 @@
 
 Recreate issues: `bash scripts/file_design_backlog_issues.sh` (creates new issues without dedup — use carefully).
 
+
+## Ops / quality debt (continuous improvement)
+
+| ID | Issue | Summary |
+|----|-------|------|
+| O1 | https://github.com/hjk41/ma3/issues/5 | Metrics, alerting, internal SLOs |
+| O2 | https://github.com/hjk41/ma3/issues/6 | Complete production runbook |
+| O3 | https://github.com/hjk41/ma3/issues/7 | Playwright portal regression scope |
+| O4 | https://github.com/hjk41/ma3/issues/8 | Agent eval fixed cadence |
+
 ## Already decided (for traceability; documented elsewhere)
 
 - **Anti-deletion as a paid feature**: only paid orgs may enable recycle/restore on libraries they **own**; default is hard delete with no restore. → ADR-013 / design-10

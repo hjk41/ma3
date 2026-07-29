@@ -1,0 +1,14 @@
+[Unit]
+Description=ma3 off-host uptime probe (one shot)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+EnvironmentFile=-/etc/ma3/probe.env
+# Adjust path to your checkout or installed copy of probe_ma3.sh
+ExecStart=/usr/local/bin/ma3-probe.sh
+Nice=10
+
+[Install]
+WantedBy=multi-user.target

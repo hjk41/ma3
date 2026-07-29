@@ -1,0 +1,11 @@
+[Unit]
+Description=Run ma3 off-host probe every minute
+
+[Timer]
+OnBootSec=30s
+OnUnitActiveSec=60s
+AccuracySec=5s
+Unit=ma3-probe.service
+
+[Install]
+WantedBy=timers.target

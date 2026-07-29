@@ -11,3 +11,4 @@ This directory **only keeps “decision summary” documents** per topic. Origin
 |------|------|
 | [23-public-landing-decisions.md](23-public-landing-decisions.md) | Unauthenticated public default page (Public Landing) |
 | [24-org-library-management-decisions.md](24-org-library-management-decisions.md) | Org & Library Management |
+| [25-metrics-slo-decisions.md](25-metrics-slo-decisions.md) | Continuous metrics, alerting, internal SLOs |

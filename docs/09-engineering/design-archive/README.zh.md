@@ -9,3 +9,4 @@
 |------|------|
 | [23-public-landing-decisions.md](23-public-landing-decisions.md) | 未登录公开默认页（Public Landing） |
 | [24-org-library-management-decisions.md](24-org-library-management-decisions.md) | 组织与知识库管理（Org & Library Management） |
+| [25-metrics-slo-decisions.md](25-metrics-slo-decisions.md) | 持续 metrics、告警、内部 SLO |
