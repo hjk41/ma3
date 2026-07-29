@@ -6,7 +6,8 @@ scrape_configs:
   - job_name: ma3
     metrics_path: /metrics
     static_configs:
-      # Uvicorn on the Docker host (SaaS: 127.0.0.1:8000 behind Caddy).
-      - targets: ["host.docker.internal:8000"]
+      # Prefer host-network Prometheus scraping uvicorn on loopback.
+      # (Docker bridge cannot reach processes bound to 127.0.0.1.)
+      - targets: ["127.0.0.1:8000"]
         labels:
           service: ma3
