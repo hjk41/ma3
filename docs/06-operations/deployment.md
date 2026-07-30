@@ -69,9 +69,14 @@ When `VERIFY_API_KEY` is unset, MCP test cases requiring an API key are skipped;
 
 LAN (`regenerate`) uses `deploy/common/verify_ma3.sh`; do not mix it with the production checklist.
 
+## Caddy blue-green (SaaS preserve, optional)
+
+For near-zero downtime on bare-metal + Caddy (not Compose self-host): enable `BLUE_GREEN=1` in the local prod deploy env after the live Caddyfile imports `deploy/caddy/upstream.caddy.example` (see `deploy/caddy/Caddyfile.ma3.io.example` and **[deploy/README.md](../../deploy/README.md)**). Until that one-time wiring is done, keep the classic `pkill` restart path.
+
 ## To Be Added
 
 - [x] `deploy/self-host` docker compose example (see [self-hosting.md](self-hosting.md))
 - [ ] systemd example
 - [x] Secret management (`MA3_API_KEY_ENCRYPTION_SECRET`, bootstrap key file)
 - [ ] Backup/restore procedure (summary already written into self-hosting.md)
+- [x] Caddy blue-green cutover helpers (`deploy/common/bluegreen_remote.sh`, opt-in via `BLUE_GREEN=1`)

@@ -56,6 +56,11 @@ def get_client_env_example() -> Response:
     return _serve_bytes("templates/ma3-client.env.example")
 
 
+@router.get("/client/skills/ma3/SKILL.md")
+def get_ma3_skill_md() -> Response:
+    return _serve_bytes("skills/ma3/SKILL.md")
+
+
 @router.get("/client/scripts/sync_ma3_client.sh")
 def get_sync_shell() -> Response:
     return _serve_bytes("scripts/sync_ma3_client.sh")

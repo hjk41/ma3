@@ -50,6 +50,16 @@ UVICORN_HOST="${UVICORN_HOST:-0.0.0.0}"
 HEALTHZ_TIMEOUT="${HEALTHZ_TIMEOUT:-240}"
 REQUIRE_VECTOR="${REQUIRE_VECTOR:-1}"
 RUN_VERIFY="${RUN_VERIFY:-1}"
+# Blue-green (preserve + Caddy only). Default off so LAN/regenerate and
+# single-port prod keep the classic pkill→restart path.
+BLUE_GREEN="${BLUE_GREEN:-0}"
+BLUE_GREEN_PORT_A="${BLUE_GREEN_PORT_A:-8000}"
+BLUE_GREEN_PORT_B="${BLUE_GREEN_PORT_B:-8001}"
+BLUE_GREEN_DRAIN_SEC="${BLUE_GREEN_DRAIN_SEC:-5}"
+CADDY_UPSTREAM_FILE="${CADDY_UPSTREAM_FILE:-${REMOTE_DIR}/data/bluegreen/upstream.caddy}"
+CADDY_RELOAD_CMD="${CADDY_RELOAD_CMD:-caddy reload --config /etc/caddy/Caddyfile}"
+# When blue-green is on, smoke the public URL after Caddy switch (rollback on fail).
+BLUE_GREEN_PUBLIC_SMOKE_URL="${BLUE_GREEN_PUBLIC_SMOKE_URL:-}"
 SSH="ssh -i ${SSH_KEY} -o ConnectTimeout=15"
 RSYNC_SSH="ssh -i ${SSH_KEY}"
 
@@ -61,13 +71,20 @@ if [[ "${guard_ok}" -ne 1 ]]; then
   exit 2
 fi
 
+if [[ "${BLUE_GREEN}" == "1" && "${ENV_MODE}" != "preserve" ]]; then
+  echo "REFUSING: BLUE_GREEN=1 is only supported with ENV_MODE=preserve (Caddy cutover)." >&2
+  exit 2
+fi
+
 DEPLOY_GIT_COMMIT="$(git -C "${REPO_DIR}" rev-parse --short HEAD 2>/dev/null || true)"
-echo "==> profile=${DEPLOY_PROFILE} mode=${ENV_MODE} -> ${REMOTE_USER}@${REMOTE_HOST}:${REMOTE_DIR} port=${MA3_PORT} commit=${DEPLOY_GIT_COMMIT}"
+echo "==> profile=${DEPLOY_PROFILE} mode=${ENV_MODE} blue_green=${BLUE_GREEN} -> ${REMOTE_USER}@${REMOTE_HOST}:${REMOTE_DIR} port=${MA3_PORT} commit=${DEPLOY_GIT_COMMIT}"
 
 RSYNC_EXCLUDES=(
   --exclude '.git' --exclude '.venv' --exclude '__pycache__' --exclude '*.pyc'
   --exclude '.pytest_cache' --exclude 'server/data' --exclude 'server/.venv'
   --exclude 'data/hf-cache' --exclude 'ma3db_*.sql.gz'
+  # Local deploy configs may contain VERIFY_API_KEY / host secrets — never rsync them.
+  --exclude 'deploy/deploy.*.env' --exclude 'deploy/.env'
   # ma3.env is host-specific; never overwrite/delete it from the source tree.
   --exclude 'ma3.env' --filter 'P ma3.env' --filter 'P ma3.pid' --filter 'P data/'
 )
@@ -84,7 +101,15 @@ if [[ "${ENV_MODE}" == "preserve" ]]; then
   ASSERT_DEV_AUTH_OFF="${ASSERT_DEV_AUTH_OFF:-1}"
   ASSERT_NO_LAN_PROXY="${ASSERT_NO_LAN_PROXY:-1}"
 
-  echo "==> [2/3] preserve-env deploy (assert invariants, inject commit, restart)"
+  if [[ "${BLUE_GREEN}" == "1" ]]; then
+    UVICORN_HOST="${UVICORN_HOST:-127.0.0.1}"
+    if [[ -z "${BLUE_GREEN_PUBLIC_SMOKE_URL}" ]]; then
+      BLUE_GREEN_PUBLIC_SMOKE_URL="${EXPECT_PUBLIC_BASE_URL}"
+    fi
+    echo "==> [2/3] preserve-env deploy (assert invariants, inject commit, Caddy blue-green cutover)"
+  else
+    echo "==> [2/3] preserve-env deploy (assert invariants, inject commit, restart)"
+  fi
   $SSH "${REMOTE_USER}@${REMOTE_HOST}" bash -s <<REMOTE
 set -euo pipefail
 REMOTE_DIR="${REMOTE_DIR}"; PORT="${MA3_PORT}"; UVICORN_HOST="${UVICORN_HOST}"
@@ -92,6 +117,12 @@ DEPLOY_GIT_COMMIT="${DEPLOY_GIT_COMMIT:-}"; REQUIRE_VECTOR="${REQUIRE_VECTOR}"
 HEALTHZ_TIMEOUT="${HEALTHZ_TIMEOUT}"
 EXPECT_INSTANCE_ID="${EXPECT_INSTANCE_ID}"; EXPECT_PUBLIC_BASE_URL="${EXPECT_PUBLIC_BASE_URL}"
 ASSERT_DEV_AUTH_OFF="${ASSERT_DEV_AUTH_OFF}"; ASSERT_NO_LAN_PROXY="${ASSERT_NO_LAN_PROXY}"
+BLUE_GREEN="${BLUE_GREEN}"
+BLUE_GREEN_PORT_A="${BLUE_GREEN_PORT_A}"; BLUE_GREEN_PORT_B="${BLUE_GREEN_PORT_B}"
+BLUE_GREEN_DRAIN_SEC="${BLUE_GREEN_DRAIN_SEC}"
+CADDY_UPSTREAM_FILE="${CADDY_UPSTREAM_FILE}"
+CADDY_RELOAD_CMD="${CADDY_RELOAD_CMD}"
+BLUE_GREEN_PUBLIC_SMOKE_URL="${BLUE_GREEN_PUBLIC_SMOKE_URL}"
 ENV="\${REMOTE_DIR}/ma3.env"
 
 [[ -f "\${ENV}" ]] || { echo "FATAL: \${ENV} missing; provision production ma3.env first." >&2; exit 1; }
@@ -118,32 +149,50 @@ if [[ -n "\${DEPLOY_GIT_COMMIT}" ]]; then
   fi
 fi
 
-pkill -f "uvicorn app.main:app.*--port \${PORT}" || true
-sleep 3
-set -a; source "\${ENV}"; set +a
-unset MA3_DISABLE_EMBEDDINGS || true
-nohup .venv/bin/python -m uvicorn app.main:app --host "\${UVICORN_HOST}" --port "\${PORT}" --app-dir . \
-  > /tmp/ma3-v1-uvicorn.log 2>&1 &
-echo \$! > "\${REMOTE_DIR}/ma3.pid"
-
-ready=0; deadline=\$((SECONDS + HEALTHZ_TIMEOUT))
-while (( SECONDS < deadline )); do
-  if curl -sf "http://127.0.0.1:\${PORT}/healthz" >/tmp/ma3-healthz.json 2>/dev/null; then
-    if [[ "\${REQUIRE_VECTOR}" != "1" ]]; then ready=1; break; fi
-    feats=\$(python3 -c "import json;print(','.join(json.load(open('/tmp/ma3-healthz.json')).get('features',[])))")
-    [[ "\${feats}" == *vector* ]] && { ready=1; break; }
+if [[ "\${BLUE_GREEN}" == "1" ]]; then
+  # shellcheck disable=SC1091
+  source "\${REMOTE_DIR}/deploy/common/bluegreen_remote.sh"
+  mkdir -p "\$(dirname "\${CADDY_UPSTREAM_FILE}")"
+  if [[ ! -f "\${CADDY_UPSTREAM_FILE}" ]]; then
+    echo "==> seeding CADDY_UPSTREAM_FILE=\${CADDY_UPSTREAM_FILE} (ensure Caddyfile imports it)"
+    cp -f "\${REMOTE_DIR}/deploy/caddy/upstream.caddy.example" "\${CADDY_UPSTREAM_FILE}"
   fi
-  sleep 2
-done
-[[ "\${ready}" -eq 1 ]] || { echo "healthz not ready after \${HEALTHZ_TIMEOUT}s" >&2; tail -40 /tmp/ma3-v1-uvicorn.log >&2; exit 1; }
-python3 -m json.tool /tmp/ma3-healthz.json
+  bluegreen_cutover
+else
+  pkill -f "uvicorn app.main:app.*--port \${PORT}" || true
+  sleep 3
+  set -a; source "\${ENV}"; set +a
+  unset MA3_DISABLE_EMBEDDINGS || true
+  nohup .venv/bin/python -m uvicorn app.main:app --host "\${UVICORN_HOST}" --port "\${PORT}" --app-dir . \
+    > /tmp/ma3-v1-uvicorn.log 2>&1 &
+  echo \$! > "\${REMOTE_DIR}/ma3.pid"
+
+  ready=0; deadline=\$((SECONDS + HEALTHZ_TIMEOUT))
+  while (( SECONDS < deadline )); do
+    if curl -sf "http://127.0.0.1:\${PORT}/healthz" >/tmp/ma3-healthz.json 2>/dev/null; then
+      if [[ "\${REQUIRE_VECTOR}" != "1" ]]; then ready=1; break; fi
+      feats=\$(python3 -c "import json;print(','.join(json.load(open('/tmp/ma3-healthz.json')).get('features',[])))")
+      [[ "\${feats}" == *vector* ]] && { ready=1; break; }
+    fi
+    sleep 2
+  done
+  [[ "\${ready}" -eq 1 ]] || { echo "healthz not ready after \${HEALTHZ_TIMEOUT}s" >&2; tail -40 /tmp/ma3-v1-uvicorn.log >&2; exit 1; }
+  python3 -m json.tool /tmp/ma3-healthz.json
+fi
 REMOTE
 
   if [[ "${RUN_VERIFY}" == "1" ]]; then
-    echo "==> [3/3a] production remote loopback smoke (127.0.0.1:${MA3_PORT})"
+    # Resolve loopback port: blue-green uses recorded active_port; classic uses MA3_PORT.
+    VERIFY_LOOPBACK_PORT="${MA3_PORT}"
+    if [[ "${BLUE_GREEN}" == "1" ]]; then
+      VERIFY_LOOPBACK_PORT="$($SSH "${REMOTE_USER}@${REMOTE_HOST}" \
+        "tr -d '[:space:]' < '${REMOTE_DIR}/data/bluegreen/active_port' 2>/dev/null || echo '${BLUE_GREEN_PORT_A}'")"
+      VERIFY_LOOPBACK_PORT="${VERIFY_LOOPBACK_PORT:-${BLUE_GREEN_PORT_A}}"
+    fi
+    echo "==> [3/3a] production remote loopback smoke (127.0.0.1:${VERIFY_LOOPBACK_PORT})"
     $SSH "${REMOTE_USER}@${REMOTE_HOST}" bash -s <<REMOTE
 set -euo pipefail
-PORT="${MA3_PORT}"; EXPECT_INSTANCE_ID="${EXPECT_INSTANCE_ID}"; EXPECT_PUBLIC_BASE_URL="${EXPECT_PUBLIC_BASE_URL}"
+PORT="${VERIFY_LOOPBACK_PORT}"; EXPECT_INSTANCE_ID="${EXPECT_INSTANCE_ID}"; EXPECT_PUBLIC_BASE_URL="${EXPECT_PUBLIC_BASE_URL}"
 BASE="http://127.0.0.1:\${PORT}"
 feats=\$(python3 -c "import json;print(','.join(json.load(open('/tmp/ma3-healthz.json')).get('features',[])))")
 inst=\$(python3 -c "import json;print(json.load(open('/tmp/ma3-healthz.json')).get('instance_id',''))")
@@ -161,7 +210,7 @@ tools=\$(curl -sf -X POST "\${BASE}/mcp" -H 'Content-Type: application/json' \
   -d '{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}' \
   | python3 -c "import sys,json;print(len(json.load(sys.stdin)['result']['tools']))")
 [[ "\${tools}" -ge 13 ]] || { echo "FAIL: MCP tools/list=\${tools}" >&2; exit 1; }
-echo "    remote smoke OK (instance=\${inst} base=\${base} tools=\${tools})"
+echo "    remote smoke OK (instance=\${inst} base=\${base} tools=\${tools} port=\${PORT})"
 REMOTE
 
     echo "==> [3/3b] production public-URL verify (deploy/common/verify_ma3_prod.sh)"

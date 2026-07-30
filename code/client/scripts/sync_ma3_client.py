@@ -62,6 +62,7 @@ def _paths_from_env(install_dir: Path) -> dict[str, Path]:
     return {
         "agent-onboarding.md": Path(os.environ.get("MA3_ONBOARDING_REL", "ma3-agent-onboarding.md")),
         "templates/ma3-agent-policy.mdc": Path(os.environ.get("MA3_POLICY_REL", "policy/ma3-agent-policy.mdc")),
+        "skills/ma3/SKILL.md": Path(os.environ.get("MA3_SKILL_REL", "skills/ma3/SKILL.md")),
         "mcp-tools.json": Path(os.environ.get("MA3_MCP_TOOLS_REL", "mcp-tools.json")),
     }
 
@@ -149,6 +150,16 @@ def main() -> int:
             note = os.environ.get("MA3_POLICY_INSTALL_NOTE")
             if note:
                 print(f"policy_install: {note}", file=sys.stderr)
+            skill_note = os.environ.get("MA3_SKILL_INSTALL_NOTE")
+            if skill_note:
+                print(f"skill_install: {skill_note}", file=sys.stderr)
+            elif (args.install_dir / "skills" / "ma3" / "SKILL.md").is_file():
+                print(
+                    "skill synced to skills/ma3/SKILL.md — copy into your runtime "
+                    "(Cursor: ~/.cursor/skills/ma3/; Claude: ~/.claude/skills/ma3/; "
+                    "Codex: ~/.codex/skills/ma3/)",
+                    file=sys.stderr,
+                )
             return 0
     except urllib.error.URLError as exc:
         print(f"ERROR: {exc}", file=sys.stderr)

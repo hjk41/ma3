@@ -65,9 +65,16 @@ From then on, every MCP call should carry the values from `~/.ma3/ma3-client.jso
 
 See your section under "Per-Agent Configuration" below. Use the `MA3_API_KEY` provided by the user in the header.
 
-### 3. Configure the behavior policy
+### 3. Configure the behavior policy + Agent Skill
 
-Sync writes to `~/.ma3/policy/ma3-agent-policy.mdc`; then copy it to your runtime per the env file's comments.
+Sync writes:
+
+- `~/.ma3/policy/ma3-agent-policy.mdc` (FIRST-ACTION GATE + write-back rules)
+- `~/.ma3/skills/ma3/SKILL.md` (recall → work → remember skill)
+
+Copy **both** to your runtime per the env file's comments (Cursor rules + `~/.cursor/skills/ma3/`, Claude `CLAUDE.md` + `~/.claude/skills/ma3/`, Codex `AGENTS.md` + `~/.codex/skills/ma3/`).
+
+When MCP returns `policy_refresh_required: true`, run sync again and re-copy policy **and** skill.
 
 ### 4. Onboarding verification (must complete)
 
@@ -190,12 +197,18 @@ You may also use environment variables: `${env:MA3_API_KEY}` (Cursor), or shell 
 }
 ```
 
-**Behavior policy** — recommended to install as a Cursor rule (always apply):
+**Behavior policy** — recommended to install as a Cursor rule (always apply), plus the Agent Skill:
 
 ```bash
-mkdir -p ~/.cursor/rules
+mkdir -p ~/.cursor/rules ~/.cursor/skills/ma3
 curl -fsSL https://ma3.io/client/templates/ma3-agent-policy.mdc \
   -o ~/.cursor/rules/ma3-agent-policy.mdc
+# Prefer sync output after bootstrap; or fetch skill directly:
+curl -fsSL https://ma3.io/client/skills/ma3/SKILL.md \
+  -o ~/.cursor/skills/ma3/SKILL.md
+# After sync, equivalently:
+# cp ~/.ma3/policy/ma3-agent-policy.mdc ~/.cursor/rules/
+# cp ~/.ma3/skills/ma3/SKILL.md ~/.cursor/skills/ma3/
 ```
 
 **Restart** Cursor → confirm `ma3` is connected under **Settings → Tools & MCP**.
@@ -214,6 +227,14 @@ claude mcp add --scope user --transport http ma3 \
 ```
 
 Behavior policy: write the body of `/client/templates/ma3-agent-policy.mdc` into `~/.claude/CLAUDE.md`.
+
+Agent Skill:
+
+```bash
+mkdir -p ~/.claude/skills/ma3
+cp ~/.ma3/skills/ma3/SKILL.md ~/.claude/skills/ma3/SKILL.md
+# or: curl -fsSL "$MA3_BASE_URL/client/skills/ma3/SKILL.md" -o ~/.claude/skills/ma3/SKILL.md
+```
 
 ---
 

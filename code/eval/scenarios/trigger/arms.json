@@ -1,0 +1,55 @@
+{
+  "version": 3,
+  "arms": [
+    {
+      "id": "A0-baseline",
+      "label": "local MCP + policy v1.5.1 only",
+      "ma3_base_url": "http://127.0.0.1:8010",
+      "api_key_env": "MA3_KEY_LOCAL",
+      "skill_source": "none",
+      "skill_install": false,
+      "policy_version": "1.5.1",
+      "hooks": false,
+      "local_server_flags": {},
+      "notes": "Baseline: cursor rules / mirrored policy only"
+    },
+    {
+      "id": "A1-gate",
+      "label": "local MCP + policy 1.6.0 FIRST-ACTION GATE",
+      "ma3_base_url": "http://127.0.0.1:8010",
+      "api_key_env": "MA3_KEY_LOCAL",
+      "skill_source": "none",
+      "skill_install": false,
+      "policy_version": "1.6.0",
+      "policy_override_template": "ma3-agent-policy-1.6.0.mdc",
+      "hooks": false,
+      "local_server_flags": {},
+      "notes": "FIRST-ACTION GATE only"
+    },
+    {
+      "id": "C0-skill",
+      "label": "local MCP + policy 1.5.1 + pure SKILL.md",
+      "ma3_base_url": "http://127.0.0.1:8010",
+      "api_key_env": "MA3_KEY_LOCAL",
+      "skill_source": "local",
+      "skill_install": true,
+      "policy_version": "1.5.1",
+      "hooks": false,
+      "local_server_flags": {},
+      "notes": "Pure skill file install for Cursor/Claude/Codex"
+    },
+    {
+      "id": "C1-gate-skill",
+      "label": "local MCP + GATE 1.6.0 + SKILL.md",
+      "ma3_base_url": "http://127.0.0.1:8010",
+      "api_key_env": "MA3_KEY_LOCAL",
+      "skill_source": "local",
+      "skill_install": true,
+      "policy_version": "1.6.0",
+      "policy_override_template": "ma3-agent-policy-1.6.0.mdc",
+      "hooks": false,
+      "local_server_flags": {},
+      "notes": "Gate + skill combination"
+    }
+  ]
+}

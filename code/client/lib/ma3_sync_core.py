@@ -66,6 +66,7 @@ class ClientState:
 DEFAULT_INSTALL_PATHS: dict[str, Path] = {
     "agent-onboarding.md": Path("ma3-agent-onboarding.md"),
     "templates/ma3-agent-policy.mdc": Path("policy/ma3-agent-policy.mdc"),
+    "skills/ma3/SKILL.md": Path("skills/ma3/SKILL.md"),
     "mcp-tools.json": Path("mcp-tools.json"),
 }
 
@@ -122,6 +123,7 @@ def plan_sync(state: ClientState | None, manifest: dict[str, Any]) -> SyncPlan:
         state.files.get(path) != sha
         for path, sha in remote_files.items()
         if path not in {"mcp-tools.json", *{t[0] for t in TOOLING_PATHS}}
+        and not path.endswith("ma3-client.env.example")
     )
     mcp_reload = state.tool_schema_version != remote_tool or state.files.get("mcp-tools.json") != remote_files.get(
         "mcp-tools.json"

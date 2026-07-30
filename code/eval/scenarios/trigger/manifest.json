@@ -1,0 +1,60 @@
+{
+  "version": 1,
+  "experiment_doc": "docs/09-engineering/experiments/trigger-mechanisms.md",
+  "scenarios": [
+    {
+      "id": "trigger-p1",
+      "prompt_id": "P1",
+      "title": "Install Factory Droid CLI",
+      "priority": 1,
+      "expects_read": true,
+      "expects_write": "feedback_upvote",
+      "wraps": null
+    },
+    {
+      "id": "trigger-p2",
+      "prompt_id": "P2",
+      "title": "Docker compose inter-container networking",
+      "priority": 1,
+      "expects_read": true,
+      "expects_write": "feedback_upvote",
+      "wraps": "compose-network-fix"
+    },
+    {
+      "id": "trigger-p3",
+      "prompt_id": "P3",
+      "title": "nginx unknown directive http3",
+      "priority": 3,
+      "expects_read": true,
+      "expects_write": "report_new",
+      "wraps": null
+    },
+    {
+      "id": "trigger-p4",
+      "prompt_id": "P4",
+      "title": "Trivial Python how-to",
+      "priority": 1,
+      "expects_read": false,
+      "expects_write": "none",
+      "wraps": null
+    },
+    {
+      "id": "trigger-p5",
+      "prompt_id": "P5",
+      "title": "Switch project npm registry to npmmirror",
+      "priority": 2,
+      "expects_read": true,
+      "expects_write": "feedback_upvote",
+      "wraps": null
+    },
+    {
+      "id": "trigger-p6",
+      "prompt_id": "P6",
+      "title": "Read-only project structure exploration",
+      "priority": 2,
+      "expects_read": false,
+      "expects_write": "none",
+      "wraps": null
+    }
+  ]
+}

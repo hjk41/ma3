@@ -1,0 +1,1 @@
+这个前端项目 npm 安装很慢。请先查 ma3 知识库里关于「项目级 npm registry / workspace/.npmrc」的经验，按检索到的做法修改工作目录下的 workspace/.npmrc。不要改系统全局 npm 配置，也不要改 /etc。改完后对用到的知识记录点赞（ma3_feedback upvote）。

@@ -1,0 +1,26 @@
+{
+  "target_product": "ma3-eval",
+  "target_component": "trigger-p5",
+  "records": [
+    {
+      "seed_key": "trigger-p5-npm-npmmirror",
+      "problem": "Switch project npm registry to npmmirror (Taobao) via workspace/.npmrc",
+      "outcome": "resolved",
+      "result_summary": "Edit the project file workspace/.npmrc (not ~/.npmrc and not system paths). Set registry=https://registry.npmmirror.com so npm install uses the Taobao npmmirror. Do not change /etc or global npm config.",
+      "tags": [
+        "npm",
+        "npmmirror",
+        "registry",
+        "workspace",
+        "ma3-eval"
+      ],
+      "actions": [
+        {
+          "action": "Rewrite workspace/.npmrc registry line",
+          "rationale": "Use https://registry.npmmirror.com as the project-level registry URL"
+        }
+      ]
+    }
+  ],
+  "ensure_absent_queries": []
+}

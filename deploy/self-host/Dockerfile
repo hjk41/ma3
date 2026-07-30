@@ -13,6 +13,13 @@ COPY code/server/requirements.txt .
 # Embeddings need torch via sentence-transformers, but default PyPI torch is the
 # CUDA wheel (+ NCCL/cuDNN, ~1GB+). Self-host MiniLM runs on CPU — install the
 # CPU index first so the later requirements install does not pull GPU libs.
+# BuildKit/compose can pass HTTP(S)_PROXY as build-args so pip reaches PyPI.
+ARG HTTP_PROXY
+ARG HTTPS_PROXY
+ARG NO_PROXY
+ARG http_proxy
+ARG https_proxy
+ARG no_proxy
 RUN pip install --no-cache-dir \
       --index-url https://download.pytorch.org/whl/cpu \
       "torch>=2.2,<3" \

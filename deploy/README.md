@@ -54,8 +54,12 @@ Only **one generic script** `deploy/deploy.sh` is in git; per-environment values
 deploy/
 ├── deploy.sh                 # generic deploy driver (in git)
 ├── deploy.env.sample         # config template (in git)
+├── caddy/                    # blue-green Caddy snippets (in git)
+│   ├── upstream.caddy.example
+│   └── Caddyfile.ma3.io.example
 ├── common/verify_ma3.sh      # LAN/regenerate verify (in git)
 ├── common/verify_ma3_prod.sh # production/public verify (in git) — required on every prod deploy
+├── common/bluegreen_remote.sh # Caddy blue-green cutover helpers (in git)
 ├── README.md                 # this file (in git)
 ├── .gitignore                # ignore local *.env and legacy scripts
 ├── deploy.<lan>.env          # local: LAN staging (not in git)
@@ -80,7 +84,24 @@ New environment: copy `deploy.env.sample` to local `deploy.<name>.env` and fill 
 | Dev backdoor | `DEV_AUTH` may be `1` (LAN may use `ma3dev`) | Abort if `MA3_DEV_AUTH=1` |
 | Legacy backfill | `RUN_MIGRATION=1` runs backfill | No migration |
 | uvicorn bind | `0.0.0.0` (direct LAN) | `127.0.0.1` (Caddy reverse proxy on 443) |
+| Restart | `pkill` → start on `MA3_PORT` | Default same; with `BLUE_GREEN=1` → idle port + Caddy upstream reload |
 | Verify | `common/verify_ma3.sh` (pytest; often `ma3dev`) | remote loopback smoke + **`common/verify_ma3_prod.sh` (public URL)** |
+
+### Caddy blue-green (optional, preserve only)
+
+Default preserve deploys still briefly stop the old uvicorn before starting the new one. For near-zero downtime behind Caddy:
+
+1. **One-time on the host**: make the site block `import` an upstream snippet (see `deploy/caddy/Caddyfile.ma3.io.example`). Seed `$REMOTE_DIR/data/bluegreen/upstream.caddy` from `deploy/caddy/upstream.caddy.example` if needed. Validate: `caddy validate --config /etc/caddy/Caddyfile`.
+2. **In `deploy.<prod>.env`**: set `BLUE_GREEN=1`, `UVICORN_HOST=127.0.0.1`, ports A/B, `CADDY_UPSTREAM_FILE`, `CADDY_RELOAD_CMD`.
+3. **Each deploy**: start new uvicorn on the idle port → wait `/healthz` → rewrite upstream snippet → `caddy reload` → public smoke (rollback Caddy on failure) → drain → stop old process. State: `$REMOTE_DIR/data/bluegreen/active_port`.
+
+Status without deploying:
+
+```bash
+ssh user@host 'REMOTE_DIR=/opt/ma3_deploy CADDY_UPSTREAM_FILE=/opt/ma3_deploy/data/bluegreen/upstream.caddy bash /opt/ma3_deploy/deploy/common/bluegreen_remote.sh status'
+```
+
+Do **not** enable `BLUE_GREEN=1` until the live Caddyfile already imports the upstream file — otherwise reload will not move traffic and stopping the old port will outage the site.
 
 ### Guardrails against cross-environment mistakes
 

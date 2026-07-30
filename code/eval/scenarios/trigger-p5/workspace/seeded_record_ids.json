@@ -1,0 +1,12 @@
+{
+  "target_product": "ma3-eval",
+  "target_component": "trigger-p5",
+  "records": [
+    {
+      "seed_key": "trigger-p5-npm-npmmirror",
+      "record_id": "vk_5104c64899f1",
+      "problem": "Switch project npm registry to npmmirror (Taobao) via workspace/.npmrc",
+      "publish_status": "active"
+    }
+  ]
+}

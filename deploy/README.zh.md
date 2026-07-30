@@ -52,8 +52,12 @@ LAN / regenerate（内网 staging）仍用 `deploy/common/verify_ma3.sh`（可�
 deploy/
 ├── deploy.sh                 # 通用部署驱动（进 git）
 ├── deploy.env.sample         # 配置模板（进 git）
+├── caddy/                    # 蓝绿 Caddy 片段（进 git）
+│   ├── upstream.caddy.example
+│   └── Caddyfile.ma3.io.example
 ├── common/verify_ma3.sh      # LAN/regenerate 验收（进 git）
 ├── common/verify_ma3_prod.sh # 生产/公网验收（进 git）——每次线上部署必跑
+├── common/bluegreen_remote.sh # Caddy 蓝绿切换（进 git）
 ├── README.md                 # 本文（进 git）
 ├── .gitignore                # 忽略本地 *.env 与遗留脚本
 ├── deploy.<lan>.env          # 本地：LAN staging（不进 git）
@@ -78,7 +82,24 @@ deploy/
 | dev 后门 | `DEV_AUTH` 可设 `1`（LAN 可用 `ma3dev`） | 启动前断言 `MA3_DEV_AUTH≠1`，否则中止 |
 | legacy 回填 | `RUN_MIGRATION=1` 跑 backfill | 不迁移 |
 | uvicorn bind | `0.0.0.0`（直连 LAN） | `127.0.0.1`（Caddy 反代 443） |
+| 重启 | `pkill` → 在 `MA3_PORT` 启动 | 默认相同；`BLUE_GREEN=1` 时 → 空闲端口 + Caddy upstream reload |
 | 验收 | `common/verify_ma3.sh`（含 pytest，常用 `ma3dev`） | 远端 loopback smoke + **`common/verify_ma3_prod.sh`（公网 URL）** |
+
+### Caddy 蓝绿（可选，仅 preserve）
+
+默认 preserve 仍会短暂停旧进程再起新进程。若要在 Caddy 后接近零停机：
+
+1. **主机一次性**：站点块 `import` upstream 片段（见 `deploy/caddy/Caddyfile.ma3.io.example`），必要时从 `deploy/caddy/upstream.caddy.example` 播种 `$REMOTE_DIR/data/bluegreen/upstream.caddy`。校验：`caddy validate --config /etc/caddy/Caddyfile`。
+2. **在 `deploy.<prod>.env`**：设 `BLUE_GREEN=1`、`UVICORN_HOST=127.0.0.1`、端口 A/B、`CADDY_UPSTREAM_FILE`、`CADDY_RELOAD_CMD`。
+3. **每次部署**：空闲端口起新 uvicorn → 等 `/healthz` → 改写 upstream → `caddy reload` → 公网 smoke（失败回滚 Caddy）→ drain → 停旧进程。状态：`$REMOTE_DIR/data/bluegreen/active_port`。
+
+未部署时查看状态：
+
+```bash
+ssh user@host 'REMOTE_DIR=/opt/ma3_deploy CADDY_UPSTREAM_FILE=/opt/ma3_deploy/data/bluegreen/upstream.caddy bash /opt/ma3_deploy/deploy/common/bluegreen_remote.sh status'
+```
+
+**在线上 Caddyfile 已 import 该 upstream 文件之前，不要开 `BLUE_GREEN=1`**——否则 reload 不会切流量，停掉旧端口会直接断站。
 
 ### 防串环境的护栏
 

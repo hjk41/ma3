@@ -30,6 +30,9 @@ case "${SCENARIO}" in
   http-proxy-apt)
     apply_file "${SCENARIO_DIR}/golden/env.sh" "${SCENARIO_DIR}/workspace/env.sh"
     ;;
+  trigger-p5)
+    apply_file "${SCENARIO_DIR}/golden/.npmrc" "${SCENARIO_DIR}/workspace/.npmrc"
+    ;;
   postgres-backup)
     apply_file "${SCENARIO_DIR}/golden/backup.sh" "${SCENARIO_DIR}/workspace/backup.sh"
     chmod +x "${SCENARIO_DIR}/workspace/backup.sh"

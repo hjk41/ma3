@@ -1,7 +1,7 @@
 ---
 description: ma3 agent policy — query before work, report reusable outcomes
 alwaysApply: true
-ma3_skill_bundle_version: "1.5.1"
+ma3_skill_bundle_version: "1.6.0"
 ma3_tool_schema_version: "ma3.mcp.v1"
 ---
 
@@ -11,16 +11,37 @@ Apply in **every project**, not only in the ma3 repo. Prefer MCP tools when visi
 
 Configure MCP per `/client/agent-onboarding.md` (your `MA3_BASE_URL` + API key).
 
-**There is no ma3 CLI or install script in v1** (ADR-003). Client refresh is MCP + policy only.
+**There is no ma3 CLI or install script in v1** (ADR-003). Client refresh is MCP + policy + optional skill.
 
 **Scheme B (mandatory):** local state file `~/.ma3/ma3-client.json` is the source of truth
 for what you report to the server. Paths are **agent-maintained** in `~/.ma3/ma3-client.env`
 (not hardcoded per runtime in the ma3 repo).
 
-## 0. One-time bootstrap (agent fills env)
+## 0. FIRST-ACTION GATE (mandatory — applies before everything else)
+
+On every **non-trivial** task (unless the user explicitly opts out), **`ma3_context` MUST be
+the first ma3 action** and MUST run **before** any of these **first mutating actions**:
+
+- Web search or fetching external docs for the task
+- `curl` / `wget` / package installs (`pip`, `npm`, `apt`, `brew`, `droid`, …)
+- Editing system or project configuration files
+- `docker compose` / `systemctl` / service restarts
+- Creating or overwriting files to solve the task
+
+Pure read-only inspection (`ls`, `cat`, `git status`, `git diff`) does not require
+`ma3_context` first, but you MUST still call it before the first mutating action above.
+
+If you have not called `ma3_context` yet this session, **stop and call it now** before
+continuing. Empty or template-only calls do not count — include real `problem`, `target`,
+and `task_type`.
+
+Also install / refresh the ma3 Agent Skill when present:
+`~/.ma3/skills/ma3/SKILL.md` → copy to your runtime skills dir (see onboarding).
+
+## 1. One-time bootstrap (agent fills env)
 
 1. Fetch template: `GET /client/templates/ma3-client.env.example`
-2. Save as `~/.ma3/ma3-client.env` and edit for **your** runtime (base URL, policy install path).
+2. Save as `~/.ma3/ma3-client.env` and edit for **your** runtime (base URL, policy/skill install paths).
 3. Bootstrap tooling (once):
    ```bash
    mkdir -p ~/.ma3/bin ~/.ma3/lib
@@ -30,15 +51,17 @@ for what you report to the server. Paths are **agent-maintained** in `~/.ma3/ma3
    chmod +x ~/.ma3/bin/sync_ma3_client.sh
    ```
 4. Run sync: `bash ~/.ma3/bin/sync_ma3_client.sh sync`
-5. Copy policy to your runtime (examples in env template comments):
+5. Copy policy + skill to your runtime (examples in env template comments):
    - Cursor: `cp ~/.ma3/policy/ma3-agent-policy.mdc ~/.cursor/rules/`
-   - Codex / Claude / Droid: append or merge per your runtime docs
+     and `mkdir -p ~/.cursor/skills/ma3 && cp ~/.ma3/skills/ma3/SKILL.md ~/.cursor/skills/ma3/`
+   - Claude: policy → `~/.claude/CLAUDE.md`; skill → `~/.claude/skills/ma3/SKILL.md`
+   - Codex: policy → `~/.codex/AGENTS.md`; skill → `~/.codex/skills/ma3/SKILL.md`
 
-## 1. Before work — `ma3_context` (mandatory)
+## 2. Before work — `ma3_context` (mandatory)
 
 For every **non-trivial** task unless the user explicitly opts out:
 
-1. Call **`ma3_context`** as one of the **first** actions.
+1. Call **`ma3_context`** as one of the **first** actions (see §0 FIRST-ACTION GATE).
 2. **Always pass both version fields** on every MCP tool call, read from
    `~/.ma3/ma3-client.json` after sync:
    - `client_version` = `skill_bundle_version`
@@ -49,8 +72,8 @@ For every **non-trivial** task unless the user explicitly opts out:
 5. Read **`structuredContent.server`** on every MCP response.
 6. **Remember which record(s) you used.** If a returned record's fix/answer is
    what actually resolved your task, you will **upvote** it at the end
-   (see §3) instead of writing a duplicate.
-7. **Triage returned records against the correct answer's rank** (see §3.0):
+   (see §4) instead of writing a duplicate.
+7. **Triage returned records against the correct answer's rank** (see §4.0):
    - **Upvote** the record(s) whose fix/answer actually resolved your task.
    - **Downvote only wrong records that rank ABOVE the correct answer** in the
      `ma3_context` result order. Those are the ones that actively mislead — the next
@@ -61,7 +84,7 @@ For every **non-trivial** task unless the user explicitly opts out:
 
 Retry once; if still failing, tell the user in one sentence and continue from local evidence.
 
-## 2. Client auto-upgrade — scheme B (mandatory when flagged)
+## 3. Client auto-upgrade — scheme B (mandatory when flagged)
 
 Every MCP `tools/call` returns `structuredContent.server` with upgrade flags.
 
@@ -72,6 +95,7 @@ Every MCP `tools/call` returns `structuredContent.server` with upgrade flags.
 | `~/.ma3/ma3-client.env` | **You** fill paths for your agent runtime |
 | `~/.ma3/ma3-client.json` | Reported versions + file sha256 + last sync |
 | `~/.ma3/policy/ma3-agent-policy.mdc` | Policy bundle (copy to runtime after sync) |
+| `~/.ma3/skills/ma3/SKILL.md` | Agent Skill (copy to runtime skills dir after sync) |
 | `~/.ma3/mcp-tools.json` | Cached MCP tools/list snapshot |
 
 **Sync command** (uses your env file):
@@ -90,7 +114,7 @@ says tooling was updated mid-run.
 
 | Flag | Meaning | Action |
 |------|---------|--------|
-| `policy_refresh_required` | Policy/onboarding behind | Run sync; copy policy to runtime |
+| `policy_refresh_required` | Policy/onboarding/skill behind | Run sync; copy policy **and** skill to runtime |
 | `mcp_reload_required` | MCP tools/schema behind | Run sync + reload MCP in your IDE |
 | `client_update_required` | Breaking (either bundle) | Sync + reload; **no writes** until false |
 
@@ -103,7 +127,7 @@ says tooling was updated mid-run.
 3. Re-call MCP with versions from updated `~/.ma3/ma3-client.json`.
 4. **Only proceed to `ma3_report` when `client_update_required` is false.**
 
-## 3. After work — prefer upvote, report only what is new
+## 4. After work — prefer upvote, report only what is new
 
 When non-trivial work produces reusable knowledge, close the loop before ending
 the turn. **Choose the lightest action that captures the truth** — do not create
@@ -111,7 +135,7 @@ duplicate records.
 
 **Precondition**: `client_update_required` is **false** on your last MCP call.
 
-### 3.0 Decision: upvote vs. verify vs. report (in order)
+### 4.0 Decision: upvote vs. verify vs. report (in order)
 
 Go down this list and stop at the **first** match:
 
@@ -153,7 +177,7 @@ After downvoting, if you can state *why* it is wrong and what the correct answer
 also add a `ma3_report` `report_kind: "refute"` with `target_record_id: <wrong id>`.
 Use `vote: "clear"` only to retract a vote you now think was mistaken.
 
-### 3.1 Library selection for `ma3_report`
+### 4.1 Library selection for `ma3_report`
 
 Before writing `ma3_report`, call `ma3_whoami` when you have not already inspected the
 caller's libraries in this task. Choose the target library by intent and pass `library_id`
@@ -172,7 +196,7 @@ the correct library, validate, and retry.
 Do not rely on the server default for public/community writes. For `verify`/`refute`, pass
 `target_record_id`; the server pins the write to the target record's library.
 
-### 3.2 When you do write a record (`report_kind: verify` / `refute` / `new`)
+### 4.2 When you do write a record (`report_kind: verify` / `refute` / `new`)
 
 `confirmation` is optional audit metadata (`user_confirmed` | `agent_judged`). **Omit it**
 to default to `agent_judged`. The server does **not** require the user to type a confirmation
@@ -186,7 +210,7 @@ phrase — do not stop in headless/CI sessions to ask for one.
 
 Do **not** store secrets, API keys, private keys, or huge raw logs.
 
-## 4. End-of-task self-check
+## 5. End-of-task self-check
 
 - [ ] Called `ma3_context` (or retried + noted unavailability)?
 - [ ] Passed versions from `~/.ma3/ma3-client.json`?
@@ -195,8 +219,8 @@ Do **not** store secrets, API keys, private keys, or huge raw logs.
 - [ ] **Downvoted every wrong record ranked ABOVE the correct answer** (rank-based; wrong records below it are left alone)?
 - [ ] Genuinely new/confirming/refuting knowledge → `ma3_validate` + `ma3_report` (`verify`/`refute` carry `target_record_id`)?
 
-## 5. Tool preference
+## 6. Tool preference
 
 Use **`ma3_context`**, **`ma3_feedback`**, **`ma3_report`**, **`ma3_validate`** over shell
 when MCP is visible. Prefer **`ma3_feedback`** upvote over a new **`ma3_report`** whenever an
-existing record already carried your fix (see §3.0).
+existing record already carried your fix (see §4.0).

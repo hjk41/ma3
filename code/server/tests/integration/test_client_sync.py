@@ -18,6 +18,7 @@ CLIENT_UPDATE_URLS = {
     "/client/agent-onboarding.md",
     "/client/templates/ma3-agent-policy.mdc",
     "/client/templates/ma3-client.env.example",
+    "/client/skills/ma3/SKILL.md",
     "/client/mcp-tools.json",
     "/client/scripts/sync_ma3_client.sh",
     "/client/scripts/sync_ma3_client.py",
@@ -91,8 +92,12 @@ def test_sync_client_writes_state_and_policy(isolated_client, tmp_path):
     assert state.tool_schema_version == settings.tool_schema_version
     assert state_path.is_file()
     policy_path = install_dir / "policy" / "ma3-agent-policy.mdc"
+    skill_path = install_dir / "skills" / "ma3" / "SKILL.md"
     tools_path = install_dir / "mcp-tools.json"
     assert policy_path.is_file()
+    assert skill_path.is_file()
+    assert "FIRST-ACTION GATE" in policy_path.read_text(encoding="utf-8")
+    assert "ma3_context" in skill_path.read_text(encoding="utf-8")
     assert tools_path.is_file()
     assert bin_dir / "sync_ma3_client.sh" in list(bin_dir.iterdir()) or (bin_dir / "sync_ma3_client.sh").is_file()
     assert (lib_dir / "ma3_sync_core.py").is_file()
@@ -139,6 +144,7 @@ def test_manifest_includes_env_template_and_tooling(isolated_client):
     manifest = isolated_client.get("/client/manifest.json").json()
     paths = {entry["path"] for entry in manifest["files"]}
     assert "templates/ma3-client.env.example" in paths
+    assert "skills/ma3/SKILL.md" in paths
     assert "scripts/sync_ma3_client.sh" in paths
     assert manifest["sync_tooling_version"] == settings.sync_tooling_version
     assert manifest["client_config_template"] == "/client/templates/ma3-client.env.example"
@@ -146,6 +152,13 @@ def test_manifest_includes_env_template_and_tooling(isolated_client):
     env_example = isolated_client.get("/client/templates/ma3-client.env.example").text
     assert "MA3_BASE_URL" in env_example
     assert "MA3_POLICY_REL" in env_example
+    assert "MA3_SKILL_REL" in env_example
+
+    skill = isolated_client.get("/client/skills/ma3/SKILL.md").text
+    assert "ma3_context" in skill
+    policy = isolated_client.get("/client/templates/ma3-agent-policy.mdc").text
+    assert "FIRST-ACTION GATE" in policy
+    assert 'ma3_skill_bundle_version: "1.6.0"' in policy
 
 
 def test_sync_plan_detects_manifest_change(isolated_client, tmp_path, monkeypatch):

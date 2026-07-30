@@ -31,11 +31,12 @@ def _env_float(name: str, default: float) -> float:
 class Settings:
     service_name: str = "ma3"
     service_version: str = field(default_factory=lambda: _env_str("MA3_SERVICE_VERSION", "1.0.0"))
-    skill_version: str = field(default_factory=lambda: _env_str("MA3_SKILL_VERSION", "1.0.0"))
+    # Default client bundle = C1 (FIRST-ACTION GATE policy 1.6.0 + SKILL.md).
+    skill_version: str = field(default_factory=lambda: _env_str("MA3_SKILL_VERSION", "1.6.0"))
     api_version: str = "v1"
     min_client_version: str = field(default_factory=lambda: _env_str("MA3_MIN_CLIENT_VERSION", "1.0.0"))
     recommended_client_version: str = field(
-        default_factory=lambda: _env_str("MA3_RECOMMENDED_CLIENT_VERSION", "1.0.0")
+        default_factory=lambda: _env_str("MA3_RECOMMENDED_CLIENT_VERSION", "1.6.0")
     )
     min_tool_schema_version: str = field(
         default_factory=lambda: _env_str("MA3_MIN_TOOL_SCHEMA_VERSION", "ma3.mcp.v1")

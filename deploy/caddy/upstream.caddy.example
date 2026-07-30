@@ -1,0 +1,16 @@
+# Caddy upstream snippet for ma3 blue-green deploys.
+# This file is rewritten by deploy.sh (preserve + BLUE_GREEN=1) on each cutover.
+# Keep ONLY the reverse_proxy line (imported inside your site block).
+#
+# One-time production Caddyfile wiring (example):
+#
+#   ma3.io {
+#       encode gzip
+#       # … auth / headers …
+#       import /opt/ma3_deploy/data/bluegreen/upstream.caddy
+#   }
+#
+# Then point CADDY_UPSTREAM_FILE at that path (or use the default under REMOTE_DIR).
+# After each deploy, the script updates this snippet and runs CADDY_RELOAD_CMD.
+
+reverse_proxy 127.0.0.1:8000

@@ -1,0 +1,26 @@
+# Example public Caddyfile for ma3.io-style SaaS with blue-green upstream import.
+# Not used by self-host Compose; production Caddy is hand-maintained on the host.
+#
+# Install once:
+#   1. Copy deploy/caddy/upstream.caddy.example → $REMOTE_DIR/data/bluegreen/upstream.caddy
+#   2. Merge this site block into /etc/caddy/Caddyfile (adjust paths/TLS as needed)
+#   3. caddy validate --config /etc/caddy/Caddyfile && systemctl reload caddy
+#   4. Set in deploy.ma3.io.env:
+#        BLUE_GREEN=1
+#        UVICORN_HOST=127.0.0.1
+#        BLUE_GREEN_PORT_A=8000
+#        BLUE_GREEN_PORT_B=8001
+#        CADDY_UPSTREAM_FILE=/opt/ma3_deploy/data/bluegreen/upstream.caddy
+#        CADDY_RELOAD_CMD="caddy reload --config /etc/caddy/Caddyfile"
+#
+# Metrics: scrape uvicorn loopback directly; do NOT expose /metrics via this site.
+
+ma3.io, www.ma3.io {
+	# Observability: scrape only via loopback on the app host.
+	handle /metrics* {
+		respond "Not Found" 404
+	}
+	handle {
+		import /opt/ma3_deploy/data/bluegreen/upstream.caddy
+	}
+}

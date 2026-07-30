@@ -67,9 +67,14 @@ curl -s "$BASE/doctor"   # 或 MCP ma3_doctor
 
 LAN（`regenerate`）用 `deploy/common/verify_ma3.sh`，勿与生产清单混用。
 
+## Caddy 蓝绿（SaaS preserve，可选）
+
+裸机 + Caddy（非 Compose 自托管）接近零停机：在线上 Caddyfile 已 `import` `deploy/caddy/upstream.caddy.example` 后，于本地 prod deploy env 设 `BLUE_GREEN=1`（见 `deploy/caddy/Caddyfile.ma3.io.example` 与 **[deploy/README.md](../../deploy/README.md)**）。一次性接线完成前，继续走经典 `pkill` 重启。
+
 ## 待补充
 
 - [x] `deploy/self-host` docker compose 示例（见 [self-hosting.md](self-hosting.md)）
 - [ ] systemd 示例
 - [x] 密钥管理（`MA3_API_KEY_ENCRYPTION_SECRET`、bootstrap key 文件）
 - [ ] 备份恢复 procedure（摘要已写入 self-hosting.md）
+- [x] Caddy 蓝绿切换（`deploy/common/bluegreen_remote.sh`，`BLUE_GREEN=1` 可选开启）

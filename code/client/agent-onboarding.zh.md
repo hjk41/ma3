@@ -63,9 +63,14 @@ bash ~/.ma3/bin/sync_ma3_client.sh sync
 
 见下方「各 Agent 配置」中你的那一节。Header 使用用户提供的 `MA3_API_KEY`。
 
-### 3. 配置行为策略
+### 3. 配置行为策略 + Agent Skill
 
-sync 写入 `~/.ma3/policy/ma3-agent-policy.mdc`，再按 env 注释复制到你的 runtime。
+sync 写入：
+
+- `~/.ma3/policy/ma3-agent-policy.mdc`（含 FIRST-ACTION GATE）
+- `~/.ma3/skills/ma3/SKILL.md`
+
+再按 env 注释把 **policy 与 skill** 都复制到你的 runtime。MCP 返回 `policy_refresh_required` 时重新 sync 并再复制两者。
 
 ### 4. 接入验证（必须完成）
 
@@ -188,12 +193,14 @@ MCP `initialize` 的 `serverInfo` 也含 `min_client_version` / `recommended_cli
 }
 ```
 
-**行为策略** — 推荐安装 Cursor 规则（always apply）：
+**行为策略** — 推荐安装 Cursor 规则（always apply），并安装 Agent Skill：
 
 ```bash
-mkdir -p ~/.cursor/rules
+mkdir -p ~/.cursor/rules ~/.cursor/skills/ma3
 curl -fsSL https://ma3.io/client/templates/ma3-agent-policy.mdc \
   -o ~/.cursor/rules/ma3-agent-policy.mdc
+curl -fsSL https://ma3.io/client/skills/ma3/SKILL.md \
+  -o ~/.cursor/skills/ma3/SKILL.md
 ```
 
 **重启** Cursor → **Settings → Tools & MCP** 确认 `ma3` 已连接。
@@ -212,6 +219,13 @@ claude mcp add --scope user --transport http ma3 \
 ```
 
 行为策略：把 `/client/templates/ma3-agent-policy.mdc` 正文写入 `~/.claude/CLAUDE.md`。
+
+Agent Skill：
+
+```bash
+mkdir -p ~/.claude/skills/ma3
+cp ~/.ma3/skills/ma3/SKILL.md ~/.claude/skills/ma3/SKILL.md
+```
 
 ---
 
