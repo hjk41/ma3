@@ -53,34 +53,30 @@
 | SaaS | loopback 开启；**不要**经 Caddy 反代 `/metrics` |
 | 指标（Phase 1） | `ma3_http_*`、`ma3_mcp_tool_*`、`ma3_build_info` |
 
-Prometheus 在应用主机用 `--network host` 抓取 `127.0.0.1:8000/metrics`。`verify_ma3_prod.sh` 断言公网 `/metrics` 不是 Prometheus 文本。
+应用主机 `/metrics` 仅保留 loopback 供人工查看。`verify_ma3_prod.sh` 断言公网 `/metrics` 不是 Prometheus 文本。
 
-## Phase 2 — 告警
+**不要在阿里云应用主机上跑 Prometheus。** 生产可达性告警只走运维本机（202）的站外探活。
+
+## Phase 2 — 告警（运维本机）
 
 | 项 | 位置 |
 |------|----------|
-| 规则 | `deploy/observability/prometheus/alerts.yml` |
-| Alertmanager | `deploy/observability/alertmanager/alertmanager.yml` → `http://127.0.0.1:8787/alertmanager` |
-| 通道 | 飞书 via local sink（`/etc/ma3/feishu.env`）；ticket 跟进仍 **人工** |
+| 生产通道 | `ma3-probe.timer` → `ma3-alert-sink` → 飞书（`/etc/ma3/feishu.env`） |
+| 可选本地 lab | `deploy/observability/prometheus/alerts.yml` + `run_local_stack.sh`（仅本机） |
+| ticket 跟进 | **人工** |
 
-起步告警：`Ma3ScrapeDown`、`Ma3High5xx`、`Ma3ContextSlow`、`Ma3AvailabilityFastBurn`。
+已从应用主机退役：同机 Prometheus 的 `Ma3ScrapeDown` / `Ma3AvailabilityFastBurn`（蓝绿后易误报）。
 
-## Phase 3 — 内部 SLO + Grafana
+## Phase 3 — 可选本地 Grafana lab
 
-| SLO | Recording rules | 目标 |
-|-----|-----------------|------|
-| SLO-1 API 可用性 | `ma3:slo1:*` | ≥ 99.5% 非 5xx |
-| SLO-2 可达 | `ma3:slo2:up:*`（scrape）；**外网**仍以 202 站外探活为准 | ≥ 99.5% |
-| SLO-3 检索延迟 | `ma3:slo3:context_p95:*` | p95 ≤ 2.5s |
+内部 SLO dashboard 仅作**本机 lab**（`bash deploy/observability/run_local_stack.sh`），不是 SaaS 寻呼路径。
 
-Dashboard：Grafana `ma3 SLO overview`。启动：`bash deploy/observability/run_saas_stack.sh`（应用主机）。
-
-| 端口（仅 loopback） | 服务 |
+| 端口（本机 loopback） | 服务 |
 |----------------------|---------|
-| `:9090` | Prometheus |
-| `:9093` | Alertmanager |
-| `:3000` | Grafana |
-| `:8787` | 飞书 webhook sink |
+| `:9090` | Prometheus（可选） |
+| `:9093` | Alertmanager（可选） |
+| `:3000` | Grafana（可选） |
+| `:8787` | 飞书 webhook sink（探活） |
 
 ## 日志字段约定（先文档化）
 

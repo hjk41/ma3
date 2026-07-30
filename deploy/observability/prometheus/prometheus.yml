@@ -11,12 +11,13 @@ alerting:
     - static_configs:
         - targets: ["127.0.0.1:9093"]
 
+# Optional local/lab stack only. Do NOT run Prometheus on the ma3.io app host —
+# SaaS reachability alerts come from the off-host probe on the operator laptop.
+# App-host /metrics remains loopback-only for manual curl / future remote scrape.
 scrape_configs:
-  - job_name: ma3
+  - job_name: ma3-local
     metrics_path: /metrics
     static_configs:
-      # Prefer host-network Prometheus scraping uvicorn on loopback.
-      # (Docker bridge cannot reach processes bound to 127.0.0.1.)
       - targets: ["127.0.0.1:8000"]
         labels:
           service: ma3

@@ -8,9 +8,9 @@
 | Topic | Choice |
 |-------|--------|
 | Metrics exposure | SaaS loopback / not public; **self-host metrics off by default** |
-| Monitoring stack | Same-host Prometheus later + **mandatory off-host probe now** |
-| Alerts | One webhook channel; tickets created manually |
-| Internal SLOs | SLO-1–3 first (availability, reachability, `ma3_context` latency) |
+| Monitoring stack | **Off-host probe on operator laptop** (not on Aliyun app host) |
+| Alerts | Probe → local Feishu webhook; tickets created manually |
+| Internal SLOs | Reachability via probe; app-metrics Prom stack is optional/local-lab only |
 
 ## Phase 0 — off-host probe
 
@@ -109,29 +109,27 @@ curl -s -X POST http://127.0.0.1:8787/ -H 'Content-Type: application/json' \
   -d '{"event":"ma3_probe_fail","base_url":"https://ma3.io","instance_id":"ma3-v1-hk","detail":"test","ts":"…"}'
 ```
 
-## Phase 1 — application metrics (SaaS)
+## Phase 1 — application metrics (optional)
 
-Enable `MA3_METRICS_ENABLED=1` on the app host (loopback uvicorn). Public Caddy must **not** proxy `/metrics` (see `caddy-metrics-block.snippet`).
+`MA3_METRICS_ENABLED=1` may stay on for manual loopback curl on the app host. Public Caddy must **not** proxy `/metrics` (see `caddy-metrics-block.snippet`).
 
-Prometheus scrapes `127.0.0.1:8000/metrics` with `--network host` (bridge cannot reach loopback-bound uvicorn).
+**Do not run Prometheus / Alertmanager / Grafana on the Aliyun ma3.io host.**  
+That stack caused false `Ma3AvailabilityFastBurn` noise after blue-green and is retired there.  
+`run_saas_stack.sh` now refuses to start on the app host.
 
-## Phase 2 / 3 — Alertmanager, SLOs, Grafana
+## Phase 2 / 3 — optional local lab stack
 
-On the **application host**:
+SaaS production alerts = **Phase 0 probe on host 202** only (`ma3-probe.timer` → `ma3-alert-sink` → Feishu).
+
+If you want a local Prometheus/Grafana lab on the **operator laptop** (not the app host):
 
 ```bash
-# Install Feishu credentials (same as probe host), then:
-sudo mkdir -p /etc/ma3 /usr/local/lib/ma3 /var/log/ma3
-sudo cp deploy/observability/systemd/ma3-alert-sink.service /etc/systemd/system/
-# /etc/ma3/feishu.env: FEISHU_APP_ID / FEISHU_APP_SECRET / FEISHU_CHAT_ID
-bash deploy/observability/run_saas_stack.sh
+bash deploy/observability/run_local_stack.sh
 ```
 
-| Loopback port | Service |
+| Loopback port (local only) | Service |
 |---------------|---------|
-| `:9090` | Prometheus (+ `alerts.yml`, `slo-rules.yml`) |
+| `:9090` | Prometheus (optional lab) |
 | `:9093` | Alertmanager → `http://127.0.0.1:8787/alertmanager` |
-| `:3000` | Grafana (`admin` / set `GRAFANA_ADMIN_PASSWORD`) |
-| `:8787` | Webhook sink → Feishu |
-
-External reachability (SLO-2 true signal) remains the **off-host probe** on host 202; scrape `up` is co-located only.
+| `:3000` | Grafana |
+| `:8787` | Webhook sink → Feishu (already used by the probe) |

@@ -1,10 +1,10 @@
-# Prometheus scrape stack for SaaS (Phase 1) — run on the ma3.io *application* host.
-# Scrapes loopback uvicorn only. Keep /metrics off the public Caddy site.
+# Optional local/lab Prometheus — NOT for the Aliyun ma3.io app host.
+# SaaS paging = off-host probe on the operator laptop (see README.md).
 #
-#   cd deploy/observability && docker compose -f docker-compose.prometheus.yml up -d
+#   bash deploy/observability/run_local_stack.sh
+#   # or: cd deploy/observability && docker compose -f docker-compose.prometheus.yml up -d
 #
-# Requires the ma3 process with MA3_METRICS_ENABLED=1 listening on 127.0.0.1:8000
-# (or set MA3_METRICS_SCRAPE_TARGET).
+# Scrapes loopback only; keep /metrics off the public Caddy site.
 
 services:
   prometheus:

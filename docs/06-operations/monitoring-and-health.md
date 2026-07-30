@@ -53,34 +53,30 @@ Exact PromQL recording rules ship with Phase 1–3. **Deferred:** write-acceptan
 | SaaS | Enable on loopback uvicorn; **do not** proxy `/metrics` via Caddy |
 | Series | `ma3_http_*`, `ma3_mcp_tool_*`, `ma3_build_info` |
 
-Prometheus scrapes `127.0.0.1:8000/metrics` on the app host (`--network host`). `verify_ma3_prod.sh` asserts the **public** URL does not serve Prometheus exposition text at `/metrics`.
+App-host `/metrics` stays loopback-only for manual inspection. `verify_ma3_prod.sh` asserts the **public** URL does not serve Prometheus exposition text at `/metrics`.
 
-## Phase 2 — alerting
+**Do not run Prometheus on the Aliyun app host.** Production reachability alerts are the off-host probe on the operator laptop (host 202).
+
+## Phase 2 — alerting (operator laptop)
 
 | Item | Location |
 |------|----------|
-| Rules | `deploy/observability/prometheus/alerts.yml` |
-| Alertmanager | `deploy/observability/alertmanager/alertmanager.yml` → `http://127.0.0.1:8787/alertmanager` |
-| Channel | Feishu via local sink (`/etc/ma3/feishu.env`); ticket follow-up remains **manual** |
+| Production channel | `ma3-probe.timer` → `ma3-alert-sink` → Feishu (`/etc/ma3/feishu.env`) |
+| Optional lab rules | `deploy/observability/prometheus/alerts.yml` via `run_local_stack.sh` (local only) |
+| Ticket follow-up | **manual** |
 
-Starter alerts: `Ma3ScrapeDown`, `Ma3High5xx`, `Ma3ContextSlow`, `Ma3AvailabilityFastBurn`.
+Retired on app host: `Ma3ScrapeDown` / `Ma3AvailabilityFastBurn` from same-host Prometheus (caused deploy-related false pages).
 
-## Phase 3 — internal SLOs + Grafana
+## Phase 3 — optional local Grafana lab
 
-| SLO | Recording rules | Target |
-|-----|-----------------|--------|
-| SLO-1 API availability | `ma3:slo1:*` | ≥ 99.5% non-5xx on `/mcp`, `/healthz`, `/api/*` |
-| SLO-2 reachability | `ma3:slo2:up:*` (scrape); **external** still = off-host probe on 202 | ≥ 99.5% |
-| SLO-3 retrieval latency | `ma3:slo3:context_p95:*` | p95 ≤ 2.5s for `ma3_context` |
+Internal SLO dashboards remain available as a **local lab** (`bash deploy/observability/run_local_stack.sh` on the operator machine). They are not the SaaS paging path.
 
-Dashboard: Grafana `ma3 SLO overview` (provisioned). Stack launcher: `bash deploy/observability/run_saas_stack.sh` (app host).
-
-| Port (loopback only) | Service |
+| Port (loopback, local lab) | Service |
 |----------------------|---------|
-| `:9090` | Prometheus |
-| `:9093` | Alertmanager |
-| `:3000` | Grafana |
-| `:8787` | Feishu webhook sink |
+| `:9090` | Prometheus (optional) |
+| `:9093` | Alertmanager (optional) |
+| `:3000` | Grafana (optional) |
+| `:8787` | Feishu webhook sink (probe) |
 
 ## Log field conventions (document first)
 
