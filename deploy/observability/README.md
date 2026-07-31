@@ -8,9 +8,10 @@
 | Topic | Choice |
 |-------|--------|
 | Metrics exposure | SaaS loopback / not public; **self-host metrics off by default** |
-| Monitoring stack | **Off-host probe on operator laptop** (not on Aliyun app host) |
-| Alerts | Probe → local Feishu webhook; tickets created manually |
-| Internal SLOs | Reachability via probe; app-metrics Prom stack is optional/local-lab only |
+| App-host stack | Prometheus / Alertmanager / Grafana on ma3.io (loopback only) |
+| Reachability paging | **Off-host probe on operator laptop** (host 202) → Feishu |
+| Aliyun managed Prom | **Do not** `remote_write` — TSDB stays on the app host |
+| Internal SLOs | App-host Prom + Grafana; probe covers public reachability |
 
 ## Phase 0 — off-host probe
 
@@ -109,27 +110,35 @@ curl -s -X POST http://127.0.0.1:8787/ -H 'Content-Type: application/json' \
   -d '{"event":"ma3_probe_fail","base_url":"https://ma3.io","instance_id":"ma3-v1-hk","detail":"test","ts":"…"}'
 ```
 
-## Phase 1 — application metrics (optional)
+## Phase 1 — application metrics + app-host Prom/Grafana
 
-`MA3_METRICS_ENABLED=1` may stay on for manual loopback curl on the app host. Public Caddy must **not** proxy `/metrics` (see `caddy-metrics-block.snippet`).
+`MA3_METRICS_ENABLED=1` on the app host. Public Caddy must **not** proxy `/metrics` (see `caddy-metrics-block.snippet`).
 
-**Do not run Prometheus / Alertmanager / Grafana on the Aliyun ma3.io host.**  
-That stack caused false `Ma3AvailabilityFastBurn` noise after blue-green and is retired there.  
-`run_saas_stack.sh` now refuses to start on the app host.
+On the **ma3.io app host**, start the stack (host network, loopback UI):
 
-## Phase 2 / 3 — optional local lab stack
+```bash
+# as root / deploy user on 47.84.49.254
+cd /opt/ma3_deploy
+bash code/deploy/observability/run_saas_stack.sh
+```
 
-SaaS production alerts = **Phase 0 probe on host 202** only (`ma3-probe.timer` → `ma3-alert-sink` → Feishu).
+| Loopback port (app host) | Service |
+|---------------|---------|
+| `:9090` | Prometheus (file_sd → live blue-green uvicorn) |
+| `:9093` | Alertmanager → local Feishu sink `:8787` |
+| `:3000` | Grafana |
+| `:8787` | Webhook sink → Feishu |
 
-If you want a local Prometheus/Grafana lab on the **operator laptop** (not the app host):
+Scrape target is `data/bluegreen/prometheus-targets.json`, rewritten on each blue-green cutover so Prom follows `:8000` / `:8001`. Access UI via SSH tunnel, e.g. `ssh -L 3000:127.0.0.1:3000 …`.
+
+**Do not** configure Prometheus `remote_write` to Aliyun-managed Prometheus (or any external TSDB) unless that is an explicit future decision.
+
+## Phase 2 / 3 — reachability + optional laptop lab
+
+Public reachability paging remains **Phase 0 probe on host 202** (`ma3-probe.timer` → Feishu). That path is independent of app-host Prom.
+
+Optional laptop lab (not required for production):
 
 ```bash
 bash deploy/observability/run_local_stack.sh
 ```
-
-| Loopback port (local only) | Service |
-|---------------|---------|
-| `:9090` | Prometheus (optional lab) |
-| `:9093` | Alertmanager → `http://127.0.0.1:8787/alertmanager` |
-| `:3000` | Grafana |
-| `:8787` | Webhook sink → Feishu (already used by the probe) |

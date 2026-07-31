@@ -79,6 +79,28 @@ EOF
   mv -f "${tmp}" "${upstream}"
 }
 
+# Keep Prometheus file_sd on the live uvicorn port (host-network scrape).
+bluegreen_write_prometheus_targets() {
+  local port="$1"
+  local state_dir targets tmp
+  state_dir="$(bluegreen_state_dir)"
+  mkdir -p "${state_dir}"
+  targets="${state_dir}/prometheus-targets.json"
+  tmp="${targets}.tmp.$$"
+  cat >"${tmp}" <<EOF
+[
+  {
+    "targets": ["127.0.0.1:${port}"],
+    "labels": {
+      "service": "ma3"
+    }
+  }
+]
+EOF
+  mv -f "${tmp}" "${targets}"
+  echo "prometheus file_sd -> 127.0.0.1:${port}"
+}
+
 bluegreen_reload_caddy() {
   local cmd="${CADDY_RELOAD_CMD:?CADDY_RELOAD_CMD required}"
   echo "==> caddy reload: ${cmd}"
@@ -181,6 +203,7 @@ bluegreen_cutover() {
   echo "${idle}" >"${state_dir}/active_port"
   echo "${idle}" >"${state_dir}/last_cutover_port"
   date -u +%Y-%m-%dT%H:%M:%SZ >"${state_dir}/last_cutover_at"
+  bluegreen_write_prometheus_targets "${idle}"
   echo "==> blue-green cutover complete; live=:${idle}"
 }
 

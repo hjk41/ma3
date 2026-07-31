@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # Optional LOCAL observability stack (operator laptop / LAN host — NOT ma3.io).
 #
-# SaaS production alerting is the off-host probe + Feishu sink on this machine
-# (see Phase 0 in README.md). Do not run this on the Aliyun app host.
+# Production app-host stack: bash deploy/observability/run_saas_stack.sh on ma3.io.
+# This script is a laptop lab only.
 #
 # Usage (local):
 #   bash deploy/observability/run_local_stack.sh
@@ -18,9 +18,9 @@ need() { command -v "$1" >/dev/null || { echo "missing $1" >&2; exit 1; }; }
 need docker
 need curl
 
-# Refuse only on the production app checkout (Aliyun host layout).
+# Refuse on the production app checkout (Aliyun host layout).
 if [[ -f /opt/ma3_deploy/ma3.env ]] && ss -ltn 2>/dev/null | grep -qE '127\.0\.0\.1:800[01]\b'; then
-  echo "REFUSING: looks like the ma3.io app host. Use off-host probe only; do not run Prometheus here." >&2
+  echo "REFUSING: looks like the ma3.io app host. Use: bash deploy/observability/run_saas_stack.sh" >&2
   exit 2
 fi
 
