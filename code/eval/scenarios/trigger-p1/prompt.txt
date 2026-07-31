@@ -1,0 +1,1 @@
+帮我在这台机器上安装 Factory Droid CLI，并配好能用的 LLM 和 MCP。

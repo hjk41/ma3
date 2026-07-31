@@ -14,8 +14,9 @@ code/eval/
     apply_golden_fix.sh
     load_secrets.sh
   orchestrator/             # full agent eval matrix
-  scenarios/                # 10 infra scenarios + agent-client-sync
+  scenarios/                # infra scenarios + agent-client-sync + trigger-p*
   results/
+    trigger/                # trigger experiment artifacts (mostly gitignored)
 ```
 
 ## Quick verify (no agent — golden path)
@@ -44,6 +45,25 @@ bash code/eval/orchestrator/run_eval.sh --scenario mihomo-proxy --agent droid --
 ```
 
 See [orchestrator/scenarios.json](orchestrator/scenarios.json) for the rotation matrix.
+
+## Trigger mechanism experiment (P1–P6)
+
+```bash
+bash code/eval/scripts/run_trigger_scenario.sh trigger-p2 --seed-kb --print-prompt
+bash code/eval/scripts/run_trigger_scenario.sh trigger-p5 --print-prompt
+```
+
+Docs: [scenarios/trigger/README.md](scenarios/trigger/README.md),
+[docs/09-engineering/experiments/trigger-mechanisms.md](../docs/09-engineering/experiments/trigger-mechanisms.md).
+
+### Experiment arms
+
+| Arm | Command |
+|---|---|
+| A0-baseline (remote ma3.io) | `TRIGGER_ARM=A0-baseline bash code/eval/scripts/run_trigger_experiment.sh` |
+| B0-local-skill-mcp | `TRIGGER_ARM=B0-local-skill-mcp bash code/eval/scripts/run_trigger_experiment.sh` |
+
+Arm setup restores `~/.cursor/mcp.json` on exit. See [scenarios/trigger/arms.json](scenarios/trigger/arms.json).
 
 Host profiles (not in repo): `~/ma3-eval/profiles/{claude,droid,cursor}/`
 

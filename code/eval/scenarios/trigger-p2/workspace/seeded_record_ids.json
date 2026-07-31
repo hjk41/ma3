@@ -1,0 +1,11 @@
+{
+  "target_product": "ma3-eval",
+  "target_component": "compose-network-fix",
+  "records": [
+    {
+      "seed_key": "trigger-p2-compose-network",
+      "record_id": "vk_e9ad3c5d528e",
+      "problem": "docker compose frontend cannot reach backend; nginx upstream uses wrong hostname"
+    }
+  ]
+}

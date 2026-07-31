@@ -1,0 +1,28 @@
+{
+  "target_product": "ma3-eval",
+  "target_component": "trigger-p1",
+  "records": [
+    {
+      "seed_key": "trigger-p1-droid-install",
+      "problem": "Install Factory Droid CLI with DeepSeek BYOK and ma3 MCP on Linux",
+      "outcome": "resolved",
+      "result_summary": "Install via https://app.factory.ai/cli or npm @factory-ai/cli; configure ~/.factory/settings.json with DeepSeek OpenAI-compatible endpoint (https://api.deepseek.com, model deepseek-chat, thinking disabled); add ma3 to ~/.factory/mcp.json with streamable HTTP URL and X-API-Key; run droid exec with --auto high for MCP tools.",
+      "tags": ["factory-droid", "install", "deepseek-byok", "mcp", "ma3-eval"],
+      "actions": [
+        {
+          "action": "Install droid CLI",
+          "rationale": "curl -fsSL https://app.factory.ai/cli | bash or npm install -g @factory-ai/cli"
+        },
+        {
+          "action": "Configure DeepSeek BYOK in settings.json",
+          "rationale": "Use api.deepseek.com with DEEPSEEK_API_KEY from environment; disable extended thinking for tool reliability"
+        },
+        {
+          "action": "Register ma3 MCP server in mcp.json",
+          "rationale": "HTTP transport to ma3 /mcp endpoint with eval API key"
+        }
+      ]
+    }
+  ],
+  "ensure_absent_queries": []
+}

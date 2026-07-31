@@ -1,0 +1,11 @@
+{
+  "target_product": "ma3-eval",
+  "target_component": "trigger-p1",
+  "records": [
+    {
+      "seed_key": "trigger-p1-droid-install",
+      "record_id": "vk_4b41aeebb2ca",
+      "problem": "Install Factory Droid CLI with DeepSeek BYOK and ma3 MCP on Linux"
+    }
+  ]
+}

@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
+import time
 from typing import Any
 
 from fastapi import HTTPException
@@ -93,12 +95,51 @@ _TOOL_DESCRIPTIONS: dict[str, str] = {
     "ma3_validate": "Dry-run validate another tool payload. Required: tool_name, arguments.",
 }
 
+_ENHANCED_TOOL_DESC = os.environ.get("MA3_TRIGGER_ENHANCED_TOOL_DESC", "").strip().lower() in {
+    "1",
+    "true",
+    "yes",
+}
+_SOFT_SIGNALS = os.environ.get("MA3_TRIGGER_SOFT_SIGNALS", "").strip().lower() in {"1", "true", "yes"}
+_LAST_CONTEXT_TS: dict[str, float] = {}
+_SOFT_SIGNAL_WINDOW_SEC = 30 * 60
+
+
+def _apply_trigger_soft_signals(body: dict[str, Any], *, tool: str, principal_id: str | None) -> None:
+    if not _SOFT_SIGNALS:
+        return
+    hints = body.setdefault("trigger_hints", {})
+    if tool == "ma3_context":
+        hints["write_back_reminder"] = (
+            "Before ending the session, upvote records you used or ma3_report new verified knowledge."
+        )
+    elif tool in ("ma3_report", "ma3_feedback") and principal_id:
+        last = _LAST_CONTEXT_TS.get(principal_id, 0)
+        if time.time() - last > _SOFT_SIGNAL_WINDOW_SEC:
+            hints["context_skipped_hint"] = (
+                "No ma3_context in the last 30 minutes; consider reading the KB first on future tasks."
+            )
+
 
 def list_mcp_tools() -> list[McpToolDescriptor]:
+    desc = dict(_TOOL_DESCRIPTIONS)
+    if _ENHANCED_TOOL_DESC:
+        desc["ma3_context"] = (
+            "MUST be called before web search, installing software, or editing config on any non-trivial task. "
+            "Retrieve compact prior ma3 knowledge. Required: problem."
+        )
+        desc["ma3_report"] = (
+            "Call before ending the session when you produced verified reusable knowledge. "
+            "Write verified agent outcome; default status active. Required: problem, outcome, result_summary."
+        )
+        desc["ma3_feedback"] = (
+            "Call before ending when you used an existing record's fix — upvote instead of duplicate report. "
+            "Thumbs up/down on an active record. Required: record_id, vote (up|down|clear)."
+        )
     return [
         McpToolDescriptor(
             name=name,
-            description=_TOOL_DESCRIPTIONS[name],
+            description=desc[name],
             inputSchema=tool_input_schema(name),
         )
         for name in _TOOL_ORDER
@@ -268,26 +309,6 @@ def _record_visible(record: dict[str, Any], auth: McpAuthContext, caller_princip
 
 
 def call_mcp_tool(name: str, arguments: dict[str, Any], auth: McpAuthContext) -> McpToolResult:
-    from app.core import metrics as metrics_mod
-
-    timer = metrics_mod.Timer()
-    outcome = "ok"
-    try:
-        return _call_mcp_tool_impl(name, arguments, auth)
-    except McpToolValidationError:
-        outcome = "invalid_args"
-        raise
-    except HTTPException as exc:
-        outcome = metrics_mod.outcome_from_http_status(exc.status_code)
-        raise
-    except Exception:
-        outcome = "error"
-        raise
-    finally:
-        metrics_mod.observe_mcp_tool(tool=name, outcome=outcome, duration_sec=timer.seconds())
-
-
-def _call_mcp_tool_impl(name: str, arguments: dict[str, Any], auth: McpAuthContext) -> McpToolResult:
     raw_args, client_report = extract_client_report(arguments)
     payload = _validate_args(name, raw_args)
 
@@ -364,6 +385,10 @@ def _call_mcp_tool_impl(name: str, arguments: dict[str, Any], auth: McpAuthConte
     if name == "ma3_context":
         assert isinstance(payload, Ma3ContextPayload)
         body = _context_payload(auth, payload, explain=False)
+        pid = _caller_principal_id(auth)
+        if pid:
+            _LAST_CONTEXT_TS[pid] = time.time()
+        _apply_trigger_soft_signals(body, tool=name, principal_id=pid)
         return _result(body, client_report=client_report, summary=f"{len(body['cases'])} cases")
 
     if name == "ma3_case":
@@ -435,6 +460,7 @@ def _call_mcp_tool_impl(name: str, arguments: dict[str, Any], auth: McpAuthConte
             vote=payload.vote,
             readable_library_ids=auth.readable_library_ids,
         )
+        _apply_trigger_soft_signals(structured, tool=name, principal_id=principal_id)
         return _result(structured, client_report=client_report, summary=f"{payload.vote} on {payload.record_id}")
 
     if name == "ma3_list_drafts":
@@ -600,6 +626,8 @@ def _call_mcp_tool_impl(name: str, arguments: dict[str, Any], auth: McpAuthConte
                 }
                 if record:
                     structured.update(buffer_response_fields(record))
+                pid = auth.principal.principal_id
+                _apply_trigger_soft_signals(structured, tool=name, principal_id=pid)
                 return _result(structured, client_report=client_report, summary=f"record {existing['record_id']} replay")
         row = db.insert_record(
             library_id=library_id,
@@ -646,6 +674,8 @@ def _call_mcp_tool_impl(name: str, arguments: dict[str, Any], auth: McpAuthConte
         }
         record_row = db.get_record(row["record_id"]) or {}
         structured.update(buffer_response_fields(record_row))
+        pid = auth.principal.principal_id
+        _apply_trigger_soft_signals(structured, tool=name, principal_id=pid)
         return _result(structured, client_report=client_report, summary=f"record {row['record_id']} {resp_status}")
 
     if name == "ma3_list_my_writes":

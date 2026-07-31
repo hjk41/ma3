@@ -29,7 +29,11 @@ if [[ "${TRIGGER_WORKER_MODE:-0}" != "1" ]]; then
 fi
 
 export MA3_BASE_URL="${MA3_BASE_URL:-https://ma3.io}"
-export MA3_API_KEY="${MA3_API_KEY:-${MA3_KEY_CURSOR_CLI:-ma3k_6c8f1567f46f808cd8a57f955bbb0243}}"
+export MA3_API_KEY="${MA3_API_KEY:-${MA3_KEY_CURSOR_CLI:-}}"
+if [[ -z "${MA3_API_KEY}" ]]; then
+  echo "MA3_API_KEY or MA3_KEY_CURSOR_CLI required (no hardcoded default)" >&2
+  exit 1
+fi
 export PATH="${HOME}/.local/bin:${HOME}/.npm-global/bin:${PATH}"
 export NO_PROXY="127.0.0.1,localhost,192.168.0.0/16,10.0.0.0/8,${NO_PROXY:-}"
 export no_proxy="$NO_PROXY"

@@ -1,2 +1,5 @@
 *
 !.gitignore
+!trigger/
+trigger/*
+!trigger/README.md

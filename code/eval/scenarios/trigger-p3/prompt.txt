@@ -1,0 +1,1 @@
+nginx 1.24 启动报错 unknown directive "http3"，帮我修一下让这个站点能正常访问。

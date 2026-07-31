@@ -1,0 +1,21 @@
+{
+  "version": 1,
+  "hooks": {
+    "beforeShellExecution": [
+      {
+        "command": "python3 ${HOME}/.cursor/hooks/ma3_gate.py",
+        "env": {
+          "CURSOR_HOOK_EVENT": "beforeShellExecution"
+        }
+      }
+    ],
+    "afterMCPExecution": [
+      {
+        "command": "python3 ${HOME}/.cursor/hooks/ma3_gate.py",
+        "env": {
+          "CURSOR_HOOK_EVENT": "afterMCPExecution"
+        }
+      }
+    ]
+  }
+}

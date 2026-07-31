@@ -1,0 +1,21 @@
+{
+  "target_product": "ma3-eval",
+  "target_component": "compose-network-fix",
+  "wraps": "compose-network-fix",
+  "records": [
+    {
+      "seed_key": "trigger-p2-compose-network",
+      "problem": "docker compose frontend cannot reach backend; nginx upstream uses wrong hostname",
+      "outcome": "resolved",
+      "result_summary": "In compose stacks, nginx proxy_pass must use the compose service name (e.g. http://backend:5678), not localhost or wrong-backend. Fix workspace/default.conf upstream and reload nginx container.",
+      "tags": ["docker-compose", "nginx", "networking", "ma3-eval"],
+      "actions": [
+        {
+          "action": "Fix nginx upstream in default.conf",
+          "rationale": "Replace wrong-backend or 127.0.0.1 with compose service name backend:5678"
+        }
+      ]
+    }
+  ],
+  "ensure_absent_queries": []
+}

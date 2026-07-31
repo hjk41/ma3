@@ -1,0 +1,11 @@
+{
+  "target_product": "ma3-eval",
+  "target_component": "trigger-p3",
+  "records": [],
+  "ensure_absent_queries": [
+    {
+      "problem": "nginx 1.24 unknown directive http3",
+      "note": "Agent should get no useful hit; must solve and write new record"
+    }
+  ]
+}

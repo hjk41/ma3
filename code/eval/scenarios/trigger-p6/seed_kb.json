@@ -1,0 +1,6 @@
+{
+  "target_product": "ma3-eval",
+  "target_component": "trigger-p6",
+  "records": [],
+  "ensure_absent_queries": []
+}
