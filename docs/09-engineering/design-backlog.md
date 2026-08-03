@@ -26,8 +26,8 @@ Recreate issues: `bash scripts/file_design_backlog_issues.sh` (creates new issue
 |----|-------|------|
 | O1 | ~~https://github.com/hjk41/ma3/issues/5~~ | **Closed** — Phase 0–3 metrics/alerting/SLOs shipped |
 | O2 | ~~https://github.com/hjk41/ma3/issues/6~~ | **Closed** — production runbook filled (EN + zh) |
-| O3 | https://github.com/hjk41/ma3/issues/7 | Playwright portal regression scope |
-| O4 | https://github.com/hjk41/ma3/issues/8 | Agent eval fixed cadence |
+| O3 | ~~https://github.com/hjk41/ma3/issues/7~~ | **Closed** — Playwright Tier A on PR + Authing nightly |
+| O4 | ~~https://github.com/hjk41/ma3/issues/8~~ | **Closed** — weekly claude×T2/T4/T5 checklist cadence |
 
 ## Already decided (for traceability; documented elsewhere)
 

@@ -46,6 +46,16 @@ bash code/eval/orchestrator/run_eval.sh --scenario mihomo-proxy --agent droid --
 
 See [orchestrator/scenarios.json](orchestrator/scenarios.json) for the rotation matrix.
 
+## Weekly behavior subset (T2/T4/T5)
+
+Checklist-driven (LAN host); does not block PRs. Docs: [agent-eval-cadence.md](../../docs/08-quality/testing/agent-eval-cadence.md).
+
+```bash
+bash code/eval/scripts/run_behavior_subset.sh --dry-run
+# LAN weekly:
+# bash code/eval/scripts/run_behavior_subset.sh --agent claude --tests T2,T4,T5
+```
+
 ## Trigger mechanism experiment (P1–P6)
 
 ```bash

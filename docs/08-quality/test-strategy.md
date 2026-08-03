@@ -8,8 +8,9 @@
 |----|------|------|
 | **Unit** | `code/server/tests/unit/` | Ranking, entitlement, billing formulas, onboarding idempotency |
 | **Integration** | `code/server/tests/integration/` | MCP, portal, keys, auth, search ranking |
-| **E2E** | `scripts/e2e_authing_ui.py` | Optional; requires `AUTHING_TEST_USER` |
-| **Agent eval** | `code/eval/` | Not a release artifact; real agent behavior (T1–T5) |
+| **E2E (Tier A)** | `tests/e2e/` Playwright local-auth | Every PR (`e2e-portal`); see [portal-playwright-regression.md](testing/portal-playwright-regression.md) |
+| **E2E (Tier B)** | `scripts/e2e_authing_ui.py` | Nightly / pre-release; requires Authing secrets |
+| **Agent eval** | `code/eval/` | Weekly subset + pre-release T0–T5; see [agent-eval-cadence.md](testing/agent-eval-cadence.md) |
 
 ## Module gates
 
@@ -24,12 +25,15 @@
 
 ## CI policy
 
-- **Every PR**: unit + integration (mainly SQLite)
-- **Nightly / pre-release**: search golden (hybrid deferred), agent eval subset
-- **Merge blocking**: ranking invariant guards, MCP explain key sets disjoint
+- **Every PR**: unit + integration (mainly SQLite) + **Playwright portal Tier A** (`e2e-portal`)
+- **Nightly**: Tier A again; Authing Tier B if secrets configured (`nightly.yml`)
+- **Weekly (LAN host checklist)**: agent behavior subset **claude × T2/T4/T5** via `run_behavior_subset.sh`
+- **Pre-release**: full T0–T5 × 3 agents (blocks release); search golden (hybrid deferred)
+- **Merge blocking**: ranking invariant guards, MCP explain key sets disjoint; **not** Authing E2E or agent matrix
 
 ## To be added
 
+- [x] Playwright portal regression scope — [portal-playwright-regression.md](testing/portal-playwright-regression.md)
+- [x] Agent eval fixed cadence — [agent-eval-cadence.md](testing/agent-eval-cadence.md)
 - [ ] Coverage targets
-- [ ] Playwright portal regression scope
 - [ ] Performance/load tests (read quota, search pool)

@@ -270,14 +270,11 @@ bash verify.sh                                  # 修复前应失败；Agent 跑
 
 ---
 
-## 5. 与自动化 eval 的关系
+## 5. 与自动化 eval / 周更节奏的关系
 
-- `code/eval/orchestrator/run_eval.sh --scenario mihomo-proxy --agent <...>` 已封装
-  "setup → compose up → 跑 Agent（带 policy/版本规则的 prompt）→ verify → 落 results"。
-  T2/T4/T5 可在其基础上加 DB 断言；T1/T3 需要额外的"bump 版本 / 植入-清理假知识"步骤，
-  本方案的 §3.2、§3.4–3.5 即为这部分的手动补充。
-- 目标：把 T1–T5 逐步固化进 `run_all_scenarios_verify.sh` 式的脚本，
-  但**在完全自动化之前**，本手动清单为发版**强制门禁**。
+- `code/eval/orchestrator/run_eval.sh` 已封装 setup → Agent → verify。
+- **周更子集（不挡 PR）：** LAN checklist 跑 `run_behavior_subset.sh`（claude × T2/T4/T5）。见 [agent-eval-cadence.zh.md](agent-eval-cadence.zh.md)。
+- **本文仍是发版强制门禁**（T0–T5 × 三 Agent）；周更子集不替代它。
 
 ---
 

@@ -1,0 +1,3 @@
+# Browser E2E (Playwright). Not installed by default unit/integration CI jobs.
+playwright>=1.40,<2.0
+pytest-playwright>=0.4,<1.0

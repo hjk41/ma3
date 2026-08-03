@@ -24,8 +24,8 @@
 |----|-------|------|
 | O1 | ~~https://github.com/hjk41/ma3/issues/5~~ | **已关闭** — Phase 0–3 指标/告警/SLO 已上线 |
 | O2 | ~~https://github.com/hjk41/ma3/issues/6~~ | **已关闭** — 生产 Runbook 已补全（中英） |
-| O3 | https://github.com/hjk41/ma3/issues/7 | Playwright 门户回归范围 |
-| O4 | https://github.com/hjk41/ma3/issues/8 | Agent eval 固定节奏 |
+| O3 | ~~https://github.com/hjk41/ma3/issues/7~~ | **已关闭** — Playwright Tier A 进 PR + Authing nightly |
+| O4 | ~~https://github.com/hjk41/ma3/issues/8~~ | **已关闭** — 每周 claude×T2/T4/T5 checklist 节奏 |
 
 ## 已决策（追溯用，已落文档）
 

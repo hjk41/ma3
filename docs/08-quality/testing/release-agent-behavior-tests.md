@@ -275,14 +275,17 @@ Recommend writing the result JSON into `code/eval/results/` (already produced by
 
 ---
 
-## 5. Relationship to automated eval
+## 5. Relationship to automated eval / weekly cadence
 
 - `code/eval/orchestrator/run_eval.sh --scenario mihomo-proxy --agent <...>` already wraps
   "setup → compose up → run the Agent (with a policy/version-rule prompt) → verify → write results".
   T2/T4/T5 can add DB assertions on top of it; T1/T3 need extra "bump version / plant-then-clean fake
   knowledge" steps, which §3.2 and §3.4–3.5 of this plan provide as the manual supplement.
-- Goal: gradually harden T1–T5 into a `run_all_scenarios_verify.sh`-style script, but **until it is
-  fully automated**, this manual checklist is a **mandatory release gate**.
+- **Weekly subset (non-blocking for PRs):** maintainer checklist on the LAN host runs
+  `bash code/eval/scripts/run_behavior_subset.sh` for **claude × T2/T4/T5**. Cadence, triage rules,
+  and run log: [agent-eval-cadence.md](agent-eval-cadence.md).
+- **This document remains the mandatory pre-release gate** (T0–T5 × three agents). The weekly subset
+  does **not** replace it.
 
 ---
 
