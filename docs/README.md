@@ -98,8 +98,8 @@
 | [self-hosting.md](06-operations/self-hosting.md) | ✅ | Compose self-hosting (bootstrap / local accounts / OIDC) |
 | [self-host-first-run-guide.md](06-operations/self-host-first-run-guide.md) | In design | First-run guide: create admin → checklist → daily use |
 | [deployment-authing.md](06-operations/deployment-authing.md) | ✅ | Authing console + env |
-| [runbook.md](06-operations/runbook.md) | 📝 | Release/rollback/troubleshooting |
-| [monitoring-and-health.md](06-operations/monitoring-and-health.md) | 📝 | healthz/doctor/alerting |
+| [runbook.md](06-operations/runbook.md) | ✅ | Release/rollback/migration notes/logs/on-call |
+| [monitoring-and-health.md](06-operations/monitoring-and-health.md) | ✅ | Probe, metrics, Alertmanager, SLO-1–3 |
 | [security.md](06-operations/security.md) | 📝 | Security summary (threat model missing) |
 
 ---
@@ -150,7 +150,7 @@ The following document types **should exist** in the structure but have no stand
 | `05-agent/agent-onboarding.md` | Migrate from `code/client/agent-onboarding.md` or replace with a link |
 | `08-quality/acceptance/v1-*.md` | ✅ Migrated into `08-quality/acceptance/` |
 | `09-engineering/design-archive/` | ✅ Recent design fables (23/24 etc.) |
-| `06-operations/runbook.md` | Complete release, rollback, and migration steps |
+| `06-operations/runbook.md` | ✅ Release, rollback, schema notes, logs (issue #6) |
 | `05-agent/mcp-tools-reference.md` | Per-tool JSON examples + permission error table |
 
 ### Medium priority
@@ -162,7 +162,7 @@ The following document types **should exist** in the structure but have no stand
 | `04-frontend/ui-copy-and-interactions.md` | Site-wide error pages, form validation copy |
 | `07-commercial/administrator-guide.md` | Observatory walkthrough |
 | `07-commercial/end-user-faq.md` | Quotas, voting, support channels |
-| `06-operations/monitoring-and-health.md` | Alert thresholds, SLO |
+| `06-operations/monitoring-and-health.md` | ✅ Phase 0–3 shipped (issue #5) |
 
 ### Low priority / optional
 

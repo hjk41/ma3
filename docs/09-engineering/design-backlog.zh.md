@@ -22,8 +22,8 @@
 
 | ID | Issue | 摘要 |
 |----|-------|------|
-| O1 | https://github.com/hjk41/ma3/issues/5 | 指标、告警、内部 SLO |
-| O2 | https://github.com/hjk41/ma3/issues/6 | 补全生产 Runbook |
+| O1 | ~~https://github.com/hjk41/ma3/issues/5~~ | **已关闭** — Phase 0–3 指标/告警/SLO 已上线 |
+| O2 | ~~https://github.com/hjk41/ma3/issues/6~~ | **已关闭** — 生产 Runbook 已补全（中英） |
 | O3 | https://github.com/hjk41/ma3/issues/7 | Playwright 门户回归范围 |
 | O4 | https://github.com/hjk41/ma3/issues/8 | Agent eval 固定节奏 |
 

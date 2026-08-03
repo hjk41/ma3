@@ -24,8 +24,8 @@ Recreate issues: `bash scripts/file_design_backlog_issues.sh` (creates new issue
 
 | ID | Issue | Summary |
 |----|-------|------|
-| O1 | https://github.com/hjk41/ma3/issues/5 | Metrics, alerting, internal SLOs |
-| O2 | https://github.com/hjk41/ma3/issues/6 | Complete production runbook |
+| O1 | ~~https://github.com/hjk41/ma3/issues/5~~ | **Closed** — Phase 0–3 metrics/alerting/SLOs shipped |
+| O2 | ~~https://github.com/hjk41/ma3/issues/6~~ | **Closed** — production runbook filled (EN + zh) |
 | O3 | https://github.com/hjk41/ma3/issues/7 | Playwright portal regression scope |
 | O4 | https://github.com/hjk41/ma3/issues/8 | Agent eval fixed cadence |
 

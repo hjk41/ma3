@@ -90,8 +90,8 @@
 | [self-hosting.md](06-operations/self-hosting.md) | ✅ | Compose 自托管（bootstrap / 本地账号 / OIDC） |
 | [self-host-first-run-guide.md](06-operations/self-host-first-run-guide.md) | 设计中 | 首启引导：创建管理员 → checklist → 日常使用 |
 | [deployment-authing.md](06-operations/deployment-authing.md) | ✅ | Authing 控制台 + env |
-| [runbook.md](06-operations/runbook.md) | 📝 | 发版/回滚/排障 |
-| [monitoring-and-health.md](06-operations/monitoring-and-health.md) | 📝 | healthz/doctor/告警 |
+| [runbook.md](06-operations/runbook.md) | ✅ | 发版/回滚/schema 说明/日志/值班 |
+| [monitoring-and-health.md](06-operations/monitoring-and-health.md) | ✅ | 探活、指标、Alertmanager、SLO-1–3 |
 | [security.md](06-operations/security.md) | 📝 | 安全摘要（缺威胁模型） |
 
 ---
