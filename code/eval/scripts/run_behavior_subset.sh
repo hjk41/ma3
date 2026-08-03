@@ -8,7 +8,6 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 EVAL_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
-REPO_ROOT="$(cd "${EVAL_ROOT}/../.." && pwd)"
 
 AGENT="claude"
 TESTS_CSV="T2,T4,T5"
@@ -111,7 +110,7 @@ preflight() {
 
 run_t5() {
   local key="${MA3_KEY_CLAUDE_CODE:-${MA3_API_KEY:-}}"
-  local ok body bad
+  local body bad
   body="$(curl -sS -X POST "${MA3_BASE_URL}/mcp" \
     -H 'Content-Type: application/json' \
     -H "X-API-Key: ${key}" \
