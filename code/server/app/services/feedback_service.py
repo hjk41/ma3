@@ -35,7 +35,7 @@ def resolve_ui_feedback_principal(request: Request) -> str:
 
 
 def _ensure_record_feedback_target(record: dict[str, Any], readable_library_ids: set[str] | None) -> None:
-    if record.get("status") != "active":
+    if record.get("status") not in {"active", "buffered"}:
         raise HTTPException(status_code=400, detail="feedback only allowed on active records")
     if readable_library_ids is not None and record.get("library_id") not in readable_library_ids:
         raise HTTPException(status_code=403, detail="record not readable")

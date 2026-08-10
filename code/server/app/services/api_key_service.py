@@ -33,6 +33,7 @@ class ResolvedApiKey:
     key_id: str
     principal_id: str
     label: str
+    billing_account_id: str | None = None
     readable: frozenset[str] = field(default_factory=frozenset)
     writable: frozenset[str] = field(default_factory=frozenset)
     maintainer: frozenset[str] = field(default_factory=frozenset)
@@ -82,10 +83,12 @@ def resolve_api_key(plaintext: str) -> ResolvedApiKey | None:
             maintainer.add(library_id)
 
     db.touch_api_key_last_used(key_id)
+    ba_raw = key.get("billing_account_id")
     return ResolvedApiKey(
         key_id=key_id,
         principal_id=str(key["principal_id"]),
         label=str(key.get("label") or ""),
+        billing_account_id=str(ba_raw) if ba_raw else None,
         readable=frozenset(readable),
         writable=frozenset(writable),
         maintainer=frozenset(maintainer),

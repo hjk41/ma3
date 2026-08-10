@@ -92,8 +92,25 @@ def _http_exception_payload(exc: HTTPException) -> tuple[str, dict[str, Any]]:
     detail = exc.detail
     if isinstance(detail, dict):
         message = str(detail.get("message") or detail.get("error") or "request failed")
+        if exc.headers and exc.headers.get("Retry-After"):
+            detail = {**detail, "retry_after": exc.headers["Retry-After"]}
         return message, {"status_code": exc.status_code, "detail": detail}
     return str(detail), {"status_code": exc.status_code}
+
+
+def _response_status(response: dict[str, Any] | None) -> tuple[int, dict[str, str]]:
+    if not response or "error" not in response:
+        return 200, {}
+    data = response["error"].get("data") or {}
+    status_code = int(data.get("status_code") or 200)
+    detail = data.get("detail") or {}
+    headers: dict[str, str] = {}
+    if status_code == 429:
+        headers["Retry-After"] = str(detail.get("retry_after") or "60")
+        return status_code, headers
+    # MCP tool errors remain JSON-RPC result envelopes for client compatibility;
+    # quota/rate-limit admission is the one P1 case requiring an HTTP 429.
+    return 200, headers
 
 
 def _handle_rpc(req: McpJsonRpcRequest, raw_auth: str | None) -> dict[str, Any] | None:
@@ -234,4 +251,5 @@ async def mcp_post(
     response = _handle_rpc(req, raw_auth)
     if response is None:
         return Response(status_code=202)
-    return JSONResponse(response)
+    status_code, headers = _response_status(response)
+    return JSONResponse(response, status_code=status_code, headers=headers)

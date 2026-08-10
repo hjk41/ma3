@@ -63,6 +63,26 @@ class Settings:
     disable_embeddings: bool = field(default_factory=lambda: _env_bool("MA3_DISABLE_EMBEDDINGS", False))
     # Prometheus /metrics (Phase 1). Default OFF — self-host safe; SaaS sets MA3_METRICS_ENABLED=1 on loopback.
     metrics_enabled: bool = field(default_factory=lambda: _env_bool("MA3_METRICS_ENABLED", False))
+    # Billing P1 is observe-only by default so self-hosted instances never
+    # inherit SaaS admission limits merely by upgrading.
+    billing_provider: str = field(default_factory=lambda: _env_str("MA3_BILLING_PROVIDER", "none"))
+    stripe_secret_key: str = field(default_factory=lambda: _env_str("MA3_STRIPE_SECRET_KEY", ""))
+    stripe_webhook_secret: str = field(default_factory=lambda: _env_str("MA3_STRIPE_WEBHOOK_SECRET", ""))
+    stripe_price_pro: str = field(default_factory=lambda: _env_str("MA3_STRIPE_PRICE_PRO", ""))
+    stripe_price_team: str = field(default_factory=lambda: _env_str("MA3_STRIPE_PRICE_TEAM", ""))
+    stripe_publishable_key: str = field(default_factory=lambda: _env_str("MA3_STRIPE_PUBLISHABLE_KEY", ""))
+    read_quota_enforce: bool = field(default_factory=lambda: _env_bool("MA3_READ_QUOTA_ENFORCE", False))
+    rate_limit_enabled: bool = field(default_factory=lambda: _env_bool("MA3_RATE_LIMIT_ENABLED", False))
+    org_storage_quota_enforce: bool = field(
+        default_factory=lambda: _env_bool("MA3_ORG_STORAGE_QUOTA_ENFORCE", False)
+    )
+    # Background billing maintenance (usage_events flush + past_due grace).
+    usage_flush_interval_sec: int = field(
+        default_factory=lambda: int(os.environ.get("MA3_USAGE_FLUSH_INTERVAL_SEC", "60"))
+    )
+    billing_grace_interval_sec: int = field(
+        default_factory=lambda: int(os.environ.get("MA3_BILLING_GRACE_INTERVAL_SEC", "3600"))
+    )
 
     # Search ranking (design/12 — Scheme B Gate-Then-Nudge). See validate_ranking_config().
     search_wilson_z: float = field(default_factory=lambda: _env_float("MA3_SEARCH_WILSON_Z", 1.96))

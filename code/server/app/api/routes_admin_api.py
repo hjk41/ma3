@@ -6,6 +6,7 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
 from app.services import billing_ops_service
+from app.services import billing_service
 from app.services.onboarding_service import set_user_paid
 from app.services.portal_actor_service import (
     PortalActor,
@@ -19,6 +20,17 @@ router = APIRouter(prefix="/api/admin", tags=["admin-api"])
 
 class PatchUserPlanBody(BaseModel):
     paid: bool
+
+
+class PatchBillingAccountBody(BaseModel):
+    plan_code: str | None = None
+    status: str | None = None
+
+
+class QuotaOverrideBody(BaseModel):
+    value: int
+    reason: str | None = None
+    expires_at: str | None = None
 
 
 @router.get("/observatory/stats")
@@ -67,6 +79,63 @@ def api_patch_user_plan(
     except Exception as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return JSONResponse(result)
+
+
+@router.get("/billing-accounts/{ba_id}")
+def api_billing_account_detail(
+    ba_id: str, actor: PortalActor = Depends(require_product_admin_actor)
+) -> JSONResponse:
+    _ = actor
+    account = billing_service.get_billing_account(ba_id)
+    if not account:
+        raise HTTPException(status_code=404, detail={"error": "billing_account_not_found"})
+    return JSONResponse(account)
+
+
+@router.patch("/billing-accounts/{ba_id}")
+def api_patch_billing_account(
+    request: Request,
+    ba_id: str,
+    body: PatchBillingAccountBody,
+    actor: PortalActor = Depends(require_product_admin_actor),
+) -> JSONResponse:
+    assert_mutating_auth(request, actor)
+    if body.plan_code is None and body.status is None:
+        raise HTTPException(status_code=400, detail="plan_code or status required")
+    result = billing_service.set_billing_account_plan(
+        ba_id, plan_code=body.plan_code, status=body.status, actor_principal_id=actor.principal_id
+    )
+    return JSONResponse(result)
+
+
+@router.put("/billing-accounts/{ba_id}/overrides/{quota_key}")
+def api_put_billing_override(
+    request: Request,
+    ba_id: str,
+    quota_key: str,
+    body: QuotaOverrideBody,
+    actor: PortalActor = Depends(require_product_admin_actor),
+) -> JSONResponse:
+    assert_mutating_auth(request, actor)
+    return JSONResponse(
+        billing_service.set_quota_override(
+            ba_id, quota_key, body.value, reason=body.reason, expires_at=body.expires_at
+        )
+    )
+
+
+@router.delete("/billing-accounts/{ba_id}/overrides/{quota_key}")
+def api_delete_billing_override(
+    request: Request,
+    ba_id: str,
+    quota_key: str,
+    actor: PortalActor = Depends(require_product_admin_actor),
+) -> JSONResponse:
+    assert_mutating_auth(request, actor)
+    if not billing_service.get_billing_account(ba_id):
+        raise HTTPException(status_code=404, detail={"error": "billing_account_not_found"})
+    billing_service.clear_quota_override(ba_id, quota_key)
+    return JSONResponse({"ok": True})
 
 
 @router.get("/orgs")

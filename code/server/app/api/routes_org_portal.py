@@ -410,9 +410,63 @@ def portal_org_members(
       <button type="button" class="btn primary" onclick="ma3CopyFrom(this)">{esc(t("common.copy"))}</button>
     </div>
   </div>"""
-    body = f"""
-  {alert}
-  {invite_flash}
+
+    from app.services.billing_service import seat_usage
+
+    try:
+        usage = seat_usage(org_id)
+    except Exception:
+        usage = {
+            "used": db.count_active_org_members(org_id),
+            "active_members": db.count_active_org_members(org_id),
+            "pending_invite_uses": 0,
+            "included_seats": 1 if str(org.get("kind") or "") == "personal" else 3,
+        }
+    seats_used = int(usage.get("used") or 0)
+    seats_limit = int(usage.get("included_seats") or 1)
+    seats_pending = int(usage.get("pending_invite_uses") or 0)
+    seats_label = t("portal.orgs.members.seats", used=seats_used, limit=seats_limit)
+    if seats_pending > 0:
+        seats_label = f"{seats_label} {t('portal.orgs.members.seats_pending', pending=seats_pending)}"
+    seats_banner = f"""
+  <div class="card" style="margin-bottom:16px;" data-testid="org-seats-banner">
+    <div class="card-body" style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;">
+      <div>
+        <strong data-testid="org-seats-used-limit">{esc(seats_label)}</strong>
+      </div>
+    </div>
+  </div>"""
+    org_kind = str(org.get("kind") or "")
+    is_personal = org_kind == "personal"
+    at_or_over_cap = seats_used >= seats_limit
+    over_cap = seats_used > seats_limit
+
+    if is_personal:
+        manage_section = f"""
+  <div class="alert info" style="margin-bottom:16px;" data-testid="org-personal-only">
+    {esc(t("portal.orgs.members.personal_only"))}
+  </div>"""
+    else:
+        cap_note = ""
+        if over_cap:
+            cap_note = (
+                f'<div class="alert warning" style="margin-bottom:12px;" data-testid="org-seats-over">'
+                f'{esc(t("portal.orgs.members.seats_over", used=seats_used, limit=seats_limit))}</div>'
+            )
+        elif at_or_over_cap:
+            cap_note = (
+                f'<div class="alert warning" style="margin-bottom:12px;" data-testid="org-seats-at-cap">'
+                f'{esc(t("portal.orgs.members.seats_at_cap"))}</div>'
+            )
+        remaining = max(0, seats_limit - seats_used)
+        max_uses_default = 0 if remaining <= 0 else 1
+        max_uses_attr = f'min="1" max="{remaining}"' if remaining > 0 else 'min="0" max="0"'
+        invite_disabled = " disabled" if remaining <= 0 else ""
+        add_disabled = " disabled" if remaining <= 0 else ""
+        invite_btn_class = "btn" if remaining <= 0 else "btn primary"
+        add_btn_class = "btn" if remaining <= 0 else "btn primary"
+        manage_section = f"""
+  {cap_note}
   <div class="card" style="margin-bottom:16px;">
     <div class="card-header"><h2>{esc(t("portal.orgs.invites.title"))}</h2></div>
     <div class="card-body">
@@ -420,23 +474,23 @@ def portal_org_members(
       <form method="post" action="{esc(base)}/ui/orgs/{esc(org_id)}/invites/">
         <p>
           <label>{esc(t("portal.orgs.invites.alias"))}<br>
-            <input name="member_alias" type="text" maxlength="32" placeholder="{esc(t("portal.orgs.invites.alias_hint"))}" style="width:100%;max-width:320px;">
+            <input name="member_alias" type="text" maxlength="32" placeholder="{esc(t("portal.orgs.invites.alias_hint"))}" style="width:100%;max-width:320px;"{invite_disabled}>
           </label>
         </p>
         <p style="margin-top:8px;">
           <label>{esc(t("portal.orgs.members.role"))}
-            <select name="role"><option value="member" selected>member</option><option value="admin">admin</option></select>
+            <select name="role"{invite_disabled}><option value="member" selected>member</option><option value="admin">admin</option></select>
           </label>
         </p>
         <p style="margin-top:8px;">
           <label>{esc(t("portal.orgs.invites.max_uses"))}
-            <input name="max_uses" type="number" min="1" max="100" value="1" style="width:80px;">
+            <input name="max_uses" type="number" {max_uses_attr} value="{max_uses_default}" style="width:80px;"{invite_disabled}>
           </label>
           <label style="margin-left:12px;">{esc(t("portal.orgs.invites.expires_hours"))}
-            <input name="expires_in_hours" type="number" min="1" max="2160" value="168" style="width:100px;">
+            <input name="expires_in_hours" type="number" min="1" max="2160" value="168" style="width:100px;"{invite_disabled}>
           </label>
         </p>
-        <button type="submit" class="btn primary">{esc(t("portal.orgs.invites.create"))}</button>
+        <button type="submit" class="{invite_btn_class}"{invite_disabled}>{esc(t("portal.orgs.invites.create"))}</button>
       </form>
     </div>
   </div>
@@ -450,35 +504,41 @@ def portal_org_members(
       </form>
       <form method="post" action="{esc(base)}/ui/orgs/{esc(org_id)}/members/">
         <label>{esc(t("portal.orgs.members.pick_user"))}<br>
-          <select name="principal_id" required style="min-width:320px;">
+          <select name="principal_id" required style="min-width:320px;"{add_disabled}>
             <option value="">{esc(t("portal.orgs.members.pick_placeholder"))}</option>
             {search_options}
           </select>
         </label>
         <p style="margin-top:8px;">
           <label>{esc(t("portal.orgs.members.or_principal"))}<br>
-            <input name="principal_id_manual" type="text" placeholder="user:…" style="width:100%;max-width:420px;">
+            <input name="principal_id_manual" type="text" placeholder="user:…" style="width:100%;max-width:420px;"{add_disabled}>
           </label>
         </p>
         <p style="margin-top:8px;">
           <label>{esc(t("portal.orgs.members.or_display_name"))}<br>
-            <input name="display_name" type="text" style="width:100%;max-width:420px;">
+            <input name="display_name" type="text" style="width:100%;max-width:420px;"{add_disabled}>
           </label>
         </p>
         <p style="margin-top:8px;">
           <label>{esc(t("portal.orgs.members.alias"))}<br>
-            <input name="alias" type="text" maxlength="32" placeholder="{esc(t("portal.orgs.invites.alias_hint"))}" style="width:100%;max-width:420px;">
+            <input name="alias" type="text" maxlength="32" placeholder="{esc(t("portal.orgs.invites.alias_hint"))}" style="width:100%;max-width:420px;"{add_disabled}>
           </label>
         </p>
         <p style="margin-top:8px;">
           <label>{esc(t("portal.orgs.members.role"))}
-            <select name="role"><option value="member">member</option><option value="admin">admin</option></select>
+            <select name="role"{add_disabled}><option value="member">member</option><option value="admin">admin</option></select>
           </label>
         </p>
-        <button type="submit" class="btn primary">{esc(t("portal.orgs.members.add"))}</button>
+        <button type="submit" class="{add_btn_class}"{add_disabled}>{esc(t("portal.orgs.members.add"))}</button>
       </form>
     </div>
-  </div>
+  </div>"""
+
+    body = f"""
+  {alert}
+  {invite_flash}
+  {seats_banner}
+  {manage_section}
   <div class="card">
     <div class="card-body" style="padding:0;">
       {render_table(
@@ -542,7 +602,17 @@ async def portal_org_invite_create(request: Request, org_id: str) -> Response:
             member_alias=str(form.get("member_alias") or "").strip() or None,
         )
     except HTTPException as exc:
-        detail = exc.detail if isinstance(exc.detail, str) else str(exc.detail)
+        if isinstance(exc.detail, dict):
+            err = str(exc.detail.get("error") or "")
+            if err == "seat_limit_exceeded":
+                detail = (
+                    f"seat_limit_exceeded "
+                    f"(used={exc.detail.get('used')}, included_seats={exc.detail.get('included_seats')})"
+                )
+            else:
+                detail = err or str(exc.detail)
+        else:
+            detail = str(exc.detail)
         return RedirectResponse(
             f"{base}/ui/orgs/{org_id}/members/?error={quote(detail)}",
             status_code=303,
@@ -581,7 +651,17 @@ async def portal_org_members_add(request: Request, org_id: str) -> Response:
             alias=alias,
         )
     except HTTPException as exc:
-        detail = exc.detail if isinstance(exc.detail, str) else str(exc.detail)
+        if isinstance(exc.detail, dict):
+            err = str(exc.detail.get("error") or "")
+            if err == "seat_limit_exceeded":
+                detail = (
+                    f"seat_limit_exceeded "
+                    f"(used={exc.detail.get('used')}, included_seats={exc.detail.get('included_seats')})"
+                )
+            else:
+                detail = err or str(exc.detail)
+        else:
+            detail = str(exc.detail)
         return RedirectResponse(
             f"{base}/ui/orgs/{org_id}/members/?error={quote(detail)}",
             status_code=303,

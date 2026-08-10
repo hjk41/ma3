@@ -617,6 +617,7 @@ def portal_nav_items(base: str, *, is_admin: bool, locale: str = DEFAULT_LOCALE)
         ("records", tr(locale, "nav.records"), f"{base}/ui/me/writes/", False),
         ("votes", tr(locale, "nav.votes"), f"{base}/ui/me/votes/", False),
         ("keys", tr(locale, "nav.keys"), f"{base}/ui/keys/", False),
+        ("billing", tr(locale, "nav.billing"), f"{base}/ui/billing/", False),
     ]
     if is_admin:
         items.append(("observatory", tr(locale, "nav.observatory"), f"{base}/ui/observatory/", True))
@@ -869,7 +870,10 @@ def render_page(
 
 
 def _render_table_cell(cell: Any) -> str:
-    if isinstance(cell, str) and cell.startswith("<"):
+    # Allow pre-built HTML snippets (forms, badges, <code>). Leading whitespace
+    # in f-string blocks must not force esc() — that was escaping Observatory
+    # plan buttons into visible raw markup.
+    if isinstance(cell, str) and cell.lstrip().startswith("<"):
         return cell
     return esc(cell)
 

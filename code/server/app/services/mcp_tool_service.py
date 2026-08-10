@@ -328,9 +328,66 @@ def call_mcp_tool(name: str, arguments: dict[str, Any], auth: McpAuthContext) ->
         metrics_mod.observe_mcp_tool(tool=name, outcome=outcome, duration_sec=timer.seconds())
 
 
+def _billing_account_id(auth: McpAuthContext) -> str | None:
+    if auth.api_key_id:
+        with db.connect() as conn:
+            row = db._fetchone(conn, "SELECT billing_account_id FROM api_keys WHERE key_id = ?", (auth.api_key_id,))
+        if row and row["billing_account_id"]:
+            return str(row["billing_account_id"])
+    if auth.principal.principal_id:
+        from app.services.onboarding_service import personal_org_id
+        from app.services import billing_service
+
+        account = billing_service.get_billing_account_for_org(personal_org_id(auth.principal.principal_id))
+        return str(account["id"]) if account else None
+    return None
+
+
+def _quota_warning(billing_account_id: str) -> dict[str, Any]:
+    from app.services import usage_service
+
+    state = usage_service.read_quota_state(billing_account_id)
+    warnings = ["Monthly read quota is near or above its limit."] if state["warn"] else []
+    return {
+        "read_units": {key: state[key] for key in ("used", "limit", "remaining")},
+        "warnings": warnings,
+    }
+
+
+def _assert_billing_read_allowed(auth: McpAuthContext) -> str | None:
+    from app.services import usage_service
+
+    ba_id = _billing_account_id(auth)
+    if ba_id and settings.read_quota_enforce and usage_service.read_quota_state(ba_id)["exceeded"]:
+        raise HTTPException(
+            status_code=429,
+            detail={"error": "read_quota_exceeded", "message": "monthly read quota exceeded"},
+            headers={"Retry-After": "60"},
+        )
+    return ba_id
+
+
+def _assert_rate_allowed(auth: McpAuthContext, billing_account_id: str | None) -> None:
+    if not settings.rate_limit_enabled or not auth.api_key_id or not billing_account_id:
+        return
+    from app.services import billing_service, rate_limit_service
+
+    result = rate_limit_service.check_rate_limit(
+        auth.api_key_id, rpm=billing_service.effective_quota(billing_account_id, "rpm")
+    )
+    if not result["allowed"]:
+        raise HTTPException(
+            status_code=429,
+            detail={"error": "rate_limited", "message": "rate limit exceeded"},
+            headers={"Retry-After": str(result["retry_after"])},
+        )
+
+
 def _call_mcp_tool_impl(name: str, arguments: dict[str, Any], auth: McpAuthContext) -> McpToolResult:
     raw_args, client_report = extract_client_report(arguments)
     payload = _validate_args(name, raw_args)
+    ba_id = _billing_account_id(auth)
+    _assert_rate_allowed(auth, ba_id)
 
     if name == "ma3_validate":
         assert isinstance(payload, Ma3ValidatePayload)
@@ -368,6 +425,13 @@ def _call_mcp_tool_impl(name: str, arguments: dict[str, Any], auth: McpAuthConte
             "dev_auth_enabled": settings.dev_auth,
             "tools": [t.name for t in list_mcp_tools()],
         }
+        with db.connect() as conn:
+            structured["billing_schema_ok"] = all(
+                db._fetchone(conn, "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?", (table,))
+                if not is_postgres()
+                else db._fetchone(conn, "SELECT 1 FROM information_schema.tables WHERE table_name = ?", (table,))
+                for table in ("plans", "billing_accounts", "quota_overrides", "billing_events")
+            )
         return _result(structured, client_report=client_report, summary=f"ma3 doctor: {structured['status']}")
 
     if name == "ma3_whoami":
@@ -400,11 +464,37 @@ def _call_mcp_tool_impl(name: str, arguments: dict[str, Any], auth: McpAuthConte
                 )
                 if quota:
                     structured["storage_quota"] = quota
+                from app.services import billing_service
+                from app.services.onboarding_service import personal_org_id
+
+                account = billing_service.get_billing_account_for_org(personal_org_id(auth.principal.principal_id))
+                if account:
+                    seats = billing_service.seat_usage(str(account["owner_id"]))
+                    structured["plan"] = {
+                        "plan_code": account["plan_code"],
+                        "status": account["status"],
+                        "seats": {"used": seats["used"], "included_seats": seats["included_seats"]},
+                        "libraries": {
+                            "used": len(owned_personal),
+                            "limit": billing_service.effective_quota(account["id"], "max_libraries"),
+                        },
+                        "storage": quota or {},
+                    }
         return _result(structured, client_report=client_report, summary=json.dumps(structured["caller"]))
 
     if name == "ma3_context":
         assert isinstance(payload, Ma3ContextPayload)
+        ba_id = _assert_billing_read_allowed(auth)
         body = _context_payload(auth, payload, explain=False)
+        if ba_id:
+            from app.services import usage_service
+
+            usage_service.record_read_usage(
+                ba_id,
+                tool_name=name,
+                records_returned=sum(len(case.get("records", [])) for case in body.get("cases", [])),
+            )
+            body["quota"] = _quota_warning(ba_id)
         pid = _caller_principal_id(auth)
         if pid:
             _LAST_CONTEXT_TS[pid] = time.time()
@@ -413,6 +503,7 @@ def _call_mcp_tool_impl(name: str, arguments: dict[str, Any], auth: McpAuthConte
 
     if name == "ma3_case":
         assert isinstance(payload, Ma3CasePayload)
+        ba_id = _assert_billing_read_allowed(auth)
         case = db.get_case(
             payload.case_id,
             library_ids=auth.readable_library_ids,
@@ -431,7 +522,13 @@ def _call_mcp_tool_impl(name: str, arguments: dict[str, Any], auth: McpAuthConte
             include_full_json=payload.include_full_json,
             relations=relations,
         )
-        return _result({"case": case}, client_report=client_report, summary=case["title"])
+        body = {"case": case, "records": case["records"]}
+        if ba_id:
+            from app.services import usage_service
+
+            usage_service.record_read_usage(ba_id, tool_name=name, records_returned=len(case["records"]))
+            body["quota"] = _quota_warning(ba_id)
+        return _result(body, client_report=client_report, summary=case["title"])
 
     if name == "ma3_locate_by_id":
         assert isinstance(payload, Ma3LocateByIdPayload)
@@ -550,6 +647,20 @@ def _call_mcp_tool_impl(name: str, arguments: dict[str, Any], auth: McpAuthConte
             raise HTTPException(status_code=403, detail="writer access required")
         write_plan = resolve_report_write_plan(payload, auth)
         library_id = write_plan.library_id
+        with db.connect() as conn:
+            library = db._fetchone(
+                conn,
+                "SELECT l.org_id, o.billing_account_id FROM libraries l "
+                "LEFT JOIN organizations o ON o.id = l.org_id WHERE l.id = ?",
+                (library_id,),
+            )
+            account = (
+                db._fetchone(conn, "SELECT status FROM billing_accounts WHERE id = ?", (library["billing_account_id"],))
+                if library and library["billing_account_id"]
+                else None
+            )
+        if account and account["status"] == "past_due":
+            raise HTTPException(status_code=403, detail={"error": "billing_past_due"})
         is_maintainer = auth.principal.is_admin_bypass or library_id in auth.maintainer_library_ids
         status, publish_at = resolve_report_status(
             visibility=payload.visibility,
@@ -597,6 +708,19 @@ def _call_mcp_tool_impl(name: str, arguments: dict[str, Any], auth: McpAuthConte
         dump["confirmation"] = write_plan.confirmation
         if payload.redaction_mode == "auto":
             dump = redact_payload(dump)
+        storage_warning = False
+        if library and library["billing_account_id"] and library_id != settings.default_library_id:
+            from app.services import billing_service
+
+            org = db.get_organization(str(library["org_id"]))
+            if org and org.get("kind") == "team":
+                projected = db.sum_org_storage_bytes(str(library["org_id"])) + len(
+                    str(dump["problem"]) + str(dump["outcome"]) + str(dump["result_summary"]) + json.dumps(dump)
+                )
+                limit = billing_service.effective_quota(str(library["billing_account_id"]), "storage_bytes_total")
+                storage_warning = projected >= limit * 0.8
+                if projected > limit and settings.org_storage_quota_enforce:
+                    raise HTTPException(status_code=403, detail={"error": "org_storage_quota_exceeded"})
         assert_personal_library_write_allowed(
             library_id=library_id,
             principal_id=auth.principal.principal_id,
@@ -635,6 +759,7 @@ def _call_mcp_tool_impl(name: str, arguments: dict[str, Any], auth: McpAuthConte
                     "persisted": True,
                     "record_id": existing["record_id"],
                     "status": record["status"] if record else status,
+                    "case_id": record.get("case_id") if record else case_id,
                     "case_assignment": {"case_id": record.get("case_id") if record else case_id, "mode": payload.case_assignment_mode},
                     "relations_written": 0,
                     "redaction_mode": payload.redaction_mode,
@@ -683,6 +808,7 @@ def _call_mcp_tool_impl(name: str, arguments: dict[str, Any], auth: McpAuthConte
             "persisted": True,
             "record_id": row["record_id"],
             "status": resp_status,
+            "case_id": resp_case_id,
             "case_assignment": {"case_id": resp_case_id, "mode": payload.case_assignment_mode},
             "relations_written": len(payload.based_on_record_ids) if status == "active" and not replay else 0,
             "redaction_mode": payload.redaction_mode,
@@ -692,6 +818,8 @@ def _call_mcp_tool_impl(name: str, arguments: dict[str, Any], auth: McpAuthConte
             "library_id": library_id,
             "library_selection_reason": write_plan.selection_reason,
         }
+        if storage_warning:
+            structured["quota"] = {"warnings": ["Organization storage quota is near or above its limit."]}
         record_row = db.get_record(row["record_id"]) or {}
         structured.update(buffer_response_fields(record_row))
         pid = auth.principal.principal_id

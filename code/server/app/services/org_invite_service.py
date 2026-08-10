@@ -97,6 +97,11 @@ def create_org_invite(
     org = db.get_organization(org_id)
     if org is None:
         raise HTTPException(status_code=404, detail="organization not found")
+    from app.services.billing_service import get_billing_account_for_org, seat_usage
+
+    account = get_billing_account_for_org(org_id)
+    if account and account["status"] == "past_due":
+        raise HTTPException(status_code=403, detail={"error": "billing_past_due"})
     if str(org.get("kind") or "") == "personal":
         raise HTTPException(status_code=400, detail="cannot invite into a personal organization")
     if role not in ("admin", "member"):
@@ -104,6 +109,19 @@ def create_org_invite(
     uses = int(max_uses)
     if uses < 1 or uses > 100:
         raise HTTPException(status_code=400, detail="max_uses must be between 1 and 100")
+    usage = seat_usage(org_id)
+    remaining = usage["included_seats"] - usage["used"]
+    if remaining <= 0:
+        raise HTTPException(
+            status_code=403,
+            detail={
+                "error": "seat_limit_exceeded",
+                "used": usage["used"],
+                "included_seats": usage["included_seats"],
+                "upgrade_url": None,
+            },
+        )
+    uses = min(uses, remaining)
 
     alias = normalize_org_alias(member_alias) if member_alias else None
 
@@ -226,28 +244,11 @@ def redeem_invite(*, token: str, principal_id: str) -> dict[str, Any]:
     if alias:
         assert_org_alias_available(org_id, alias, exclude_principal_id=principal_id)
 
-    status = db.try_consume_org_invite(
-        invite_id=str(row["id"]),
-        principal_id=principal_id,
-        now=_iso(_utcnow()),
-    )
-    if status == "already":
-        member = db.add_org_member(
-            org_id=org_id, principal_id=principal_id, role=role, alias=alias
-        )
-        return {
-            "org_id": org_id,
-            "principal_id": principal_id,
-            "role": member.get("role") or role,
-            "alias": member.get("alias"),
-            "already_member": False,
-            "invite_id": row["id"],
-            "consumed": False,
-        }
-    if status != "ok":
-        raise HTTPException(status_code=410, detail=f"invite is {status}")
+    from app.services.billing_service import admit_org_member
 
-    member = db.add_org_member(org_id=org_id, principal_id=principal_id, role=role, alias=alias)
+    member = admit_org_member(
+        org_id=org_id, principal_id=principal_id, role=role, alias=alias, invite_id=str(row["id"])
+    )
     org = db.get_organization(org_id)
     return {
         "org_id": org_id,

@@ -8,6 +8,8 @@ from fastapi import FastAPI
 
 from app.api.routes_portal import router as portal_router
 from app.api.routes_org_portal import router as org_portal_router
+from app.api.routes_billing import router as billing_router
+from app.api.routes_stripe_webhook import router as stripe_webhook_router
 from app.api.routes_auth import router as auth_router
 from app.api.routes_client import router as client_router
 from app.api.routes_health import router as health_router
@@ -49,6 +51,27 @@ async def _buffer_publish_loop() -> None:
         await asyncio.sleep(_BUFFER_PUBLISH_INTERVAL_SEC)
 
 
+async def _billing_maintenance_loop() -> None:
+    """Flush usage_events often; run past_due grace on a slower cadence (D9)."""
+    from app.services import usage_service
+    from app.services.billing_jobs import run_billing_maintenance_once
+
+    flush_every = max(5, int(settings.usage_flush_interval_sec))
+    grace_every = max(flush_every, int(settings.billing_grace_interval_sec))
+    until_grace = 0  # run full maintenance on the first tick
+    while True:
+        try:
+            if until_grace <= 0:
+                run_billing_maintenance_once()
+                until_grace = grace_every
+            else:
+                usage_service.flush_usage_events()
+        except Exception:
+            logger.exception("billing maintenance loop failed")
+        await asyncio.sleep(flush_every)
+        until_grace -= flush_every
+
+
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
     validate_authing_admin_config()
@@ -69,6 +92,7 @@ async def lifespan(_app: FastAPI):
 
     db.publish_due_buffered_records()
     buffer_task = asyncio.create_task(_buffer_publish_loop())
+    billing_task = asyncio.create_task(_billing_maintenance_loop())
     if not settings.disable_embeddings:
         from app.services.embedding_service import warm_up_model
 
@@ -84,8 +108,11 @@ async def lifespan(_app: FastAPI):
         yield
     finally:
         buffer_task.cancel()
+        billing_task.cancel()
         with suppress(asyncio.CancelledError):
             await buffer_task
+        with suppress(asyncio.CancelledError):
+            await billing_task
 
 
 app = FastAPI(
@@ -105,6 +132,8 @@ app.include_router(setup_router)
 app.include_router(local_auth_api_router)
 app.include_router(setup_api_router)
 app.include_router(local_users_api_router)
+app.include_router(billing_router)
+app.include_router(stripe_webhook_router)
 app.include_router(me_api_router)
 app.include_router(orgs_api_router)
 app.include_router(libraries_api_router)

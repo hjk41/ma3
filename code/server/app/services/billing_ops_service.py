@@ -24,7 +24,8 @@ def billing_overview() -> dict[str, Any]:
         "personal_org_count": len(personal_orgs),
         "orgs_with_plan_label": len(labeled),
         "note": (
-            "付费以 principals.plan_code=pro 为准；MA3_PAID_PRINCIPAL_IDS 仍可作为 env 白名单覆盖。"
+            "付费以 billing_accounts（个人组织 BA）+ principals.plan_code 投影为准；"
+            "MA3_PAID_PRINCIPAL_IDS 仍可作为 env 白名单覆盖。"
             "完整 Stripe billing 尚未接入。"
         ),
     }
@@ -92,6 +93,24 @@ def list_users_for_billing(
     return total, enriched
 
 
+def list_stripe_linked_accounts(*, limit: int = 200) -> list[dict[str, Any]]:
+    """BAs with a Stripe subscription id (Observatory reconciliation)."""
+    with db.connect() as conn:
+        rows = db._fetchall(
+            conn,
+            """
+            SELECT id, owner_type, owner_id, plan_code, status,
+                   provider, provider_customer_id, provider_subscription_id
+            FROM billing_accounts
+            WHERE provider_subscription_id IS NOT NULL AND provider_subscription_id <> ''
+            ORDER BY id
+            LIMIT ?
+            """,
+            (int(limit),),
+        )
+    return [dict(r) for r in (rows or [])]
+
+
 def list_orgs_for_billing(*, limit: int = 200) -> list[dict[str, Any]]:
     rows = db.list_organizations_for_ops(limit=limit)
     out: list[dict[str, Any]] = []
@@ -99,10 +118,20 @@ def list_orgs_for_billing(*, limit: int = 200) -> list[dict[str, Any]]:
         owner = str(org.get("owner_principal_id") or "")
         billing = str(org.get("billing_account_id") or "")
         owner_paid = is_paid_principal(owner) if owner else False
+        plan_label = billing or "—"
+        if billing.startswith("ba_"):
+            try:
+                from app.services.billing_service import get_billing_account
+
+                account = get_billing_account(billing)
+                if account:
+                    plan_label = f"{billing} ({account.get('plan_code')})"
+            except Exception:
+                pass
         out.append(
             {
                 **org,
-                "billing_label": billing or "—",
+                "billing_label": plan_label,
                 "owner_effective_paid": owner_paid,
             }
         )

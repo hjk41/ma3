@@ -257,6 +257,10 @@ def initialize_database() -> None:
             _execute(conn, "ALTER TABLE libraries ADD COLUMN kind TEXT NOT NULL DEFAULT 'custom'")
         if not _column_exists(conn, "libraries", "owner_principal_id"):
             _execute(conn, "ALTER TABLE libraries ADD COLUMN owner_principal_id TEXT")
+        if not _column_exists(conn, "libraries", "active_record_count"):
+            _execute(conn, "ALTER TABLE libraries ADD COLUMN active_record_count INTEGER NOT NULL DEFAULT 0")
+        if not _column_exists(conn, "libraries", "storage_bytes"):
+            _execute(conn, "ALTER TABLE libraries ADD COLUMN storage_bytes BIGINT NOT NULL DEFAULT 0")
         _execute(
             conn,
             """
@@ -320,6 +324,177 @@ def initialize_database() -> None:
             _execute(conn, "ALTER TABLE organizations ADD COLUMN owner_principal_id TEXT")
         if not _column_exists(conn, "organizations", "billing_account_id"):
             _execute(conn, "ALTER TABLE organizations ADD COLUMN billing_account_id TEXT")
+
+        # Billing P0 is additive so existing SQLite and Postgres installations
+        # can bootstrap in place without a separate migration runner.
+        _execute(
+            conn,
+            """
+            CREATE TABLE IF NOT EXISTS plans (
+              code TEXT PRIMARY KEY,
+              scope TEXT NOT NULL,
+              allow_readonly_grants INTEGER NOT NULL DEFAULT 0,
+              max_libraries INTEGER NOT NULL,
+              storage_bytes_per_library BIGINT NOT NULL DEFAULT 0,
+              storage_bytes_total BIGINT NOT NULL DEFAULT 0,
+              read_units_per_month INTEGER NOT NULL DEFAULT 0,
+              included_seats INTEGER NOT NULL,
+              max_keys INTEGER NOT NULL DEFAULT 0,
+              requests_per_minute INTEGER NOT NULL DEFAULT 0,
+              rpm INTEGER NOT NULL DEFAULT 0
+            )
+            """,
+        )
+        # Prefer BIGINT in CREATE (Team 10 GiB exceeds Postgres INT4). If an older
+        # install already has INTEGER columns, widen them with a savepoint so a
+        # failed ALTER cannot abort the whole initialize_database transaction.
+        if is_postgres():
+            for col in ("storage_bytes_per_library", "storage_bytes_total"):
+                try:
+                    _execute(conn, "SAVEPOINT ma3_plans_bigint")
+                    _execute(
+                        conn,
+                        f"ALTER TABLE plans ALTER COLUMN {col} TYPE BIGINT",
+                    )
+                    _execute(conn, "RELEASE SAVEPOINT ma3_plans_bigint")
+                except Exception:
+                    try:
+                        _execute(conn, "ROLLBACK TO SAVEPOINT ma3_plans_bigint")
+                    except Exception:
+                        pass
+        for plan in (
+            ("free", "personal", 0, 1, 10 * 1024 * 1024, 10 * 1024 * 1024, 10000, 1, 10, 60),
+            ("pro", "personal", 1, 5, 100 * 1024 * 1024, 500 * 1024 * 1024, 100000, 1, 50, 120),
+            ("team_stub", "org", 1, 3, 0, 1024 * 1024 * 1024, 50000, 3, 25, 120),
+            ("team", "org", 1, 10, 0, 10 * 1024 * 1024 * 1024, 500000, 5, 200, 300),
+        ):
+            _execute(
+                conn,
+                """
+                INSERT INTO plans (
+                  code, scope, allow_readonly_grants, max_libraries,
+                  storage_bytes_per_library, storage_bytes_total,
+                  read_units_per_month, included_seats, max_keys, requests_per_minute
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT (code) DO NOTHING
+                """,
+                plan,
+            )
+        if not _column_exists(conn, "plans", "rpm"):
+            _execute(conn, "ALTER TABLE plans ADD COLUMN rpm INTEGER NOT NULL DEFAULT 0")
+        _execute(conn, "UPDATE plans SET rpm = requests_per_minute WHERE rpm = 0")
+        _execute(
+            conn,
+            """
+            CREATE TABLE IF NOT EXISTS usage_events (
+              id TEXT PRIMARY KEY,
+              billing_account_id TEXT NOT NULL,
+              tool_name TEXT NOT NULL,
+              units INTEGER NOT NULL,
+              records_returned INTEGER NOT NULL,
+              status_code INTEGER NOT NULL,
+              created_at TEXT NOT NULL
+            )
+            """,
+        )
+        _execute(
+            conn,
+            """
+            CREATE TABLE IF NOT EXISTS usage_monthly (
+              billing_account_id TEXT NOT NULL,
+              period_start TEXT NOT NULL,
+              read_units BIGINT NOT NULL DEFAULT 0,
+              PRIMARY KEY (billing_account_id, period_start)
+            )
+            """,
+        )
+        _execute(conn, "CREATE INDEX IF NOT EXISTS idx_usage_events_ba_created ON usage_events(billing_account_id, created_at)")
+        _execute(
+            conn,
+            """
+            CREATE TABLE IF NOT EXISTS billing_grace_notifications (
+              billing_account_id TEXT NOT NULL,
+              kind TEXT NOT NULL,
+              grace_day TEXT NOT NULL,
+              created_at TEXT NOT NULL,
+              PRIMARY KEY (billing_account_id, kind, grace_day)
+            )
+            """,
+        )
+        _execute(
+            conn,
+            """
+            CREATE TABLE IF NOT EXISTS billing_accounts (
+              id TEXT PRIMARY KEY,
+              owner_type TEXT NOT NULL,
+              owner_id TEXT NOT NULL,
+              plan_code TEXT NOT NULL,
+              status TEXT NOT NULL DEFAULT 'active',
+              current_period_start TEXT NOT NULL,
+              current_period_end TEXT NOT NULL,
+              provider TEXT,
+              provider_customer_id TEXT,
+              provider_subscription_id TEXT,
+              created_at TEXT NOT NULL,
+              UNIQUE(owner_type, owner_id)
+            )
+            """,
+        )
+        _execute(
+            conn,
+            """
+            CREATE TABLE IF NOT EXISTS quota_overrides (
+              billing_account_id TEXT NOT NULL,
+              quota_key TEXT NOT NULL,
+              value BIGINT NOT NULL,
+              reason TEXT,
+              expires_at TEXT,
+              PRIMARY KEY (billing_account_id, quota_key)
+            )
+            """,
+        )
+        _execute(
+            conn,
+            """
+            CREATE TABLE IF NOT EXISTS billing_events (
+              id TEXT PRIMARY KEY,
+              provider TEXT,
+              provider_event_id TEXT,
+              type TEXT NOT NULL,
+              billing_account_id TEXT,
+              payload_json TEXT,
+              processed_at TEXT,
+              created_at TEXT NOT NULL
+            )
+            """,
+        )
+        _execute(
+            conn,
+            "CREATE UNIQUE INDEX IF NOT EXISTS idx_billing_events_provider_event "
+            "ON billing_events(provider, provider_event_id) "
+            "WHERE provider_event_id IS NOT NULL",
+        )
+        payload_length = "octet_length(records.payload_json::text)" if is_postgres() else "length(records.payload_json)"
+        _execute(
+            conn,
+            f"""
+            UPDATE libraries SET
+              active_record_count = (
+                SELECT COUNT(*) FROM records
+                WHERE records.library_id = libraries.id
+                  AND records.status IN ('active', 'buffered', 'draft')
+              ),
+              storage_bytes = (
+                SELECT COALESCE(SUM(
+                  length(records.problem) + length(records.outcome)
+                  + length(records.result_summary) + {payload_length}
+                ), 0)
+                FROM records
+                WHERE records.library_id = libraries.id
+                  AND records.status IN ('active', 'buffered', 'draft')
+              )
+            """,
+        )
 
         _execute(
             conn,
@@ -494,6 +669,8 @@ def initialize_database() -> None:
             _execute(conn, "ALTER TABLE api_keys ADD COLUMN key_prefix TEXT")
         if not _column_exists(conn, "api_keys", "key_ciphertext"):
             _execute(conn, "ALTER TABLE api_keys ADD COLUMN key_ciphertext TEXT")
+        if not _column_exists(conn, "api_keys", "billing_account_id"):
+            _execute(conn, "ALTER TABLE api_keys ADD COLUMN billing_account_id TEXT")
         _execute(
             conn,
             """
@@ -509,6 +686,9 @@ def initialize_database() -> None:
     # Attribute pre-existing records to their authors so ma3_list_my_writes can
     # enumerate historical uploads. Idempotent; runs after the schema commits.
     backfill_write_audit_log()
+    # Lazy import keeps db usable by billing_service during its own operations.
+    from app.services.billing_service import run_billing_backfill
+    run_billing_backfill()
 
     # pgvector setup runs in its OWN connection/transaction. CREATE EXTENSION
     # fails when the pgvector package is absent, which aborts the transaction;
@@ -1005,6 +1185,45 @@ def insert_record(
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?::jsonb, ?, ?, ?)
                 """,
                 (rid, library_id, case_id, status, problem, outcome, result_summary, raw, principal_id, now, publish_at),
+            )
+        if status in _QUOTA_RECORD_STATUSES:
+            if not is_postgres():
+                _execute(
+                    conn,
+                    """
+                    INSERT INTO records (id, library_id, case_id, status, problem, outcome, result_summary, payload_json, created_by, created_at, publish_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (rid, library_id, case_id, status, problem, outcome, result_summary, raw, principal_id, now, publish_at),
+                )
+            _execute(
+                conn,
+                """
+                UPDATE libraries
+                SET active_record_count = active_record_count + 1,
+                    storage_bytes = storage_bytes + ?
+                WHERE id = ?
+                """,
+                (len(problem) + len(outcome) + len(result_summary) + len(raw), library_id),
+            )
+            payload_length = "octet_length(payload_json::text)" if is_postgres() else "length(payload_json)"
+            _execute(
+                conn,
+                f"""
+                UPDATE libraries SET
+                  active_record_count = (
+                    SELECT COUNT(*) FROM records
+                    WHERE library_id = ? AND status IN ('active', 'buffered', 'draft')
+                  ),
+                  storage_bytes = (
+                    SELECT COALESCE(SUM(length(problem) + length(outcome)
+                      + length(result_summary) + {payload_length}), 0)
+                    FROM records
+                    WHERE library_id = ? AND status IN ('active', 'buffered', 'draft')
+                  )
+                WHERE id = ?
+                """,
+                (library_id, library_id, library_id),
             )
         else:
             _execute(
@@ -2886,12 +3105,20 @@ def create_library(
     from app.services.library_quota_service import assert_library_creation_allowed
 
     org = org_id or settings.default_org_id
-    assert_library_creation_allowed(
-        library_id=library_id,
-        kind=kind,
-        org_id=org,
-        owner_principal_id=owner_principal_id,
-    )
+    # Internal seed helpers may create an additional private fixture library
+    # for a personal owner; only the canonical personal library uses the
+    # one-per-owner ``personal`` kind/index.
+    if kind == "personal" and owner_principal_id and find_personal_library(owner_principal_id):
+        kind = "custom"
+    # Bootstrap/test seeding without an explicit organization is an internal
+    # primitive, not a user-initiated library admission path.
+    if org_id is not None:
+        assert_library_creation_allowed(
+            library_id=library_id,
+            kind=kind,
+            org_id=org,
+            owner_principal_id=owner_principal_id,
+        )
     with connect() as conn:
         _execute(
             conn,
@@ -2922,14 +3149,27 @@ def ensure_library(
     """Create or update library metadata (idempotent bootstrap helper)."""
     existing = get_library(library_id)
     if existing is None:
-        return create_library(
-            library_id,
-            name=name,
-            visibility=visibility,
-            org_id=org_id,
-            kind=kind,
-            owner_principal_id=owner_principal_id,
-        )
+        # Bootstrap/test seeding must be idempotent and must not consume a
+        # user-facing library-creation admission slot.
+        org = org_id or settings.default_org_id
+        insert_kind = kind
+        if kind == "personal" and owner_principal_id and find_personal_library(owner_principal_id):
+            insert_kind = "custom"
+        with connect() as conn:
+            _execute(
+                conn,
+                """
+                INSERT INTO libraries (
+                  id, org_id, name, visibility, kind, owner_principal_id,
+                  deletion_protection, retention_days
+                ) VALUES (?, ?, ?, ?, ?, ?, 0, 30)
+                """,
+                (library_id, org, name, visibility, insert_kind, owner_principal_id),
+            )
+        _sync_legacy_library(library_id, org_id=org, name=name, visibility=visibility)
+        lib = get_library(library_id)
+        assert lib is not None
+        return lib
     org = org_id or existing.get("org_id") or settings.default_org_id
     with connect() as conn:
         _execute(
@@ -3018,7 +3258,8 @@ def get_api_key_by_hash(key_hash: str) -> dict[str, Any] | None:
         row = _fetchone(
             conn,
             """
-            SELECT key_id, principal_id, label, created_at, revoked_at, expires_at
+            SELECT key_id, principal_id, label, created_at, revoked_at, expires_at,
+                   billing_account_id
             FROM api_keys WHERE key_hash = ?
             """,
             (key_hash,),
@@ -3231,6 +3472,7 @@ def insert_api_key(
     expires_at: str | None = None,
     key_prefix: str | None = None,
     key_ciphertext: str | None = None,
+    billing_account_id: str | None = None,
     grants: list[dict[str, str]] | None = None,
 ) -> dict[str, Any]:
     """Create an API key with grants. Primarily used by tests and key issuance."""
@@ -3241,10 +3483,10 @@ def insert_api_key(
         _execute(
             conn,
             """
-            INSERT INTO api_keys (key_id, key_hash, principal_id, label, created_at, created_by, expires_at, key_prefix, key_ciphertext)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO api_keys (key_id, key_hash, principal_id, label, created_at, created_by, expires_at, key_prefix, key_ciphertext, billing_account_id)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
-            (key_id, key_hash, principal_id, label, now, created_by or principal_id, expires_at, key_prefix, key_ciphertext),
+            (key_id, key_hash, principal_id, label, now, created_by or principal_id, expires_at, key_prefix, key_ciphertext, billing_account_id),
         )
         for grant in grants or []:
             _execute(

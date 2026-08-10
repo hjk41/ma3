@@ -39,6 +39,7 @@ class KeyGrantBody(BaseModel):
 class CreateKeyBody(BaseModel):
     label: str = Field(default="agent-key", max_length=120)
     grants: list[KeyGrantBody] | None = None
+    billing_org_id: str | None = None
 
 
 class UpdateKeyBody(BaseModel):
@@ -148,6 +149,7 @@ def _public_key_payload(key: dict[str, Any]) -> dict[str, Any]:
         "last_used_at": key.get("last_used_at"),
         "expires_at": key.get("expires_at"),
         "plaintext_key": key.get("plaintext_key"),
+        "billing_account_id": key.get("billing_account_id"),
     }
 
 
@@ -506,11 +508,37 @@ def api_create_key(
 ) -> JSONResponse:
     actor = _require_keys_actor(request, x_api_key=x_api_key, authorization=authorization)
     assert_mutating_auth(request, actor)
+    if not body.billing_org_id:
+        team_memberships = [
+            org for org in db.list_orgs_for_principal(actor.principal_id)
+            if org.get("kind") == "team" and org.get("seat_status") == "active"
+        ]
+        # Legacy personal-only callers retain the P0 default; a caller with a
+        # team billing choice must select its billing context explicitly.
+        if team_memberships:
+            raise HTTPException(status_code=400, detail={"error": "billing_context_required"})
+        billing_org_id = None
+    else:
+        billing_org_id = body.billing_org_id
+    if billing_org_id:
+        org = db.get_organization(billing_org_id)
+        member = db.get_org_member(billing_org_id, actor.principal_id) if org else None
+        if not org or not member or member.get("seat_status") != "active":
+            raise HTTPException(status_code=403, detail={"error": "billing_context_forbidden"})
+        from app.services.billing_service import get_billing_account_for_org
+
+        account = get_billing_account_for_org(billing_org_id)
+        if not account:
+            raise HTTPException(status_code=400, detail={"error": "billing_context_invalid"})
+        selected_ba_id = str(account["id"])
+    else:
+        selected_ba_id = None
     created = create_personal_dev_key(
         actor.principal_id,
         actor.display_name,
         label=body.label,
         grants=[g.model_dump() for g in body.grants] if body.grants else None,
+        billing_account_id=selected_ba_id,
     )
     return JSONResponse(
         {
@@ -520,6 +548,7 @@ def api_create_key(
             "plaintext_key": created["plaintext_key"],
             "grants": created["grants"],
             "personal_library": created["personal_library"],
+            "billing_account_id": created["billing_account_id"],
         }
     )
 

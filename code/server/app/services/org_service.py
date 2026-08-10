@@ -155,7 +155,13 @@ def add_org_member(
     normalized_alias = normalize_org_alias(alias) if alias is not None else None
     if normalized_alias:
         assert_org_alias_available(org_id, normalized_alias, exclude_principal_id=target_id)
-    return db.add_org_member(
+    from app.services.billing_service import admit_org_member, ensure_org_billing_account
+
+    org = db.get_organization(org_id)
+    if org and org.get("kind") == "team" and not str(org.get("billing_account_id") or "").startswith("ba_"):
+        ensure_org_billing_account(org_id, plan_code="team_stub")
+
+    return admit_org_member(
         org_id=org_id,
         principal_id=target_id,
         role=role,
@@ -236,13 +242,10 @@ def create_team_org(
     """Create a team org for an eligible owner (Phase O5)."""
     summary = assert_team_org_creation_allowed(owner_principal_id, is_product_admin=is_product_admin)
     org_name = normalize_org_name(name)
-    plan_code = str(summary["plan_code"])
-    billing_account_id = f"plan:{plan_code}"
     return _create_team_org_record(
         name=org_name,
         owner_principal_id=owner_principal_id,
-        plan_code=plan_code,
-        billing_account_id=billing_account_id,
+        plan_code="team_stub",
     )
 
 
@@ -262,7 +265,10 @@ def _create_team_org_record(
         billing_account_id=billing_account_id or f"plan:{plan_code}",
     )
     db.add_org_member(org_id=org_id, principal_id=owner_principal_id, role="admin")
-    return org
+    from app.services.billing_service import ensure_org_billing_account
+
+    account = ensure_org_billing_account(org_id, plan_code="team_stub")
+    return {**org, "billing_account_id": account["id"]}
 
 
 def org_plan_label(org: dict[str, Any], *, locale: str) -> str:
@@ -277,6 +283,14 @@ def org_plan_label(org: dict[str, Any], *, locale: str) -> str:
             return "Team" if locale == "en-US" else "Team"
         return code
     if billing:
+        try:
+            from app.services.billing_service import get_billing_account
+
+            account = get_billing_account(billing)
+            if account:
+                return org_plan_label({**org, "billing_account_id": f"plan:{account['plan_code']}"}, locale=locale)
+        except Exception:
+            pass
         return billing
     return "—"
 

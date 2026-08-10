@@ -67,6 +67,30 @@ def observatory_billing(request: Request) -> Response:
             ("带 plan 标签", overview["orgs_with_plan_label"]),
         ]
     )
+    linked = billing_ops_service.list_stripe_linked_accounts(limit=200)
+    reconcile_rows = [
+        [
+            f"<code>{esc(row.get('id'))}</code>",
+            esc(row.get("plan_code") or ""),
+            esc(row.get("status") or ""),
+            f"<code>{esc(row.get('provider_subscription_id') or '')}</code>",
+            f"<code>{esc(row.get('provider_customer_id') or '—')}</code>",
+        ]
+        for row in linked
+    ]
+    reconcile_block = ""
+    if settings.billing_provider == "stripe" or linked:
+        reconcile_block = f"""
+  <div class="card" style="margin-top:16px;">
+    <div class="card-header"><h2>Stripe 对账（subscription ↔ BA）</h2></div>
+    <div class="card-body" style="padding:0;">
+      {render_table(
+          ["billing_account_id", "plan", "status", "provider_subscription_id", "provider_customer_id"],
+          reconcile_rows or [["—", "—", "—", "（无已链接订阅）", "—"]],
+      )}
+    </div>
+  </div>
+"""
     body = f"""
   {_ops_nav(base, "billing")}
   {_flash(request)}
@@ -78,10 +102,11 @@ def observatory_billing(request: Request) -> Response:
       {render_table(["Principal ID", "来源"], env_rows)}
     </div>
   </div>
+  {reconcile_block}
   <p class="card-muted" style="margin-top:12px;">
     要持久化付费身份，请到
     <a href="{esc(base)}/ui/observatory/users/">用户 / 付费</a>
-    将用户设为 Pro（写入 principals.plan_code）。
+    将用户设为 Pro（写入个人组织的 <code>billing_accounts</code>，并投影到 <code>principals.plan_code</code>）。
   </p>
 """
     return HTMLResponse(
@@ -89,7 +114,7 @@ def observatory_billing(request: Request) -> Response:
             title="付费概况",
             base=base,
             active_nav="observatory",
-            subtitle="运营查看：付费用户、组织与 plan 标签（无 Stripe）。",
+            subtitle="运营查看：付费用户、组织与 billing accounts（无 Stripe）。",
             user_line=user_line,
             show_logout=settings.portal_auth_enabled,
             is_admin=bool(user and user.is_admin) or not settings.portal_auth_enabled,
@@ -120,25 +145,27 @@ def observatory_users(
         paid_badge = badge("付费", "success") if row.get("effective_paid") else badge("免费", "muted")
         plan = str(row.get("plan_code") or "free")
         if row.get("effective_paid"):
-            action = f"""
-            <form method="post" action="{esc(base)}/ui/observatory/users/plan" style="display:inline;"
-                  onsubmit="return confirm('确认取消付费（设为 free）？环境白名单仍会覆盖。');">
-              <input type="hidden" name="principal_id" value="{esc(pid)}" />
-              <input type="hidden" name="plan_code" value="free" />
-              <input type="hidden" name="q" value="{esc(q)}" />
-              <input type="hidden" name="paid_only" value="{esc(paid_only)}" />
-              <button type="submit" class="btn">取消付费</button>
-            </form>"""
+            action = (
+                f'<form method="post" action="{esc(base)}/ui/observatory/users/plan" style="display:inline;" '
+                f'onsubmit="return confirm(\'确认取消付费（设为 free）？环境白名单仍会覆盖。\');">'
+                f'<input type="hidden" name="principal_id" value="{esc(pid)}" />'
+                f'<input type="hidden" name="plan_code" value="free" />'
+                f'<input type="hidden" name="q" value="{esc(q)}" />'
+                f'<input type="hidden" name="paid_only" value="{esc(paid_only)}" />'
+                f'<button type="submit" class="btn">取消付费</button>'
+                f"</form>"
+            )
         else:
-            action = f"""
-            <form method="post" action="{esc(base)}/ui/observatory/users/plan" style="display:inline;"
-                  onsubmit="return confirm('确认设为付费用户（Pro）？');">
-              <input type="hidden" name="principal_id" value="{esc(pid)}" />
-              <input type="hidden" name="plan_code" value="pro" />
-              <input type="hidden" name="q" value="{esc(q)}" />
-              <input type="hidden" name="paid_only" value="{esc(paid_only)}" />
-              <button type="submit" class="btn primary">设为付费</button>
-            </form>"""
+            action = (
+                f'<form method="post" action="{esc(base)}/ui/observatory/users/plan" style="display:inline;" '
+                f'onsubmit="return confirm(\'确认设为付费用户（Pro）？\');">'
+                f'<input type="hidden" name="principal_id" value="{esc(pid)}" />'
+                f'<input type="hidden" name="plan_code" value="pro" />'
+                f'<input type="hidden" name="q" value="{esc(q)}" />'
+                f'<input type="hidden" name="paid_only" value="{esc(paid_only)}" />'
+                f'<button type="submit" class="btn primary">设为付费</button>'
+                f"</form>"
+            )
         table_rows.append(
             [
                 f"<code>{esc(pid)}</code>",
@@ -162,7 +189,7 @@ def observatory_users(
         <label style="margin-left:8px;"><input type="checkbox" name="paid_only" value="1"{checked} /> 仅付费</label>
         <button type="submit" class="btn">搜索</button>
       </form>
-      <div class="alert info">将用户设为付费会写入 <code>principals.plan_code=pro</code>，并同步个人组织的 <code>billing_account_id=plan:pro</code>。无需改 env / 重启。</div>
+      <div class="alert info">将用户设为付费会更新个人组织的 <code>billing_accounts.plan_code</code>（并投影到 <code>principals.plan_code</code>）。无需改 env / 重启。管理 API：<code>PATCH /api/admin/billing-accounts/&lt;ba_id&gt;</code>。</div>
       {render_table(
           ["Principal ID", "显示名", "生效", "DB plan", "来源", "创建时间", "操作"],
           table_rows,
@@ -255,7 +282,7 @@ def observatory_orgs(request: Request) -> Response:
   <div class="card">
     <div class="card-header"><h2>组织与付费标签（{esc(len(orgs))}）</h2></div>
     <div class="card-body">
-      <div class="alert info">组织上的 <code>billing_account_id</code> 目前是 plan 哨兵标签（如 <code>plan:pro</code>）。能否创建 Team 等能力仍主要看 owner 是否付费用户。</div>
+      <div class="alert info">组织 <code>billing_account_id</code> 现为真实 <code>ba_*</code> 账户（P0）。列表中显示 BA id 与 <code>plan_code</code>（如 <code>team_stub</code> / <code>team</code> / <code>pro</code>）。</div>
       {render_table(
           ["Org ID", "名称", "类型", "Owner", "Owner 状态", "billing_account_id", "成员数"],
           table_rows,

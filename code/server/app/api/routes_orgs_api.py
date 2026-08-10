@@ -82,6 +82,7 @@ def _public_member(row: dict) -> dict:
 def _public_library(row: dict) -> dict:
     lid = row.get("library_id") or row.get("id")
     return {
+        "id": lid,
         "library_id": lid,
         "name": row.get("name"),
         "visibility": row.get("visibility"),

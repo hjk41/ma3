@@ -30,7 +30,7 @@ def personal_org_id(principal_id: str) -> str:
 
 
 def is_paid_principal(principal_id: str) -> bool:
-    """True if principal is Pro via env whitelist or DB plan_code=pro."""
+    """True if principal is Pro via env whitelist or billing projection."""
     if principal_id in settings.paid_principal_ids:
         return True
     try:
@@ -43,14 +43,21 @@ def is_paid_principal(principal_id: str) -> bool:
 def set_user_paid(*, principal_id: str, paid: bool) -> dict[str, Any]:
     """Ops helper: persist free/pro on the user principal (Observatory)."""
     code = "pro" if paid else "free"
-    row = db.set_principal_plan_code(principal_id, code)
-    if row is None:
+    if not db.get_user_principal(principal_id):
         raise HTTPException(status_code=404, detail=f"principal not found: {principal_id}")
-    # Keep personal org billing label in sync when present.
     org_id = personal_org_id(principal_id)
     org = db.get_organization(org_id)
     if org:
+        from app.services import billing_service
+
+        account = billing_service.ensure_org_billing_account(org_id, plan_code=code)
+        billing_service.set_billing_account_plan(account["id"], plan_code=code)
+        # Retain the legacy projection for older Observatory callers. The BA
+        # remains authoritative and the bootstrap/backfill converts this label
+        # back to its real id on the next initialization pass.
         db.set_organization_billing_account_id(org_id, f"plan:{code}")
+    else:
+        db.set_principal_plan_code(principal_id, code)
     return {
         "principal_id": principal_id,
         "plan_code": code,
@@ -73,6 +80,10 @@ def ensure_personal_org(principal_id: str, display_name: str) -> dict[str, Any]:
             owner_principal_id=principal_id,
         )
         db.add_org_member(org_id=org_id, principal_id=principal_id, role="admin")
+    from app.services import billing_service
+    billing_service.ensure_org_billing_account(
+        org_id, plan_code="pro" if is_paid_principal(principal_id) else "free"
+    )
     lib = ensure_personal_library(principal_id, display_name, org_id=org_id)
     return {
         "org_id": org_id,
@@ -206,6 +217,7 @@ def create_personal_dev_key(
     *,
     label: str,
     grants: list[dict[str, str]] | None = None,
+    billing_account_id: str | None = None,
 ) -> dict[str, Any]:
     """Create a personal-dev API key with validated per-library grants."""
     lib = ensure_personal_library(principal_id, display_name)
@@ -220,6 +232,13 @@ def create_personal_dev_key(
     key_id = f"key_{secrets.token_hex(6)}"
     key_prefix = plaintext[:12]
     normalized_label = normalize_key_label(label)
+    from app.services.billing_service import ensure_org_billing_account
+
+    account = ensure_org_billing_account(
+        personal_org_id(principal_id),
+        plan_code="pro" if is_paid_principal(principal_id) else "free",
+    )
+    resolved_billing_account_id = billing_account_id or str(account["id"])
     db.insert_api_key(
         key_id=key_id,
         key_hash=api_key_service.hash_key(plaintext),
@@ -228,6 +247,7 @@ def create_personal_dev_key(
         principal_id=principal_id,
         label=normalized_label,
         created_by=principal_id,
+        billing_account_id=resolved_billing_account_id,
         grants=resolved_grants,
     )
     logger.info(
@@ -244,4 +264,5 @@ def create_personal_dev_key(
         "label": normalized_label,
         "personal_library": lib,
         "grants": resolved_grants,
+        "billing_account_id": resolved_billing_account_id,
     }
