@@ -6,6 +6,9 @@ httpx>=0.27,<1.0
 pytest>=8.0,<9.0
 psycopg[binary]>=3.2,<4.0
 numpy>=1.24.0,<3.0
+# Pulls torch; prefer CPU wheels first (see scripts/pip_install_requirements.sh
+# and deploy/self-host/Dockerfile) so default CUDA/nvidia packages do not
+# exhaust CI disk.
 sentence-transformers>=2.7.0,<4.0
 pgvector>=0.3.0,<1.0
 cryptography>=42.0,<45.0

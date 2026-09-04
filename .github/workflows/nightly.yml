@@ -23,9 +23,7 @@ jobs:
             code/server/requirements.txt
             code/server/requirements-e2e.txt
       - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install -r requirements.txt -r requirements-e2e.txt
+        run: bash scripts/pip_install_requirements.sh -r requirements-e2e.txt
       - name: Cache Playwright browsers
         uses: actions/cache@v4
         with:
@@ -63,7 +61,6 @@ jobs:
             echo "SKIPPED: Authing E2E secrets not configured (need AUTHING_TEST_USER, AUTHING_TEST_PASS secrets and MA3_E2E_BASE_URL variable)." | tee -a "$GITHUB_STEP_SUMMARY"
             exit 0
           fi
-          python -m pip install --upgrade pip
-          pip install -r requirements.txt -r requirements-e2e.txt
+          bash scripts/pip_install_requirements.sh -r requirements-e2e.txt
           playwright install --with-deps chromium
           python scripts/e2e_authing_ui.py
