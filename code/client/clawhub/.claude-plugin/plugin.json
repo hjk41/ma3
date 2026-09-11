@@ -1,7 +1,7 @@
 {
   "name": "ma3",
-  "version": "1.6.0",
-  "description": "Connect the agent to ma3 institutional memory via remote MCP at https://ma3.io/mcp.",
+  "version": "1.6.1",
+  "description": "Opt-in ma3 institutional memory via https://ma3.io/mcp; requires explicit user consent before remote recall/write.",
   "author": {
     "name": "ma3",
     "url": "https://ma3.io"

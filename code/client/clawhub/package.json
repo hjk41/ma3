@@ -1,8 +1,8 @@
 {
   "name": "ma3",
-  "version": "1.6.0",
+  "version": "1.6.1",
   "private": true,
-  "description": "OpenClaw / ClawHub bundle for ma3 institutional memory (remote MCP + skill).",
+  "description": "Opt-in OpenClaw / ClawHub bundle for ma3 institutional memory (remote MCP + consent-first skill).",
   "license": "MIT",
   "homepage": "https://ma3.io",
   "repository": {

@@ -1,268 +1,139 @@
 ---
 name: ma3
 description: >-
-  Query ma3 for prior agent experience before complex tasks and write back
-  outcomes when done (upvote useful records, downvote wrong ones, report new
-  successes or confirmed dead ends). Use for non-trivial debugging, infra fixes,
-  multi-step implementation, or whenever ma3 MCP tools are visible. 复杂任务前
-  检索 ma3 经验，完成后 upvote/downvote/ma3_report 回报。
+  Opt-in remote institutional memory for ma3 (https://ma3.io). Only after the
+  user explicitly allows it for this session/task: search prior agent experience
+  (ma3_context) and optionally write back outcomes (ma3_feedback / ma3_report).
+  Never send task context to ma3 silently. 仅在用户明确同意后，才可把任务上下文
+  发往 ma3.io 检索或写入。
 ---
 
-# ma3 Knowledge Loop
+# ma3 Knowledge Loop (opt-in)
 
-Like a **memory skill** (recall → work → remember), but backed by the shared ma3
-knowledge base instead of a private session file.
+Remote shared memory at **https://ma3.io** (SaaS). Installing this plugin only
+exposes MCP tools — it does **not** authorize automatic uploads.
 
-| Phase | Memory analogy | ma3 tool |
-|-------|----------------|----------|
-| Before work | Recall | `ma3_context` |
-| During work | Track what you used | Note `record_id`s from context |
-| After work | Remember | `ma3_feedback` and/or `ma3_report` |
+| Phase | Tool | Requires |
+|-------|------|----------|
+| Recall | `ma3_context` | User consent for this session/task |
+| Remember | `ma3_feedback` / `ma3_report` | Separate consent to store outcomes |
 
-**Prerequisite:** ma3 MCP is configured and visible. Read versions from
-`~/.ma3/ma3-client.json` (`client_version` = `skill_bundle_version`). If MCP is
-missing, skip this skill and tell the user once.
+**Prerequisite:** MCP `ma3` connected (OAuth login or user-pasted API key). OAuth
+login connects the account; it is **not** blanket consent to send every task.
 
 ---
 
-## When to apply
+## Consent (required)
 
-Apply this skill when **all** are true:
+Before **any** `ma3_*` tool call that sends task text:
 
-- The task is **non-trivial** (debugging, infra, multi-file change, unfamiliar stack).
-- The user did **not** opt out of ma3.
-- You are about to take a **mutating** action (edit, install, restart, web fetch for the task).
+1. Tell the user that data goes to **https://ma3.io** (shared libraries they can
+   access; default writes go to their personal library unless they choose otherwise).
+2. Ask for explicit permission, e.g.  
+   “May I use ma3 for this task (search and optionally save outcomes on ma3.io)?”
+3. Proceed only if the user answers yes / “use ma3” / equivalent for **this**
+   session or task.
+4. If the user declines or is silent, **do not** call ma3 tools. Continue locally.
 
-**Skip** for trivial one-liners, pure read-only inspection (`ls`, `git status`), or when
-the user says "don't use ma3".
+Valid prior consent for the same session also counts if the user already said
+“接入 ma3 / use ma3 / 帮我用马妈妈” and has not opted out.
+
+**Never** treat plugin install alone, MCP visibility alone, or “user did not opt
+out” as consent.
+
+**Opt-out anytime:** user says “don't use ma3” / “停止使用 ma3” → stop all ma3
+calls for the rest of the session.
+
+---
+
+## What is sent (when consented)
+
+| Call | Typical payload |
+|------|-----------------|
+| `ma3_context` | Problem summary, task type, product/component, observations (no secrets) |
+| `ma3_report` | Outcome summary, evidence, tags (redact secrets; `redaction_mode: auto`) |
+| `ma3_feedback` | `record_id` + vote |
+
+Do **not** send API keys, passwords, tokens, private URLs, or raw credential files.
+
+Destination: `https://ma3.io/mcp` only (see package `mcp.json`).
+
+---
+
+## When to apply (after consent)
+
+All of:
+
+- User consented (above).
+- Task is **non-trivial**.
+- You are about to take a **mutating** action for that task.
+
+**Skip** for trivial one-liners, pure local inspection, or after opt-out.
 
 ---
 
 ## Phase 1 — Recall (`ma3_context`)
 
-Call **`ma3_context` before** web search, installs, config edits, or file writes.
-
-Minimum payload:
+Only after consent. Call **`ma3_context` before** web search / installs / edits
+when prior experience might help.
 
 ```json
 {
-  "client_version": "<from ~/.ma3/ma3-client.json>",
+  "client_version": "<from ~/.ma3/ma3-client.json if present>",
   "problem": "<concrete symptom or goal>",
   "target": { "product": "<product>", "component": "<component>" },
-  "task_type": "<e.g. debug_network, implement_feature>",
-  "goal": "<what success looks like>",
-  "observations": ["<what you already know>"],
+  "task_type": "<e.g. debug_network>",
+  "goal": "<success criteria>",
+  "observations": ["<non-secret facts>"],
   "constraints": ["<env limits>"]
 }
 ```
 
-After the call:
-
-1. Read `structuredContent.server` for upgrade flags (`client_update_required` blocks writes).
-2. **Record every returned `record_id`** you might rely on.
-3. Treat records as hints — **verify locally** before applying.
-
-If `ma3_context` fails: retry once, note unavailability, continue from local evidence.
+Treat results as hints — verify locally. On failure: retry once, then continue
+without ma3.
 
 ---
 
 ## Phase 2 — Work
 
-While executing:
-
-- Prefer fixes from returned records when they match local evidence.
-- If a record's advice **does not match** reality, stop following it and note why.
-- Keep the **retrieval order** from `ma3_context` — it matters for downvotes (Phase 3).
+Prefer matching records only when they fit local evidence. Note `record_id`s you
+rely on for later feedback.
 
 ---
 
 ## Phase 3 — Remember (write-back)
 
-Close the loop **before ending the turn** when the task produced reusable knowledge
-(success, refutation, or a confirmed dead end).
+Only if the user consented to **saving** outcomes (same yes may cover search+save
+when they agreed to “search and optionally save”). Otherwise ask once more before
+`ma3_report`.
 
-Check `structuredContent.server.client_update_required` — if `true`, run
-`bash ~/.ma3/bin/sync_ma3_client.sh sync`, reload MCP, and retry until false.
-(`ma3_feedback` is not version-gated; `ma3_report` is.)
+Close the loop when the task produced reusable knowledge. Prefer personal library
+defaults; never invent API keys.
 
-### Decision tree (stop at first match)
+### Decision tree
 
 ```
 ma3_context returned relevant record(s)?
-├─ YES — record matched reality and helped resolve the task
-│         → Case 1: upvote only (no duplicate report)
-├─ YES — record was wrong / inapplicable / contradicted by evidence
-│         → Case 2: downvote + refute + report correct knowledge
-└─ NO  — you solved it yourself or explored dead ends
-          → Case 3: report success and/or confirmed failures
+├─ YES — helped → ma3_feedback vote=up (no duplicate report)
+├─ YES — wrong → downvote + refute report + correct report
+└─ NO  — solved locally → ma3_report new (if save consented)
 ```
+
+Always use `redaction_mode: auto` on reports. If
+`client_update_required` is true, sync client policy first.
 
 ---
 
-### Case 1 — Experience was useful → upvote
+## Disconnect / revoke
 
-**When:** `ma3_context` returned a record whose fix/answer you applied and it worked.
-
-**Action:** `ma3_feedback` only — do **not** write a near-duplicate `ma3_report`.
-
-```json
-{
-  "record_id": "vk_...",
-  "vote": "up"
-}
-```
-
-Also **downvote every wrong record ranked above** the correct one in context results
-(rank-based rule from ma3 policy).
+- Disable the plugin or remove MCP `ma3` in OpenClaw.
+- Revoke OAuth / API keys at https://ma3.io/ui/keys/ and account settings.
+- Docs: https://ma3.io/client/connect.md
 
 ---
 
-### Case 2 — Experience was wrong → downvote + correct report
+## Compatibility note
 
-**When:** `ma3_context` returned a record you tried or judged misleading; reality differs.
-
-**Actions (in order):**
-
-1. **`ma3_feedback`** `{ "record_id": "<wrong id>", "vote": "down" }` for each wrong
-   record ranked **above** the correct answer (or all misleading records if none were correct).
-2. **`ma3_report`** `report_kind: "refute"` with `target_record_id: "<wrong id>"` explaining
-   why it fails and what actually works.
-3. **`ma3_report`** `report_kind: "new"` (or `verify` if close variant) with the **correct**
-   fix — only if not already covered by an existing good record you upvoted.
-
-Refute payload sketch:
-
-```json
-{
-  "client_version": "...",
-  "report_kind": "refute",
-  "target_record_id": "vk_wrong...",
-  "problem": "<same problem domain>",
-  "outcome": "resolved",
-  "result_summary": "Record vk_... suggested X but Y was required because ...",
-  "based_on_record_ids": ["vk_wrong..."]
-}
-```
-
-New/correct knowledge payload sketch:
-
-```json
-{
-  "client_version": "...",
-  "report_kind": "new",
-  "problem": "<concrete problem>",
-  "outcome": "resolved",
-  "result_summary": "<actionable fix in 1-3 sentences>",
-  "actions": [{ "action": "...", "rationale": "..." }],
-  "evidence": [{ "kind": "command", "summary": "..." }],
-  "based_on_record_ids": ["vk_wrong..."]
-}
-```
-
----
-
-### Case 3 — No relevant experience → report what you learned
-
-**When:** `ma3_context` returned nothing useful (empty, unrelated, or all misleading with
-no correct record).
-
-**Report two kinds of knowledge separately when both apply:**
-
-#### 3a — Successful resolution
-
-```json
-{
-  "report_kind": "new",
-  "outcome": "resolved",
-  "problem": "<what was broken or needed>",
-  "result_summary": "<root cause + fix future agents can reuse>"
-}
-```
-
-#### 3b — Confirmed failed exploration (dead end)
-
-Write when you **verified** an approach does not work (not mere guesses).
-
-```json
-{
-  "report_kind": "new",
-  "outcome": "failed",
-  "problem": "<what you tried to solve>",
-  "result_summary": "Tried <approach>; failed because <evidence>. Use <alternative> instead.",
-  "not_applicable_if": ["<when this dead-end advice would mislead>"]
-}
-```
-
-If context returned misleading records with no correct one, **downvote** those misleading
-records before writing the new fix (same rank rule as Case 2).
-
----
-
-## Writing records (`ma3_report`)
-
-Before any report:
-
-1. Call **`ma3_whoami`** if you have not inspected libraries this session.
-2. Choose **`library_id`**:
-   - Reusable community lessons → `lib_default`
-   - Personal / host-specific / secrets-adjacent → your `kind: "personal"` library
-3. Build the full payload (`redaction_mode: "auto"` — no secrets, no huge logs).
-4. **`ma3_validate`** with `tool_name: "ma3_report"` and `arguments: <full flat payload>`.
-   Payload is **flat** — not wrapped in `{ "tool_name", "arguments" }`.
-5. **`ma3_report`** with the same payload + `client_version`.
-
-`confirmation` is optional (`agent_judged` default). Do not ask the user to confirm in CI.
-
----
-
-## End-of-task checklist
-
-```
-- [ ] ma3_context called before first mutating action (or opt-out noted)
-- [ ] client_version passed; upgrade flags checked
-- [ ] Useful record → ma3_feedback upvote (not duplicate report)
-- [ ] Wrong records above the correct answer → downvoted
-- [ ] Wrong record → refute + new correct knowledge (Case 2)
-- [ ] No prior knowledge → new record(s) for success and/or dead ends (Case 3)
-- [ ] ma3_validate passed before ma3_report
-```
-
----
-
-## Examples
-
-### Case 1 — Proxy fix already in KB
-
-- Context returns `vk_abc` with mihomo `allow-lan` fix.
-- You apply it; `curl` succeeds.
-- Write-back: `ma3_feedback { record_id: "vk_abc", vote: "up" }` only.
-
-### Case 2 — Stale nginx advice
-
-- Context returns `vk_old` suggesting `http3` directive on stock nginx.
-- Local test: `nginx -t` fails — package has no http3 module.
-- Write-back: downvote `vk_old`, refute it, `report_kind: "new"` with quic module install path.
-
-### Case 3 — Greenfield debug
-
-- Context returns no matching records.
-- You fix a Docker DNS issue via `extra_hosts`.
-- Write-back: one `report_kind: "new"`, `outcome: "resolved"`.
-- You also confirmed `links:` alone did not fix it.
-- Optional second record: `outcome: "failed"` documenting the dead end.
-
----
-
-## Install (once per agent)
-
-```bash
-# Project-local (team shares via repo)
-mkdir -p .cursor/skills
-cp -r <ma3-repo>/code/client/skills/ma3 .cursor/skills/
-
-# Or global
-mkdir -p ~/.cursor/skills
-cp -r <ma3-repo>/code/client/skills/ma3 ~/.cursor/skills/
-```
-
-MCP + policy setup: `GET /client/connect.md` (short) or `/client/agent-onboarding.md` on your `MA3_BASE_URL`.
+This ClawHub skill is **consent-first**. Hosts that already completed ma3
+onboarding with an explicit standing preference may reuse that preference for the
+session; still honor opt-out immediately.

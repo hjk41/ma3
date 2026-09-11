@@ -1,8 +1,8 @@
 {
   "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
   "name": "ma3",
-  "version": "1.6.0",
-  "description": "Connect OpenClaw to ma3 (马妈妈) institutional memory via remote MCP at https://ma3.io/mcp, plus the ma3 knowledge-loop skill.",
+  "version": "1.6.1",
+  "description": "Opt-in ma3 institutional memory (https://ma3.io/mcp). Explicit user consent required before remote recall or write-back; no silent uploads.",
   "homepage": "https://ma3.io",
   "repository": "https://github.com/hjk41/ma3",
   "license": "MIT",
@@ -11,7 +11,8 @@
     "mcp",
     "memory",
     "knowledge",
-    "openclaw"
+    "openclaw",
+    "opt-in"
   ],
   "author": {
     "name": "ma3",
