@@ -64,7 +64,7 @@ clawhub package publish ./code/client/clawhub \
   --name ma3 \
   --display-name "ma3 (马妈妈) Institutional Memory" \
   --version 1.6.2 \
-  --topics "ma3,mamama,mcp,memory,knowledge-base,agent-memory,institutional-memory,openclaw,opt-in" \
+  --topics "ma3,mcp,agent-memory,knowledge-base,mamama" \
   --source-repo hjk41/ma3 \
   --source-path code/client/clawhub \
   --changelog "Richer catalog description and README for discovery"
