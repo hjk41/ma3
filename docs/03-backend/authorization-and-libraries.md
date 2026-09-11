@@ -11,11 +11,12 @@
 
 | Goal | Description |
 |------|------|
-| **Mandatory keys** | All agent access to any library (including public libraries) requires a valid API key; **anonymous MCP reads are removed** |
+| **Mandatory credentials** | All agent access to any library (including public libraries) requires a valid **API key** or **ma3 MCP OAuth token**; **anonymous MCP reads are removed** |
 | **Contribution first** | No grant on a library = no access; having a grant defaults to **read + write** |
 | **Paid read-only** | Only paid plans can create **read-only** grants (see [ADR-012](../02-architecture/decisions/012-billing-and-quotas.md), [09](billing-and-quotas.md)) |
 | **Org isolation** | Orgs own libraries; membership is many-to-many; visibility controls entitlement |
 | **Key issuance** | Users self-issue keys via the user portal (Authing session); MCP key-issuance tools deferred to v1.1 |
+| **Interactive OAuth** | Cursor-style clients use MCP Authorization Spec OAuth (ADR-016); permissions = Layer-1 entitlements |
 
 ---
 
@@ -181,20 +182,24 @@ A maintainer grant requires: writer capability + owner has maintain entitlement 
 
 ```mermaid
 flowchart TD
-  Req[MCP_request] --> HasKey{X-API-Key?}
-  HasKey -->|no| Deny401[401_-32001]
-  HasKey -->|yes| DevKey{bootstrap_dev_key?}
+  Req[MCP_request] --> HasCred{X-API-Key_or_Bearer?}
+  HasCred -->|no| Deny401[401_-32001_WWW-Authenticate]
+  HasCred -->|yes| DevKey{bootstrap_dev_key?}
   DevKey -->|yes| AdminBypass[all_libraries_admin]
   DevKey -->|no| HashLookup[sha256_lookup_api_keys]
-  HashLookup -->|miss_or_revoked_or_deleted| Deny401
   HashLookup -->|hit| LoadGrants[load_api_key_grants]
+  HashLookup -->|miss| McpTok{ma3mcp_oauth_token?}
+  McpTok -->|yes| EntProj[project_Layer1_entitlements]
+  McpTok -->|no| Deny401
   LoadGrants --> CapSets[readable_writable_maintainer_sets]
+  EntProj --> CapSets
   CapSets --> ToolGate[per_tool_library_check]
 ```
 
 - **Bootstrap dev key**: `MA3_DEV_AUTH=1` combined with a matching `MA3_DEV_API_KEY` → admin bypass (LAN only)
-- **Bearer / session grants no MCP data access**: session is used only for UI and key management
-
+- **API keys**: Layer-2 `api_key_grants` (Agent/CI primary path)
+- **MCP OAuth tokens**: Layer-1 entitlement projection for the signed-in principal (ADR-016)
+- **Bare Authing Bearer / session cookie**: not MCP data credentials (session only for UI + OAuth authorize)
 ### 4.5 Write-path library selection
 
 `ma3_report`: `library_id` is optional; defaults to **the owner's personal library** (`default_owned_personal_library`); the response echoes back `library_selection_reason`. verify/refute follow the library of the `target_record_id`. See [10](writes-audit-and-deletion.md) §2 and [13](../05-agent/getting-started.md) §10 for details.

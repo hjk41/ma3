@@ -6,7 +6,12 @@ from fastapi import APIRouter, Header, HTTPException, Request, Response, status
 from fastapi.responses import JSONResponse
 from pydantic import ValidationError
 
-from app.core.security import extract_credential, resolve_mcp_auth
+from app.core.security import (
+    RawCredential,
+    extract_credential,
+    mcp_www_authenticate_header,
+    resolve_mcp_auth,
+)
 from app.models.mcp import McpJsonRpcRequest, McpToolValidationError
 from app.services.mcp_tool_service import call_mcp_tool, list_mcp_tools, mcp_initialize_result
 
@@ -98,7 +103,11 @@ def _http_exception_payload(exc: HTTPException) -> tuple[str, dict[str, Any]]:
     return str(detail), {"status_code": exc.status_code}
 
 
-def _response_status(response: dict[str, Any] | None) -> tuple[int, dict[str, str]]:
+def _response_status(
+    response: dict[str, Any] | None,
+    *,
+    request: Request | None = None,
+) -> tuple[int, dict[str, str]]:
     if not response or "error" not in response:
         return 200, {}
     data = response["error"].get("data") or {}
@@ -108,12 +117,20 @@ def _response_status(response: dict[str, Any] | None) -> tuple[int, dict[str, st
     if status_code == 429:
         headers["Retry-After"] = str(detail.get("retry_after") or "60")
         return status_code, headers
+    if status_code == 401:
+        headers["WWW-Authenticate"] = mcp_www_authenticate_header(request)
+        return 401, headers
     # MCP tool errors remain JSON-RPC result envelopes for client compatibility;
     # quota/rate-limit admission is the one P1 case requiring an HTTP 429.
     return 200, headers
 
 
-def _handle_rpc(req: McpJsonRpcRequest, raw_auth: str | None) -> dict[str, Any] | None:
+def _handle_rpc(
+    req: McpJsonRpcRequest,
+    raw_auth: RawCredential | None,
+    *,
+    request: Request | None = None,
+) -> dict[str, Any] | None:
     # JSON-RPC notifications intentionally receive no response.
     if req.id is None:
         return None
@@ -142,19 +159,21 @@ def _handle_rpc(req: McpJsonRpcRequest, raw_auth: str | None) -> dict[str, Any] 
                     "Invalid params: params.arguments must be a JSON object mapping field names to values",
                     {"detail": "params.arguments must be an object"},
                 )
-            auth = resolve_mcp_auth(raw_auth)
+            auth = resolve_mcp_auth(raw_auth, request=request)
             if auth.invalid_credentials:
                 return _jsonrpc_error(
                     req.id,
                     -32001,
-                    "Invalid credentials: the X-API-Key is unknown, revoked, or expired. Check your MCP server API key with the ma3 administrator.",
+                    "Invalid credentials: the X-API-Key or MCP OAuth token is unknown, revoked, or expired. "
+                    "Check your MCP server API key or complete OAuth login.",
                     {"status_code": 401},
                 )
             if auth.principal.kind == "anonymous" and name not in _ANONYMOUS_ALLOWED_TOOLS:
                 return _jsonrpc_error(
                     req.id,
                     -32001,
-                    "authentication required: set X-API-Key (from /ui/keys/ or self-host bootstrap) to use ma3 tools",
+                    "authentication required: set X-API-Key (from /ui/keys/ or self-host bootstrap) "
+                    "or complete MCP OAuth to use ma3 tools",
                     {"status_code": 401, "tool_name": name},
                 )
             result = call_mcp_tool(name, arguments, auth)
@@ -206,6 +225,8 @@ def mcp_info() -> dict[str, Any]:
         "transport": "streamable-http-jsonrpc",
         "methods": ["initialize", "tools/list", "tools/call", "ping"],
         "tools": [t.name for t in list_mcp_tools()],
+        "connect_url": "/client/connect.md",
+        "onboarding_url": "/client/agent-onboarding.md",
     }
 
 
@@ -234,7 +255,7 @@ async def mcp_post(
                     _jsonrpc_error(None, -32600, _summarize_validation_errors(None, exc.errors()).replace("Invalid params", "Invalid Request"), exc.errors())
                 )
                 continue
-            response = _handle_rpc(req, raw_auth)
+            response = _handle_rpc(req, raw_auth, request=request)
             if response is not None:
                 responses.append(response)
         if not responses:
@@ -248,8 +269,8 @@ async def mcp_post(
             _jsonrpc_error(None, -32600, _summarize_validation_errors(None, exc.errors()).replace("Invalid params", "Invalid Request"), exc.errors()),
             status_code=400,
         )
-    response = _handle_rpc(req, raw_auth)
+    response = _handle_rpc(req, raw_auth, request=request)
     if response is None:
         return Response(status_code=202)
-    status_code, headers = _response_status(response)
+    status_code, headers = _response_status(response, request=request)
     return JSONResponse(response, status_code=status_code, headers=headers)

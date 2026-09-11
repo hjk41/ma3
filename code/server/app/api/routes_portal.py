@@ -202,7 +202,9 @@ def _delete_owned_record(record_id: str, *, principal_id: str) -> None:
 
 
 def _base(request: Request) -> str:
-    return str(request.base_url).rstrip("/")
+    from app.core.public_url import resolve_public_base_url
+
+    return resolve_public_base_url(request)
 
 
 def _page_params(page: int, per_page: int = _DEFAULT_PER_PAGE) -> tuple[int, int]:
@@ -243,6 +245,70 @@ def _problem_summary(problem: str | None, *, width: int = 60) -> str:
     return text[: width - 1] + "…"
 
 
+def _paste_prompt_for_agent(base: str, *, locale: str) -> str:
+    """Human-facing block to paste into an agent chat (registered or not)."""
+    if locale.startswith("zh"):
+        return (
+            f"请帮我接入 {base} 的 ma3 MCP。\n"
+            f"1) 先 GET {base}/client/connect.md，按我的 runtime 执行。\n"
+            f"2) Base 已是 {base}：不要再问 URL，不要臆造 :8000；MCP 用 {base}/mcp。\n"
+            f"3) 不要编造 API key。除登录/OAuth/贴 key 外自行完成配置与验证。\n"
+            f"4) 若我还没注册，先让我打开 {base}/auth/login。\n"
+            f"5) Cursor/IDE/OpenCode → OAuth（mcp 只配 url）。CLI/CI → 我去 {base}/ui/keys/ 创建 key 后贴给你。"
+        )
+    return (
+        f"Please connect me to ma3 MCP at {base}.\n"
+        f"1) GET {base}/client/connect.md and follow it for my runtime.\n"
+        f"2) Base is already {base}: do not ask for a URL; do not invent :8000; MCP is {base}/mcp.\n"
+        f"3) Do not invent an API key. Finish config/verify yourself except login/OAuth/key paste.\n"
+        f"4) If I am not registered, tell me to open {base}/auth/login first.\n"
+        f"5) Cursor/IDE/OpenCode → OAuth (URL-only mcp). CLI/CI → I will create a key at {base}/ui/keys/ and paste it."
+    )
+
+
+def _cursor_oauth_mcp_json(base: str) -> str:
+    return (
+        "{\n"
+        '  "mcpServers": {\n'
+        '    "ma3": {\n'
+        f'      "url": "{base}/mcp"\n'
+        "    }\n"
+        "  }\n"
+        "}"
+    )
+
+
+def _render_copy_textarea(text: str, *, locale: str) -> str:
+    return (
+        '<div class="copy-row stack">'
+        f'<textarea class="copy-input" readonly rows="7" onclick="this.select();">{esc(text)}</textarea>'
+        f'<button type="button" class="btn primary" onclick="ma3CopyFrom(this)">{esc(tr(locale, "common.copy"))}</button>'
+        "</div>"
+    )
+
+
+def _render_agent_connect_card(base: str, *, locale: str, t: Callable[..., str]) -> str:
+    prompt = _paste_prompt_for_agent(base, locale=locale)
+    mcp_json = _cursor_oauth_mcp_json(base)
+    return f"""
+  <div class="card" style="margin-top:16px;">
+    <div class="card-header"><h2>{esc(t("portal.me.connect_title"))}</h2></div>
+    <div class="card-body">
+      <p class="card-muted">{esc(t("portal.me.connect_intro"))}</p>
+      <h3 style="font-size:14px;margin:12px 0 8px;">{esc(t("portal.me.connect_prompt_label"))}</h3>
+      {_render_copy_textarea(prompt, locale=locale)}
+      <h3 style="font-size:14px;margin:16px 0 8px;">{esc(t("portal.me.connect_cursor_label"))}</h3>
+      {_render_copy_textarea(mcp_json, locale=locale)}
+      <p class="card-muted" style="margin-top:12px;">{esc(t("portal.me.connect_keys_hint"))}</p>
+      <div class="empty-cta">
+        <a class="btn primary" href="{esc(base)}/ui/keys/">{esc(t("portal.me.create_key"))}</a>
+        <a class="btn" href="{esc(base)}/client/connect.md">{esc(t("portal.me.connect_short_docs"))}</a>
+        <a class="btn subtle" href="{esc(base)}/client/agent-onboarding.md">{esc(t("portal.me.connect_full_docs"))}</a>
+      </div>
+    </div>
+  </div>"""
+
+
 def _landing_primary_href(base: str) -> str:
     if setup_service.setup_needs_owner():
         return f"{base}/ui/setup/"
@@ -277,6 +343,8 @@ def _render_public_landing(request: Request, *, locale: str, t: Callable[..., st
         primary_label = t("landing.hero.cta_primary_dev")
     library_href = f"{base}/ui/libraries/{lib_id}/"
     docs_href = f"{base}/client/agent-onboarding.md"
+    connect_href = f"{base}/client/connect.md"
+    paste_prompt = _paste_prompt_for_agent(base, locale=locale)
     instance = settings.instance_id or "local"
     version = settings.service_version
 
@@ -403,6 +471,15 @@ def _render_public_landing(request: Request, *, locale: str, t: Callable[..., st
     <div class="landing-getstarted-cta">
       <a class="btn primary" href="{esc(primary_href)}">{esc(primary_label)}</a>
     </div>
+  </section>
+  <section class="landing-section">
+    <h2 class="landing-section-title">{esc(t("landing.connect_title"))}</h2>
+    <p class="card-muted">{esc(t("landing.connect_intro"))}</p>
+    {_render_copy_textarea(paste_prompt, locale=locale)}
+    <p style="margin-top:12px;">
+      <a class="btn" href="{esc(connect_href)}">{esc(t("landing.connect_docs"))}</a>
+      <a class="btn subtle" href="{esc(docs_href)}">{esc(t("landing.hero.cta_docs"))}</a>
+    </p>
   </section>"""
 
 
@@ -506,6 +583,7 @@ def portal_me(request: Request) -> Response:
             '<div class="empty"><div class="empty-icon">⬡</div>'
             f"<div>{esc(t('portal.me.no_contributions'))}</div>"
             f'<div class="empty-cta"><a class="btn primary" href="{esc(base)}/ui/keys/">{esc(t("portal.me.create_key"))}</a> '
+            f'<a class="btn" href="{esc(base)}/client/connect.md">{esc(t("portal.me.connect_short_docs"))}</a> '
             f'<a class="btn" href="{esc(base)}/client/agent-onboarding.md">{esc(t("portal.me.onboarding_docs"))}</a></div></div>'
         )
     )
@@ -514,6 +592,7 @@ def portal_me(request: Request) -> Response:
   {render_setup_banner(request, locale=locale)}
   {_render_profile_header(user)}
   {render_subnav(base, active="overview", locale=locale)}
+  {_render_agent_connect_card(base, locale=locale, t=t)}
   {render_stat_cards([
       (t("portal.me.stats.records"), writes_count, f"{base}/ui/me/writes/"),
       (t("portal.me.stats.buffered"), buffered_count, f"{base}/ui/me/writes/?status=buffered"),

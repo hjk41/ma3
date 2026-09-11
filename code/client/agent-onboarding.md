@@ -5,9 +5,12 @@
 This document is the **single source of instructions**. You do not need to clone the ma3 repo, and you do **not** need to run an install script or CLI.
 Give the URL of this document to each agent, and let the agent **configure the MCP connection and behavior policy on its own**.
 
+If the user only said “help me connect to ma3 / ma3.io MCP” (including **before** they registered), start with the short playbook: `GET /client/connect.md`.
+
 **Policy template (must read)**: `GET /client/templates/ma3-agent-policy.mdc`
-**Design docs**: [docs/02-architecture/decisions/009-client-sync-scheme-b.md](../../docs/02-architecture/decisions/009-client-sync-scheme-b.md), [docs/02-architecture/system-overview.md](../../docs/02-architecture/system-overview.md) §3
-**Example ma3 address**: `https://ma3.io` (replace with your environment's address)
+**Short connect playbook**: `GET /client/connect.md`
+**Design docs**: [docs/02-architecture/decisions/009-client-sync-scheme-b.md](../../docs/02-architecture/decisions/009-client-sync-scheme-b.md), [docs/02-architecture/system-overview.md](../../docs/02-architecture/system-overview.md) §3, [016-mcp-oauth-plus-api-keys.md](../../docs/02-architecture/decisions/016-mcp-oauth-plus-api-keys.md)
+**Example ma3 address**: `https://ma3.io` (only replace when the user named a different host)
 
 > **ma3 v1 (ADR-003)**: **MCP + policy only**. No `install.sh`, no `ma3_client.py`, no CLI plugin.
 > Client upgrade = read the MCP `server` block → curl-fetch `/client/*` → overwrite local rules → restart the agent.
@@ -22,31 +25,37 @@ Give the URL of this document to each agent, and let the agent **configure the M
 
 If the user requests onboarding to ma3, complete the section that corresponds to **your runtime**, in order, then perform **onboarding verification**.
 
-### 0. Ask the user for credentials (must be done first)
+### 0. Resolve base URL + auth path (must be done first)
 
-**Do not** use placeholder keys from the documentation, and **do not** assume `ma3dev` is available (it is only enabled on some LAN dev instances when `MA3_DEV_AUTH=1`).
+**Do not** invent API keys, and **do not** assume `ma3dev` is available (it is only enabled on some LAN dev instances when `MA3_DEV_AUTH=1`).
 
-Confirm with the user, or obtain from context:
+Resolve `MA3_BASE_URL` **without asking** when the user said ma3 / ma3.io → use `https://ma3.io`. Ask for a URL **only** for explicit LAN/self-host. MCP path is always `{BASE}/mcp` (never invent `:8000`). Then branch on **runtime**:
 
-| Variable | Description |
-|------|------|
-| `MA3_BASE_URL` | e.g. `https://ma3.io` or `http://ma3.example.internal:8000` (self-hosted/internal instance) |
-| `MA3_API_KEY` | A **writer** key the user self-created in the portal (`ma3k_…` plaintext, shown only once) |
+| Runtime | Auth | What you need from the user |
+|------|------|------|
+| Cursor / OpenCode / interactive IDE MCP | **OAuth preferred** | Account login in browser; MCP config may be **URL-only** (`{BASE}/mcp`) |
+| CLI / CI / headless (Claude Code, Codex, Droid, Hermes, scripts) | **`X-API-Key` required** | Writer key (`ma3k_…`) from `{BASE}/ui/keys/` |
 
-If the user has not created a key yet, guide them to:
+Except login / OAuth / pasting a key, finish the rest yourself (docs, config, policy/skill, verify).
 
-1. Open `{MA3_BASE_URL}/ui/keys/` in a browser, sign up/log in via Authing
+**If the user has no account yet:** ask them to open `{MA3_BASE_URL}/auth/login` (or `/ui/home/` → register), finish display-name setup, then continue. For a minimal agent playbook, see `{MA3_BASE_URL}/client/connect.md`.
+
+**API key path** (CLI / when the user prefers a key):
+
+1. Open `{MA3_BASE_URL}/ui/keys/`, sign up/log in
 2. On first login a personal library is created automatically; fill in a label and click "Create"
 3. **Immediately copy** the plaintext key and paste it to you (or write it into `~/.ma3/ma3-client.env` / a shell profile)
 4. Default grants: personal-library writer + Community Library (`lib_default`) writer
 
 If the key is lost or leaked: go back to `/ui/keys/` to revoke and recreate it.
 
+**OAuth path** (Cursor / interactive): after the user can log into the portal, configure MCP with URL only and complete the popup login. Permissions follow portal Layer-1 entitlements — no API key required for interactive use.
+
 ### 1. One-time bootstrap
 
 ```bash
 mkdir -p ~/.ma3/bin ~/.ma3/lib
-export MA3_BASE_URL=https://ma3.io   # replace with the user's environment
+export MA3_BASE_URL=https://ma3.io   # default for ma3.io; only change for self-host
 curl -fsSL "$MA3_BASE_URL/client/templates/ma3-client.env.example" -o ~/.ma3/ma3-client.env
 # Edit ~/.ma3/ma3-client.env: MA3_BASE_URL, policy install path comments, etc.
 curl -fsSL "$MA3_BASE_URL/client/scripts/sync_ma3_client.py" -o ~/.ma3/bin/sync_ma3_client.py
@@ -63,7 +72,10 @@ From then on, every MCP call should carry the values from `~/.ma3/ma3-client.jso
 
 ### 2. Configure MCP
 
-See your section under "Per-Agent Configuration" below. Use the `MA3_API_KEY` provided by the user in the header.
+See your section under "Per-Agent Configuration" below.
+
+- **OAuth (Cursor / interactive):** URL-only MCP entry; complete browser login when challenged.
+- **API key (CLI / CI):** use the user-provided `MA3_API_KEY` in `X-API-Key`.
 
 ### 3. Configure the behavior policy + Agent Skill
 
@@ -78,7 +90,7 @@ When MCP returns `policy_refresh_required: true`, run sync again and re-copy pol
 
 ### 4. Onboarding verification (must complete)
 
-Once MCP is connected, use **the user-provided key** to run a read/write smoke test, confirming writes land in the **personal library** (`ma3_report` without `library_id`):
+Once MCP is connected (OAuth token or API key), run a read/write smoke test, confirming writes land in the **personal library** (`ma3_report` without `library_id`):
 
 1. **`ma3_whoami`** — confirm the principal and that the visible library list includes the personal library
 2. **`ma3_context`** — e.g. `problem`: "ma3 onboarding connectivity test", `target_product`: "ma3", `task_type`: "onboarding"
@@ -92,7 +104,7 @@ Once MCP is connected, use **the user-provided key** to run a read/write smoke t
    - **Do not** pass `library_id` (defaults to the personal library)
    - You may use `idempotency_key` to avoid duplicate writes on repeated onboarding
 
-If any step returns 401/403 → ask the user to check whether the key is valid or has been revoked in `/ui/keys/`.
+If any step returns 401/403 → for API-key setups, check `/ui/keys/`; for OAuth, re-login via the MCP client and confirm the portal session works at `/auth/login`.
 If `client_update_required: true` → run `sync_ma3_client.sh sync` and reload MCP first, then continue verification.
 
 ### 5. Wrap-up
@@ -177,12 +189,30 @@ Policy details are authoritative in `/client/templates/ma3-agent-policy.mdc`.
 
 ## Per-Agent Configuration
 
-In the examples below, replace `YOUR_MA3_API_KEY` with the plaintext key the user created and provided from `/ui/keys/`.
+**Recommended for Cursor / human-interactive MCP clients:** connect with the MCP URL only and complete **OAuth popup login** (MCP Authorization Spec). Permissions match your portal Layer-1 library entitlements — no API key required for interactive use.
+
+**Recommended for Agent / CI / headless runtimes:** continue using `X-API-Key` from `/ui/keys/` or self-host bootstrap.
+
+In the key-based examples below, replace `YOUR_MA3_API_KEY` with the plaintext key the user created and provided from `/ui/keys/`.
 You may also use environment variables: `${env:MA3_API_KEY}` (Cursor), or shell expansion `${MA3_API_KEY}` (for Claude's `mcp add`, `export` it first).
 
 ### Cursor
 
-**MCP** — create or edit `~/.cursor/mcp.json`:
+**MCP (OAuth, preferred for interactive use)** — create or edit `~/.cursor/mcp.json`:
+
+```json
+{
+  "mcpServers": {
+    "ma3": {
+      "url": "https://ma3.io/mcp"
+    }
+  }
+}
+```
+
+Cursor should discover `/.well-known/oauth-protected-resource`, open the login flow, and attach the ma3-issued access token. Ensure you can log into the same ma3 host in a browser (`/auth/login`).
+
+**MCP (API key, Agent/CI)** — same file with an explicit key:
 
 ```json
 {
@@ -212,6 +242,39 @@ curl -fsSL https://ma3.io/client/skills/ma3/SKILL.md \
 ```
 
 **Restart** Cursor → confirm `ma3` is connected under **Settings → Tools & MCP**.
+
+---
+
+### OpenCode
+
+**MCP (OAuth, preferred)** — edit `~/.config/opencode/opencode.json` (Windows: `%USERPROFILE%\.config\opencode\opencode.json`):
+
+```json
+{
+  "mcp": {
+    "ma3": {
+      "type": "remote",
+      "url": "https://ma3.io/mcp"
+    }
+  }
+}
+```
+
+Then authenticate:
+
+```bash
+opencode mcp auth ma3
+```
+
+Complete the browser login when prompted. Verify with `opencode mcp list` (ma3 should not show SSE/content-type errors).
+
+**MCP (API key, headless)** — same remote URL plus header:
+
+```bash
+opencode mcp add ma3 --url https://ma3.io/mcp --header "X-API-Key=${MA3_API_KEY}"
+```
+
+Behavior policy: install `/client/templates/ma3-agent-policy.mdc` into your OpenCode instruction/rules path if you use one; otherwise keep it under `~/.ma3/policy/` after sync.
 
 ---
 
@@ -329,13 +392,17 @@ After onboarding, the agent completes **onboarding verification** (`ma3_whoami` 
 | Agent never writes back to ma3 | Check the policy's mandatory report requirement; the writer key; whether it's blocked by `client_update_required` |
 | `client_update_required` is always true | curl-refresh the policy; change `client_version` to the manifest's `skill_bundle_version` |
 | `ma3_context` times out | `curl $MA3_BASE_URL/healthz` |
-| `ma3_report` returns 401/403 | Check whether the API key is valid or was revoked in the UI |
-| The user hasn't provided a key | Guide them to create one at `/ui/keys/`; do not guess `ma3dev` |
+| `ma3_report` returns 401/403 | API key invalid/revoked, or OAuth token missing/expired — re-auth or recreate key |
+| The user hasn't registered | Send them to `/auth/login`; then OAuth (IDE) or `/ui/keys/` (CLI) |
+| CLI agent stuck on OAuth | OAuth needs a browser — switch to `X-API-Key` from `/ui/keys/` |
 
 ---
 
 ## Short Explanation for the User
 
-> Open `{MA3_BASE_URL}/client/agent-onboarding.md` and have the agent configure MCP and the policy according to the document.
-> **First**, self-create an API key at `/ui/keys/` **and give the plaintext key to the agent**; the agent will use that key to complete onboarding verification (a read/write test on the personal library).
+> Paste this to your agent (or open `{MA3_BASE_URL}/client/connect.md`):
+>
+> *Please connect me to ma3 MCP at `{MA3_BASE_URL}`. GET `{MA3_BASE_URL}/client/connect.md` and follow it. Do not invent an API key. Cursor/IDE → OAuth (URL-only). CLI → I will create a key at `/ui/keys/` and paste it.*
+>
+> After sign-in, your home page (`/ui/me/`) also shows a copyable paste-to-agent block.
 > No repo clone needed, no CLI install needed.

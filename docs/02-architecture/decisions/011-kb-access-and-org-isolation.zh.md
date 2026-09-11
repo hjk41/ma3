@@ -44,9 +44,9 @@ Org 管理员可将 org library 提升为 `public`，或对非成员 principal �
 
 ### 2. 强制 API Key；移除匿名 MCP 读
 
-- 所有 MCP **数据工具**（context / report / case / feedback / review 等）要求有效 `X-API-Key`
-- 无 key 或无效 key → **401** / JSON-RPC `-32001`
-- **Authing Bearer** 仅用于 Observatory 人类登录与 key 管理 UI/API，**不**作为 MCP 数据路径凭证
+- 所有 MCP **数据工具**（context / report / case / feedback / review 等）要求有效凭证：**API key** 或 **ma3 签发的 MCP OAuth access token**（ADR-016）
+- 无凭证或无效凭证 → **401** / JSON-RPC `-32001`（附带 `WWW-Authenticate` resource metadata 供 OAuth 发现）
+- **裸 Authing Bearer** 仅用于 Observatory 人类登录与 key 管理 UI/API，**不**作为 MCP 数据路径凭证；**ma3 MCP OAuth token**（绑定 audience/resource）可用于 MCP
 - 保留 `MA3_DEV_AUTH=1` + dev key 作为 **break-glass admin bypass**（LAN/dev only）
 
 ### 3. API Key 存储与签发

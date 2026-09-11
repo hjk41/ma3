@@ -17,6 +17,7 @@ from app.api.routes_metrics import router as metrics_router
 from app.api.metrics_middleware import PrometheusHTTPMiddleware
 from app.api.routes_keys import router as keys_router
 from app.api.routes_mcp import router as mcp_router
+from app.api.routes_mcp_oauth import router as mcp_oauth_router
 from app.api.routes_ui import router as ui_router
 from app.api.routes_observatory_ops import router as observatory_ops_router
 from app.api.routes_setup import router as setup_router
@@ -142,6 +143,7 @@ app.include_router(org_invites_api_router)
 app.include_router(portal_router)
 app.include_router(org_portal_router)
 app.include_router(keys_router)
+app.include_router(mcp_oauth_router)
 app.include_router(mcp_router)
 app.include_router(client_router)
 app.include_router(ui_router)

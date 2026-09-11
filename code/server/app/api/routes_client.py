@@ -46,6 +46,21 @@ def get_agent_onboarding() -> Response:
     return _serve_bytes("agent-onboarding.md")
 
 
+@router.get("/client/agent-onboarding.zh.md")
+def get_agent_onboarding_zh() -> Response:
+    return _serve_bytes("agent-onboarding.zh.md")
+
+
+@router.get("/client/connect.md")
+def get_connect() -> Response:
+    return _serve_bytes("connect.md")
+
+
+@router.get("/client/connect.zh.md")
+def get_connect_zh() -> Response:
+    return _serve_bytes("connect.zh.md")
+
+
 @router.get("/client/templates/ma3-agent-policy.mdc")
 def get_agent_policy_mdc() -> Response:
     return _serve_bytes("templates/ma3-agent-policy.mdc")

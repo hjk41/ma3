@@ -142,6 +142,15 @@ class Settings:
     auth_userinfo_cache_ttl_seconds: int = field(
         default_factory=lambda: int(os.environ.get("MA3_AUTH_USERINFO_CACHE_TTL_SECONDS", "60"))
     )
+    # MCP Authorization Spec (ADR-016): ma3-issued opaque access tokens.
+    mcp_oauth_access_token_ttl_sec: int = field(
+        default_factory=lambda: int(os.environ.get("MA3_MCP_OAUTH_ACCESS_TOKEN_TTL_SEC", "3600"))
+    )
+    mcp_oauth_auth_code_ttl_sec: int = field(
+        default_factory=lambda: int(os.environ.get("MA3_MCP_OAUTH_AUTH_CODE_TTL_SEC", "600"))
+    )
+    # Comma-separated exact redirect_uri allowlist extras (localhost/127.0.0.1 always allowed).
+    mcp_oauth_redirect_uri_allowlist: tuple[str, ...] = field(default_factory=lambda: tuple())
 
     default_org_id: str = "org_default"
     default_library_id: str = "lib_default"
@@ -220,6 +229,13 @@ class Settings:
                 self,
                 "maintainer_api_keys",
                 tuple(item.strip() for item in raw_maintainers.split(",") if item.strip()),
+            )
+        raw_mcp_redirects = os.environ.get("MA3_MCP_OAUTH_REDIRECT_URI_ALLOWLIST", "")
+        if raw_mcp_redirects.strip():
+            object.__setattr__(
+                self,
+                "mcp_oauth_redirect_uri_allowlist",
+                tuple(item.strip() for item in raw_mcp_redirects.split(",") if item.strip()),
             )
         raw_paid = os.environ.get("MA3_PAID_PRINCIPAL_IDS", "")
         if raw_paid.strip():
@@ -332,6 +348,16 @@ class Settings:
             return self.authing_post_logout_redirect_uri
         base = (self.public_base_url or "http://127.0.0.1:8000").rstrip("/")
         return f"{base}/ui/home/"
+
+    def mcp_public_base_url(self) -> str:
+        return (self.public_base_url or "http://127.0.0.1:8000").rstrip("/")
+
+    def mcp_resource_url(self) -> str:
+        """Canonical MCP resource identifier (RFC 8707) for OAuth audience binding."""
+        return f"{self.mcp_public_base_url()}/mcp"
+
+    def mcp_oauth_protected_resource_metadata_url(self) -> str:
+        return f"{self.mcp_public_base_url()}/.well-known/oauth-protected-resource"
 
     def resolve_authing_account_url(self) -> str:
         return self.resolve_oidc_account_url()

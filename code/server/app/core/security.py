@@ -82,6 +82,13 @@ def extract_credential(x_api_key: str | None, authorization: str | None) -> RawC
 
 
 def _resolve_authing_bearer(token: str) -> ResolvedPrincipal | None:
+    """Resolve bare Authing/OIDC access tokens.
+
+    Retained for non-MCP callers that still hit ``resolve_from_credential``.
+    MCP data tools must use API keys or ma3-issued MCP OAuth tokens instead
+    (ADR-016); ``resolve_from_credential`` no longer falls through to this
+    path for Bearer credentials.
+    """
     if not settings.authing_configured:
         return None
     try:
@@ -101,6 +108,38 @@ def _resolve_authing_bearer(token: str) -> ResolvedPrincipal | None:
         )
     except Exception:
         return None
+
+
+def _resolve_mcp_oauth_token(raw: str, *, request: Request | None = None) -> ResolvedPrincipal | None:
+    try:
+        from app.services.entitlement_service import mcp_grants_for_principal
+        from app.services.mcp_oauth_token_service import resolve_mcp_oauth_token
+        from app.services.principal_service import resolve_display_name
+
+        resolved = resolve_mcp_oauth_token(raw, request=request)
+    except Exception:
+        return None
+    if resolved is None:
+        return None
+    readable, writable, maintainer = mcp_grants_for_principal(resolved.principal_id)
+    display_name = resolve_display_name(resolved.principal_id, fallback=resolved.principal_id)
+    if maintainer:
+        role = "library_maintainer"
+    elif writable:
+        role = "library_writer"
+    else:
+        role = "library_reader"
+    return ResolvedPrincipal(
+        principal_id=resolved.principal_id,
+        kind="user",
+        display_name=display_name,
+        via="mcp_oauth_token",
+        library_id=next(iter(sorted(readable)), settings.default_library_id),
+        role=role,
+        grant_readable=readable,
+        grant_writable=writable,
+        grant_maintainer=maintainer,
+    )
 
 
 def _resolve_db_api_key(raw: str) -> ResolvedPrincipal | None:
@@ -133,7 +172,11 @@ def _resolve_db_api_key(raw: str) -> ResolvedPrincipal | None:
     )
 
 
-def resolve_from_credential(cred: RawCredential | None) -> ResolvedPrincipal:
+def resolve_from_credential(
+    cred: RawCredential | None,
+    *,
+    request: Request | None = None,
+) -> ResolvedPrincipal:
     if cred is None:
         return ResolvedPrincipal(
             principal_id="anonymous",
@@ -142,6 +185,10 @@ def resolve_from_credential(cred: RawCredential | None) -> ResolvedPrincipal:
             via="anonymous",
         )
     raw = cred.value
+    # DB keys before env/dev break-glass (design/28 D1; ADR-016 Decision 5).
+    db_key = _resolve_db_api_key(raw)
+    if db_key is not None:
+        return db_key
     if settings.dev_auth and secrets.compare_digest(raw, settings.dev_api_key):
         return ResolvedPrincipal(
             principal_id="dev:admin",
@@ -152,9 +199,6 @@ def resolve_from_credential(cred: RawCredential | None) -> ResolvedPrincipal:
             library_id=settings.default_library_id,
             role="library_admin",
         )
-    db_key = _resolve_db_api_key(raw)
-    if db_key is not None:
-        return db_key
     for idx, key in enumerate(settings.maintainer_api_keys):
         if secrets.compare_digest(raw, key):
             return ResolvedPrincipal(
@@ -176,9 +220,9 @@ def resolve_from_credential(cred: RawCredential | None) -> ResolvedPrincipal:
                 role="library_writer",
             )
     if cred.source == "bearer":
-        authing = _resolve_authing_bearer(raw)
-        if authing is not None:
-            return authing
+        mcp_tok = _resolve_mcp_oauth_token(raw, request=request)
+        if mcp_tok is not None:
+            return mcp_tok
     return ResolvedPrincipal(
         principal_id="anonymous",
         kind="anonymous",
@@ -254,12 +298,19 @@ class McpAuthContext:
         }
 
 
-def resolve_mcp_auth(cred: RawCredential | None) -> McpAuthContext:
-    principal = resolve_from_credential(cred)
+def resolve_mcp_auth(
+    cred: RawCredential | None,
+    *,
+    request: Request | None = None,
+) -> McpAuthContext:
+    principal = resolve_from_credential(cred, request=request)
     invalid = cred is not None and principal.via == "invalid_credentials"
     key_prefix: str | None = None
     if principal.key_id is not None:
         api_key_id = principal.key_id
+    elif principal.via == "mcp_oauth_token":
+        # Attribute usage to the human principal; do not invent an api_key_id.
+        api_key_id = principal.principal_id
     elif principal.kind != "anonymous":
         api_key_id = principal.principal_id
     else:
@@ -274,3 +325,11 @@ def resolve_mcp_auth(cred: RawCredential | None) -> McpAuthContext:
         api_key_id=api_key_id,
         key_prefix=key_prefix,
     )
+
+
+def mcp_www_authenticate_header(request: Request | None = None) -> str:
+    from app.core.public_url import resolve_oauth_prm_url
+
+    meta = resolve_oauth_prm_url(request)
+    # RFC 9728: challenge parameter name is resource_metadata (quoted URL).
+    return 'Bearer resource_metadata="' + meta + '"'

@@ -9,7 +9,7 @@ ma3_tool_schema_version: "ma3.mcp.v1"
 
 Apply in **every project**, not only in the ma3 repo. Prefer MCP tools when visible.
 
-Configure MCP per `/client/agent-onboarding.md` (your `MA3_BASE_URL` + API key).
+Configure MCP per `/client/connect.md` (short path) or `/client/agent-onboarding.md` (full guide). Interactive IDE: OAuth URL-only; CLI/CI: API key from `/ui/keys/`.
 
 **There is no ma3 CLI or install script in v1** (ADR-003). Client refresh is MCP + policy + optional skill.
 

@@ -21,6 +21,7 @@
 | 013 | Write confirmation, audit, delete | [013-write-confirmation-audit-delete.md](decisions/013-write-confirmation-audit-delete.md) |
 | 014 | MCP errors are self-correctable | [014-mcp-error-self-correction.md](decisions/014-mcp-error-self-correction.md) |
 | 015 | Pluggable OIDC + self-hosted bootstrap key | [015-oidc-pluggable-selfhost-bootstrap.md](decisions/015-oidc-pluggable-selfhost-bootstrap.md) |
+| 016 | MCP OAuth (Auth Spec) + API Key dual-auth | [016-mcp-oauth-plus-api-keys.md](decisions/016-mcp-oauth-plus-api-keys.md) |
 
 ## Product-level decisions (no standalone ADR)
 

@@ -20,6 +20,7 @@ def _enable_authing(monkeypatch) -> None:
 
 def _patch_session(monkeypatch, user) -> None:
     import app.api.routes_keys as routes_keys
+    import app.api.routes_mcp_oauth as routes_mcp_oauth
     import app.api.ui_session as ui_session
     import app.auth.session as session_mod
     import app.services.feedback_service as feedback_service
@@ -29,6 +30,7 @@ def _patch_session(monkeypatch, user) -> None:
     monkeypatch.setattr(session_mod, "resolve_session_user", resolver)
     monkeypatch.setattr(ui_session, "resolve_session_user", resolver)
     monkeypatch.setattr(routes_keys, "resolve_session_user", resolver)
+    monkeypatch.setattr(routes_mcp_oauth, "resolve_session_user", resolver)
     monkeypatch.setattr(feedback_service, "resolve_session_user", resolver)
     monkeypatch.setattr(portal_actor_service, "resolve_session_user", resolver)
 

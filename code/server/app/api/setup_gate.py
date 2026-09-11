@@ -27,6 +27,10 @@ def _path_allowed_during_needs_owner(path: str) -> bool:
     # Agent / API rails (not product HTML pages).
     if path == "/mcp" or path.startswith("/mcp/"):
         return True
+    if path.startswith("/.well-known/"):
+        return True
+    if path == "/oauth" or path.startswith("/oauth/"):
+        return True
     if path.startswith("/api/"):
         return True
     if path.startswith("/client/"):

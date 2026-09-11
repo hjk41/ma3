@@ -7,6 +7,7 @@ from app.core.config import settings
 from app.storage import db
 
 _GRANT_READ = frozenset({"reader", "writer", "maintainer"})
+_GRANT_WRITE = frozenset({"writer", "maintainer"})
 _GRANT_MAINTAIN = frozenset({"maintainer"})
 
 
@@ -67,10 +68,6 @@ def can_read_library(principal_id: str | None, library_id: str) -> bool:
         member = _active_org_member(org_id, principal_id)
         if member and str(lib.get("visibility") or "") == "org":
             return True
-    for key in db.list_api_keys_for_principal(principal_id):
-        for grant in db.get_api_key_grants(str(key["key_id"])):
-            if str(grant["library_id"]) == library_id:
-                return True
     return False
 
 
@@ -81,6 +78,31 @@ def can_maintain_library(principal_id: str, library_id: str) -> bool:
     if role in _GRANT_MAINTAIN:
         return True
     return is_org_admin_for_library(principal_id, library_id)
+
+
+def can_write_library(principal_id: str, library_id: str) -> bool:
+    """Layer-1 write entitlement for MCP OAuth projection (ADR-016 option A)."""
+    # Authenticated community writes align with portal / ma3_report defaults.
+    if library_id == settings.default_library_id:
+        return True
+    if is_library_owner(principal_id, library_id):
+        return True
+    role = library_entitlement_role(principal_id, library_id)
+    if role in _GRANT_WRITE:
+        return True
+    return is_org_admin_for_library(principal_id, library_id)
+
+
+def mcp_grants_for_principal(
+    principal_id: str,
+) -> tuple[frozenset[str], frozenset[str], frozenset[str]]:
+    """Project portal Layer-1 entitlements into MCP grant sets."""
+    readable = frozenset(
+        lid for lid in entitled_library_ids(principal_id) if can_read_library(principal_id, lid)
+    )
+    writable = frozenset(lid for lid in readable if can_write_library(principal_id, lid))
+    maintainer = frozenset(lid for lid in readable if can_maintain_library(principal_id, lid))
+    return readable, writable, maintainer
 
 
 def entitled_library_ids(principal_id: str) -> set[str]:
@@ -100,9 +122,6 @@ def entitled_library_ids(principal_id: str) -> set[str]:
                 libs.add(lid)
             elif library_entitlement_role(principal_id, lid) in _GRANT_READ:
                 libs.add(lid)
-    for key in db.list_api_keys_for_principal(principal_id):
-        for grant in db.get_api_key_grants(str(key["key_id"])):
-            libs.add(str(grant["library_id"]))
     return libs
 
 
@@ -114,6 +133,9 @@ def list_entitled_libraries(principal_id: str) -> list[dict[str, Any]]:
         prefix = str(key.get("key_prefix") or key.get("key_id", ""))[:12]
         for grant in key.get("grants") or []:
             lid = str(grant["library_id"])
+            if lid not in ids:
+                # Key-only libraries are Layer-2; do not surface as portal entitlements.
+                continue
             key_labels_by_lib.setdefault(lid, [])
             if prefix and prefix not in key_labels_by_lib[lid]:
                 key_labels_by_lib[lid].append(prefix)
@@ -123,6 +145,7 @@ def list_entitled_libraries(principal_id: str) -> list[dict[str, Any]]:
         lid = str(lib["library_id"])
         stats = db.get_library_stats(lid) or {}
         rec = stats.get("records") or {}
+        # role/access reflect Layer-1 only; key_prefixes are annotation.
         if is_library_owner(principal_id, lid):
             role = "owner"
             access = "读写·维护"
@@ -132,9 +155,9 @@ def list_entitled_libraries(principal_id: str) -> list[dict[str, Any]]:
         elif library_entitlement_role(principal_id, lid):
             role = str(library_entitlement_role(principal_id, lid))
             access = "读" if role == "reader" else "读写"
-        elif lid in key_labels_by_lib:
-            role = "contributor"
-            access = "读写"
+        elif lid == settings.default_library_id:
+            role = "member"
+            access = "读写" if can_write_library(principal_id, lid) else "读"
         else:
             role = "member"
             access = "读"

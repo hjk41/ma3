@@ -3,9 +3,12 @@
 本文是 **唯一操作说明**。不需要 clone ma3 仓库，**不需要** 运行安装脚本或 CLI。
 把本文 URL 交给各 agent，由 agent **自行**完成 MCP 连接和行为策略配置。
 
+若用户只说「帮我接入 ma3 / ma3.io 的 MCP」（包括**尚未注册**），先拉短路径：`GET /client/connect.md`（中文：`connect.zh.md`）。
+
 **策略模板（必读）**：`GET /client/templates/ma3-agent-policy.mdc`  
-**设计文档**：[docs/02-architecture/decisions/009-client-sync-scheme-b.md](../../docs/02-architecture/decisions/009-client-sync-scheme-b.md)、[docs/02-architecture/system-overview.md](../../docs/02-architecture/system-overview.md) §3  
-**示例 ma3 地址**：`https://ma3.io`（按你们环境替换）
+**短接入路径**：`GET /client/connect.md`  
+**设计文档**：[docs/02-architecture/decisions/009-client-sync-scheme-b.md](../../docs/02-architecture/decisions/009-client-sync-scheme-b.md)、[docs/02-architecture/system-overview.md](../../docs/02-architecture/system-overview.md) §3、[016-mcp-oauth-plus-api-keys.md](../../docs/02-architecture/decisions/016-mcp-oauth-plus-api-keys.md)  
+**示例 ma3 地址**：`https://ma3.io`（仅当用户点名其它主机时才替换）
 
 > **ma3 v1（ADR-003）**：仅 **MCP + policy**。无 `install.sh`、无 `ma3_client.py`、无 CLI 插件。
 > 客户端升级 = 读 MCP `server` 块 → curl 拉取 `/client/*` → 覆盖本地规则 → 重启 agent。
@@ -20,31 +23,37 @@
 
 若用户要求接入 ma3，请按顺序完成 **你所在运行时** 对应的小节，然后做 **接入验证**。
 
-### 0. 向用户索取凭据（必须先做）
+### 0. 确定 Base URL + 认证路径（必须先做）
 
-**不要** 使用文档里的占位 key，也 **不要** 假设 `ma3dev` 可用（仅部分 LAN dev 实例在 `MA3_DEV_AUTH=1` 时开放）。
+**不要** 编造 API key，也 **不要** 假设 `ma3dev` 可用（仅部分 LAN dev 实例在 `MA3_DEV_AUTH=1` 时开放）。
 
-请向用户确认或从上下文取得：
+用户说 ma3 / ma3.io 时 **不要再问 URL**，直接用 `https://ma3.io`；仅明确内网/自托管时才询问。MCP 永远是 `{BASE}/mcp`（禁止臆造 `:8000`）。再按 **runtime** 分支：
 
-| 变量 | 说明 |
-|------|------|
-| `MA3_BASE_URL` | 如 `https://ma3.io` 或 `http://ma3.example.internal:8000`（自托管/内网实例） |
-| `MA3_API_KEY` | 用户在门户自助创建的 **writer** key（`ma3k_…` 明文，只显示一次） |
+| Runtime | 认证 | 需要用户提供什么 |
+|------|------|------|
+| Cursor / OpenCode / 交互式 IDE MCP | **优先 OAuth** | 浏览器登录账号；MCP 可只配 **URL**（`{BASE}/mcp`） |
+| CLI / CI / 无头（Claude Code、Codex、Droid、Hermes、脚本） | **必须 `X-API-Key`** | 门户 `{BASE}/ui/keys/` 签发的 writer key（`ma3k_…`） |
 
-若用户尚未创建 key，引导其：
+除登录 / OAuth / 粘贴 key 外，其余（文档、配置、policy/skill、验证）自行完成。
 
-1. 浏览器打开 `{MA3_BASE_URL}/ui/keys/`，用 Authing 注册/登录
+**若用户还没有账号：** 请其打开 `{MA3_BASE_URL}/auth/login`（或 `/ui/home/` 注册），完成显示名 setup，再继续。最短 agent 路径见 `{MA3_BASE_URL}/client/connect.md`。
+
+**API Key 路径**（CLI / 用户更想用 key）：
+
+1. 浏览器打开 `{MA3_BASE_URL}/ui/keys/`，注册/登录
 2. 首次登录自动获得个人库；填 label 点「创建」
 3. **立即复制**明文 key 并粘贴给你（或写入 `~/.ma3/ma3-client.env` / shell profile）
 4. 默认授权：个人库 writer + Community Library（`lib_default`）writer
 
 key 丢失或泄漏：回 `/ui/keys/` 撤销并重建。
 
+**OAuth 路径**（Cursor / 交互式）：用户能登录门户后，MCP 只配 URL，完成弹窗登录。权限跟随门户 Layer-1 库授权——交互式使用不需要 API key。
+
 ### 1. 一次性 bootstrap
 
 ```bash
 mkdir -p ~/.ma3/bin ~/.ma3/lib
-export MA3_BASE_URL=https://ma3.io   # 按用户环境替换
+export MA3_BASE_URL=https://ma3.io   # ma3.io 默认；仅自托管时改
 curl -fsSL "$MA3_BASE_URL/client/templates/ma3-client.env.example" -o ~/.ma3/ma3-client.env
 # 编辑 ~/.ma3/ma3-client.env：MA3_BASE_URL、策略安装路径注释等
 curl -fsSL "$MA3_BASE_URL/client/scripts/sync_ma3_client.py" -o ~/.ma3/bin/sync_ma3_client.py
@@ -61,7 +70,10 @@ bash ~/.ma3/bin/sync_ma3_client.sh sync
 
 ### 2. 配置 MCP
 
-见下方「各 Agent 配置」中你的那一节。Header 使用用户提供的 `MA3_API_KEY`。
+见下方「各 Agent 配置」中你的那一节。
+
+- **OAuth（Cursor / 交互式）：** MCP 只写 URL；收到挑战后完成浏览器登录。
+- **API Key（CLI / CI）：** Header 使用用户提供的 `MA3_API_KEY`。
 
 ### 3. 配置行为策略 + Agent Skill
 
@@ -74,7 +86,7 @@ sync 写入：
 
 ### 4. 接入验证（必须完成）
 
-MCP 连通后，用 **用户提供的 key** 跑通读写，确认写入 **个人库**（`ma3_report` 不带 `library_id`）：
+MCP 连通后（OAuth token 或 API key），跑通读写，确认写入 **个人库**（`ma3_report` 不带 `library_id`）：
 
 1. **`ma3_whoami`** — 确认 principal、可见库列表含个人库
 2. **`ma3_context`** — 例如 `problem`: "ma3 onboarding connectivity test"，`target_product`: "ma3"，`task_type`: "onboarding"
@@ -88,7 +100,7 @@ MCP 连通后，用 **用户提供的 key** 跑通读写，确认写入 **个人
    - **不要** 传 `library_id`（默认个人库）
    - 可用 `idempotency_key` 避免重复接入时重复写入
 
-任一步 401/403 → 请用户检查 key 是否有效、是否在 `/ui/keys/` 被撤销。  
+任一步 401/403 → API Key 方案检查 `/ui/keys/`；OAuth 方案在 MCP 客户端重新登录，并确认门户 `/auth/login` 可用。  
 `client_update_required: true` → 先 `sync_ma3_client.sh sync` 并 reload MCP，再继续验证。
 
 ### 5. 收尾
@@ -173,12 +185,30 @@ MCP `initialize` 的 `serverInfo` 也含 `min_client_version` / `recommended_cli
 
 ## 各 Agent 配置
 
-以下示例中的 `YOUR_MA3_API_KEY` 替换为用户在 `/ui/keys/` 创建并提供的明文 key。
+**Cursor / 人类交互式 MCP 客户端推荐**：只配 MCP URL，走 **OAuth 弹窗登录**（MCP Authorization Spec）。权限与门户 Layer-1 库 entitlement 一致，交互使用无需 API key。
+
+**Agent / CI / 无头运行时推荐**：继续使用 `/ui/keys/` 或自托管 bootstrap 的 `X-API-Key`。
+
+以下 key 示例中的 `YOUR_MA3_API_KEY` 替换为用户在 `/ui/keys/` 创建并提供的明文 key。
 也可用环境变量：`${env:MA3_API_KEY}`（Cursor）、shell 展开 `${MA3_API_KEY}`（Claude `mcp add` 前先 `export`）。
 
 ### Cursor
 
-**MCP** — 创建或编辑 `~/.cursor/mcp.json`：
+**MCP（OAuth，交互优先）** — 创建或编辑 `~/.cursor/mcp.json`：
+
+```json
+{
+  "mcpServers": {
+    "ma3": {
+      "url": "https://ma3.io/mcp"
+    }
+  }
+}
+```
+
+Cursor 会发现 `/.well-known/oauth-protected-resource`，打开登录流并附带 ma3 签发的 access token。请确保浏览器能登录同一 ma3 主机（`/auth/login`）。
+
+**MCP（API key，Agent/CI）**：
 
 ```json
 {
@@ -204,6 +234,39 @@ curl -fsSL https://ma3.io/client/skills/ma3/SKILL.md \
 ```
 
 **重启** Cursor → **Settings → Tools & MCP** 确认 `ma3` 已连接。
+
+---
+
+### OpenCode
+
+**MCP（优先 OAuth）** — 编辑 `~/.config/opencode/opencode.json`（Windows：`%USERPROFILE%\.config\opencode\opencode.json`）：
+
+```json
+{
+  "mcp": {
+    "ma3": {
+      "type": "remote",
+      "url": "https://ma3.io/mcp"
+    }
+  }
+}
+```
+
+然后认证：
+
+```bash
+opencode mcp auth ma3
+```
+
+按提示完成浏览器登录。用 `opencode mcp list` 确认 ma3 无 SSE/content-type 报错。
+
+**MCP（API Key / 无头）**：
+
+```bash
+opencode mcp add ma3 --url https://ma3.io/mcp --header "X-API-Key=${MA3_API_KEY}"
+```
+
+行为策略：若 OpenCode 有全局 instructions/rules 路径则写入 `/client/templates/ma3-agent-policy.mdc`；否则保留在 sync 后的 `~/.ma3/policy/`。
 
 ---
 
@@ -320,13 +383,17 @@ curl -sf -H "X-API-Key: $MA3_API_KEY" -H "Content-Type: application/json" \
 | Agent 从不写回 ma3 | 检查策略 mandatory report；writer key；是否被 `client_update_required` 阻塞 |
 | `client_update_required` 一直 true | curl 刷新 policy；把 `client_version` 改为 manifest 的 `skill_bundle_version` |
 | `ma3_context` 超时 | `curl $MA3_BASE_URL/healthz` |
-| `ma3_report` 401/403 | 检查 API key 是否有效、是否在 UI 被撤销 |
-| 用户未提供 key | 引导至 `/ui/keys/` 创建，不要猜测 `ma3dev` |
+| `ma3_report` 401/403 | API key 无效/已撤销，或 OAuth token 缺失/过期 — 重新登录或重建 key |
+| 用户尚未注册 | 引导至 `/auth/login`；随后 IDE 走 OAuth，CLI 走 `/ui/keys/` |
+| CLI agent 卡在 OAuth | OAuth 需要浏览器 — 改用 `/ui/keys/` 的 `X-API-Key` |
 
 ---
 
 ## 给用户的简短说明
 
-> 打开 `{MA3_BASE_URL}/client/agent-onboarding.md`，让 agent 按文档配置 MCP 和策略。
-> **先在** `/ui/keys/` **自助创建 API key 并把明文 key 交给 agent**；agent 会用该 key 完成接入验证（读写个人库测试）。
+> 把下面这段贴给你的 agent（或打开 `{MA3_BASE_URL}/client/connect.md`）：
+>
+> *请帮我接入 `{MA3_BASE_URL}` 的 ma3 MCP。先 GET `{MA3_BASE_URL}/client/connect.md` 并按文档执行。不要编造 API key。Cursor/IDE → OAuth（只配 url）。CLI → 我去 `/ui/keys/` 创建 key 后贴给你。*
+>
+> 登录后，主页 `/ui/me/` 也会显示可复制的「贴给 agent」接入块。
 > 无需 clone 仓库，无需安装 CLI。

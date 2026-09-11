@@ -45,6 +45,7 @@ groups:
           description: "Retrieval latency p95 exceeded 5s for 30m. Check embedding service and DB plans."
 
       # Fast burn of API availability error budget (SLO-1, 30d 99.5% → ~3.6h/month).
+      # Traffic floor required: when rate≈0, clamp_min(...,0.01) yields burn=1.0 (false page).
       - alert: Ma3AvailabilityFastBurn
         expr: |
           (
@@ -54,10 +55,11 @@ groups:
               clamp_min(sum(rate(ma3_http_requests_total{route=~"/mcp|/healthz|/api/.*"}[1h])), 0.01)
             )
           ) > (14.4 * (1 - 0.995))
+          and sum(rate(ma3_http_requests_total{route=~"/mcp|/healthz|/api/.*"}[1h])) > 0.01
         for: 5m
         labels:
           severity: page
           service: ma3
         annotations:
           summary: "ma3 SLO-1 fast error-budget burn"
-          description: "1h burn rate > 14.4x the 30d 99.5% budget. Investigate 5xx on /mcp,/healthz,/api/*."
+          description: "1h burn rate > 14.4x the 30d 99.5% budget with traffic present. Investigate 5xx on /mcp,/healthz,/api/*."

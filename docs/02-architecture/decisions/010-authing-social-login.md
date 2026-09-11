@@ -55,6 +55,10 @@ After evaluation, **Authing's public cloud B2C free tier (8000 MAU)** was select
 
 Observatory: when `MA3_AUTHING_ENABLED=1`, unauthenticated access to `/ui/observatory/*` → 302 to `/auth/login`.
 
+## Amendment (2026-09-11)
+
+Interactive MCP clients may complete **MCP Authorization Spec OAuth** where Authing remains the **human IdP** only; ma3 issues MCP access tokens (see ADR-016). Decision (2) still holds for Agent/CI: they use API keys and do **not** present Authing tokens as MCP credentials.
+
 ## Consequences
 
 ### Positive

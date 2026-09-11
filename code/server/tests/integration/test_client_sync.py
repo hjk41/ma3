@@ -16,6 +16,7 @@ from tests.helpers.mcp_client import McpClient
 CLIENT_UPDATE_URLS = {
     "/client/manifest.json",
     "/client/agent-onboarding.md",
+    "/client/connect.md",
     "/client/templates/ma3-agent-policy.mdc",
     "/client/templates/ma3-client.env.example",
     "/client/skills/ma3/SKILL.md",

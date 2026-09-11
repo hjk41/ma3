@@ -1,3 +1,4 @@
+"""Bare Authing Bearer is no longer an MCP data credential (ADR-016)."""
 from __future__ import annotations
 
 from unittest.mock import patch
@@ -7,7 +8,7 @@ from app.core.config import settings
 from app.core.security import RawCredential, resolve_from_credential
 
 
-def test_bearer_authing_maps_to_writer(monkeypatch):
+def test_bearer_authing_no_longer_maps_to_writer(monkeypatch):
     monkeypatch.setattr(settings, "authing_enabled", True)
     monkeypatch.setattr(settings, "authing_issuer", "https://example.authing.cn/oidc")
     monkeypatch.setattr(settings, "authing_app_id", "app")
@@ -20,9 +21,7 @@ def test_bearer_authing_maps_to_writer(monkeypatch):
             return_value={"principal_id": "user:agent_42"},
         ):
             principal = resolve_from_credential(RawCredential(value="jwt-token-value", source="bearer"))
-    assert principal.via == "authing_bearer"
-    assert principal.role == "library_writer"
-    assert principal.principal_id == "user:agent_42"
+    assert principal.via == "invalid_credentials"
 
 
 def test_invalid_bearer_not_anonymous(monkeypatch):

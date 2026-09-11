@@ -30,7 +30,8 @@ def test_home_renders_landing_without_login(isolated_client, monkeypatch):
     assert "/auth/login?next=" in text
     assert f"/ui/libraries/{settings.default_library_id}/" in text
     assert "/client/agent-onboarding.md" in text
-    assert 'agent-onboarding.md">Agent onboarding 文档</a>' in text
+    assert "/client/connect.md" in text
+    assert "paste-to-agent" in text.lower() or "贴给你的 agent" in text or "把下面内容贴给" in text
     assert "stat-card" in text
 
 

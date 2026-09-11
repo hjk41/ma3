@@ -19,6 +19,7 @@
 | 013 | 写入确认、审计、删除 | [013-write-confirmation-audit-delete.md](decisions/013-write-confirmation-audit-delete.md) |
 | 014 | MCP 错误可自纠 | [014-mcp-error-self-correction.md](decisions/014-mcp-error-self-correction.md) |
 | 015 | 可插拔 OIDC + 自托管 bootstrap key | [015-oidc-pluggable-selfhost-bootstrap.md](decisions/015-oidc-pluggable-selfhost-bootstrap.md) |
+| 016 | MCP OAuth（规范登录）+ API Key 双通道 | [016-mcp-oauth-plus-api-keys.zh.md](decisions/016-mcp-oauth-plus-api-keys.zh.md) |
 
 ## 产品层决策（未单独 ADR）
 

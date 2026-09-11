@@ -265,4 +265,4 @@ mkdir -p ~/.cursor/skills
 cp -r <ma3-repo>/code/client/skills/ma3 ~/.cursor/skills/
 ```
 
-MCP + policy setup: `GET /client/agent-onboarding.md` on your `MA3_BASE_URL`.
+MCP + policy setup: `GET /client/connect.md` (short) or `/client/agent-onboarding.md` on your `MA3_BASE_URL`.

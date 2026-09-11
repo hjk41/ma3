@@ -682,6 +682,47 @@ def initialize_database() -> None:
             )
             """,
         )
+        _execute(
+            conn,
+            """
+            CREATE TABLE IF NOT EXISTS mcp_oauth_tokens (
+              token_id TEXT PRIMARY KEY,
+              token_hash TEXT NOT NULL UNIQUE,
+              principal_id TEXT NOT NULL,
+              resource TEXT NOT NULL,
+              scope TEXT NOT NULL DEFAULT '',
+              client_id TEXT NOT NULL DEFAULT '',
+              expires_at TEXT NOT NULL,
+              created_at TEXT NOT NULL,
+              revoked_at TEXT
+            )
+            """,
+        )
+        _execute(conn, "CREATE INDEX IF NOT EXISTS idx_mcp_oauth_tokens_hash ON mcp_oauth_tokens (token_hash)")
+        _execute(
+            conn,
+            "CREATE INDEX IF NOT EXISTS idx_mcp_oauth_tokens_principal ON mcp_oauth_tokens (principal_id)",
+        )
+        _execute(
+            conn,
+            """
+            CREATE TABLE IF NOT EXISTS mcp_oauth_auth_codes (
+              code_id TEXT PRIMARY KEY,
+              code_hash TEXT NOT NULL UNIQUE,
+              principal_id TEXT NOT NULL,
+              client_id TEXT NOT NULL,
+              redirect_uri TEXT NOT NULL,
+              code_challenge TEXT NOT NULL,
+              code_challenge_method TEXT NOT NULL DEFAULT 'S256',
+              resource TEXT NOT NULL,
+              scope TEXT NOT NULL DEFAULT '',
+              expires_at TEXT NOT NULL,
+              created_at TEXT NOT NULL,
+              consumed_at TEXT
+            )
+            """,
+        )
+        _execute(conn, "CREATE INDEX IF NOT EXISTS idx_mcp_oauth_auth_codes_hash ON mcp_oauth_auth_codes (code_hash)")
 
     # Attribute pre-existing records to their authors so ma3_list_my_writes can
     # enumerate historical uploads. Idempotent; runs after the schema commits.
@@ -3495,6 +3536,121 @@ def insert_api_key(
                 (key_id, grant["library_id"], grant["role"]),
             )
     return {"key_id": key_id, "principal_id": principal_id, "grants": grants or []}
+
+
+def insert_mcp_oauth_token(
+    *,
+    token_id: str,
+    token_hash: str,
+    principal_id: str,
+    resource: str,
+    expires_at: str,
+    scope: str = "",
+    client_id: str = "",
+    created_at: str | None = None,
+) -> dict[str, Any]:
+    from datetime import datetime, timezone
+
+    now = created_at or datetime.now(timezone.utc).replace(microsecond=0).isoformat()
+    with connect() as conn:
+        _execute(
+            conn,
+            """
+            INSERT INTO mcp_oauth_tokens (
+              token_id, token_hash, principal_id, resource, scope, client_id, expires_at, created_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (token_id, token_hash, principal_id, resource, scope, client_id, expires_at, now),
+        )
+    return {
+        "token_id": token_id,
+        "principal_id": principal_id,
+        "resource": resource,
+        "expires_at": expires_at,
+        "client_id": client_id,
+        "scope": scope,
+    }
+
+
+def get_mcp_oauth_token_by_hash(token_hash: str) -> dict[str, Any] | None:
+    with connect() as conn:
+        row = _fetchone(conn, "SELECT * FROM mcp_oauth_tokens WHERE token_hash = ?", (token_hash,))
+    return _row_dict(row) if row else None
+
+
+def revoke_mcp_oauth_token(token_id: str, *, revoked_at: str | None = None) -> bool:
+    from datetime import datetime, timezone
+
+    now = revoked_at or datetime.now(timezone.utc).replace(microsecond=0).isoformat()
+    with connect() as conn:
+        cur = _execute(
+            conn,
+            "UPDATE mcp_oauth_tokens SET revoked_at = ? WHERE token_id = ? AND revoked_at IS NULL",
+            (now, token_id),
+        )
+    return bool(getattr(cur, "rowcount", 0))
+
+
+def insert_mcp_oauth_auth_code(
+    *,
+    code_id: str,
+    code_hash: str,
+    principal_id: str,
+    client_id: str,
+    redirect_uri: str,
+    code_challenge: str,
+    resource: str,
+    expires_at: str,
+    scope: str = "",
+    code_challenge_method: str = "S256",
+    created_at: str | None = None,
+) -> dict[str, Any]:
+    from datetime import datetime, timezone
+
+    now = created_at or datetime.now(timezone.utc).replace(microsecond=0).isoformat()
+    with connect() as conn:
+        _execute(
+            conn,
+            """
+            INSERT INTO mcp_oauth_auth_codes (
+              code_id, code_hash, principal_id, client_id, redirect_uri,
+              code_challenge, code_challenge_method, resource, scope, expires_at, created_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                code_id,
+                code_hash,
+                principal_id,
+                client_id,
+                redirect_uri,
+                code_challenge,
+                code_challenge_method,
+                resource,
+                scope,
+                expires_at,
+                now,
+            ),
+        )
+    return {"code_id": code_id, "principal_id": principal_id, "expires_at": expires_at}
+
+
+def get_mcp_oauth_auth_code_by_hash(code_hash: str) -> dict[str, Any] | None:
+    with connect() as conn:
+        row = _fetchone(conn, "SELECT * FROM mcp_oauth_auth_codes WHERE code_hash = ?", (code_hash,))
+    return _row_dict(row) if row else None
+
+
+def consume_mcp_oauth_auth_code(code_id: str, *, consumed_at: str | None = None) -> bool:
+    from datetime import datetime, timezone
+
+    now = consumed_at or datetime.now(timezone.utc).replace(microsecond=0).isoformat()
+    with connect() as conn:
+        cur = _execute(
+            conn,
+            "UPDATE mcp_oauth_auth_codes SET consumed_at = ? WHERE code_id = ? AND consumed_at IS NULL",
+            (now, code_id),
+        )
+    return bool(getattr(cur, "rowcount", 0))
 
 
 def append_write_audit_log(

@@ -11,6 +11,8 @@ _SECRET_PATTERNS: tuple[tuple[re.Pattern[str], str], ...] = (
     (re.compile(r"\bgithub_pat_[A-Za-z0-9_]{20,}\b"), "[REDACTED:token]"),
     (re.compile(r"\bAKIA[0-9A-Z]{16}\b"), "[REDACTED:aws_key]"),
     (re.compile(r"\bma3v4_[A-Za-z0-9_-]{16,}\b"), "[REDACTED:api_key]"),
+    (re.compile(r"\bma3k_[A-Za-z0-9_-]{16,}\b"), "[REDACTED:api_key]"),
+    (re.compile(r"\bma3mcp_[A-Za-z0-9_-]{16,}\b"), "[REDACTED:token]"),
     (re.compile(r"(?i)(authorization:\s*bearer\s+)[^\s\"']+"), r"\1[REDACTED:token]"),
     (re.compile(r'(?i)"password"\s*:\s*"[^"]+"'), '"password": "[REDACTED:password]"'),
     (re.compile(r"(?i)(api[_-]?key\s*[=:]\s*)[^\s\"',]+"), r"\1[REDACTED:api_key]"),

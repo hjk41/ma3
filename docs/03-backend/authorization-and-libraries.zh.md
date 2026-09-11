@@ -9,11 +9,12 @@
 
 | 目标 | 说明 |
 |------|------|
-| **强制 key** | 所有 Agent 访问任何 library（含公共库）须持有效 API key；**移除匿名 MCP 读** |
+| **强制凭证** | 所有 Agent 访问任何 library（含公共库）须持有效 **API key** 或 **ma3 MCP OAuth token**；**移除匿名 MCP 读** |
 | **贡献优先** | 对 library 无 grant = 无访问；有 grant 默认 **read + write** |
 | **付费 read-only** | 仅付费 plan 可创建 **只读** grant（见 [ADR-012](../02-architecture/decisions/012-billing-and-quotas.md)、[09](billing-and-quotas.md)） |
 | **组织隔离** | org 拥有 library；成员多对多；visibility 控制 entitlement |
 | **可签发 key** | 用户门户（Authing session）自助签发 key；MCP 签发工具缓期 v1.1 |
+| **交互式 OAuth** | Cursor 等客户端走 MCP Authorization Spec OAuth（ADR-016）；权限 = Layer-1 entitlement |
 
 ---
 
@@ -179,19 +180,24 @@ maintainer grant 要求：writer 能力 + owner 对该库有 maintain entitlemen
 
 ```mermaid
 flowchart TD
-  Req[MCP_request] --> HasKey{X-API-Key?}
-  HasKey -->|no| Deny401[401_-32001]
-  HasKey -->|yes| DevKey{bootstrap_dev_key?}
+  Req[MCP_request] --> HasCred{X-API-Key_or_Bearer?}
+  HasCred -->|no| Deny401[401_-32001_WWW-Authenticate]
+  HasCred -->|yes| DevKey{bootstrap_dev_key?}
   DevKey -->|yes| AdminBypass[all_libraries_admin]
   DevKey -->|no| HashLookup[sha256_lookup_api_keys]
-  HashLookup -->|miss_or_revoked_or_deleted| Deny401
   HashLookup -->|hit| LoadGrants[load_api_key_grants]
+  HashLookup -->|miss| McpTok{ma3mcp_oauth_token?}
+  McpTok -->|yes| EntProj[project_Layer1_entitlements]
+  McpTok -->|no| Deny401
   LoadGrants --> CapSets[readable_writable_maintainer_sets]
+  EntProj --> CapSets
   CapSets --> ToolGate[per_tool_library_check]
 ```
 
 - **Bootstrap dev key**：`MA3_DEV_AUTH=1` 且匹配 `MA3_DEV_API_KEY` → admin bypass（LAN only）
-- **Bearer / session 不授予 MCP 数据访问**：session 仅用于 UI 与 key 管理
+- **API key**：Layer-2 `api_key_grants`（Agent/CI 主路径）
+- **MCP OAuth token**：登录主体的 Layer-1 entitlement 投影（ADR-016）
+- **裸 Authing Bearer / session cookie**：不是 MCP 数据凭证（session 仅用于 UI + OAuth authorize）
 
 ### 4.5 写路径 library 选择
 

@@ -9,13 +9,13 @@
 |-------|--------|
 | Metrics exposure | SaaS loopback / not public; **self-host metrics off by default** |
 | App-host stack | Prometheus / Alertmanager / Grafana on ma3.io (loopback only) |
-| Reachability paging | **Off-host probe on operator laptop** (host 202) → Feishu |
+| Reachability paging | **Off-host probe on host 200** (`hct-nas`) → Feishu |
 | Aliyun managed Prom | **Do not** `remote_write` — TSDB stays on the app host |
 | Internal SLOs | App-host Prom + Grafana; probe covers public reachability |
 
 ## Phase 0 — off-host probe
 
-Script: [`probe_ma3.sh`](probe_ma3.sh)
+Script: [`probe_ma3.py`](probe_ma3.py) (cross-platform; [`probe_ma3.sh`](probe_ma3.sh) is a thin launcher)
 
 Every ~60s from a host **other than** the ma3.io app server:
 
@@ -33,6 +33,7 @@ export MA3_EXPECT_INSTANCE_ID=ma3-v1-hk
 export MA3_PROBE_DRY_RUN=1
 # optional: export MA3_PROBE_WEBHOOK_URL=https://hooks.example/…
 bash deploy/observability/probe_ma3.sh
+# or: python3 deploy/observability/probe_ma3.py
 ```
 
 ### systemd (example)
@@ -65,9 +66,42 @@ sudo systemctl enable --now ma3-probe.timer
 3. Confirm webhook receives `ma3_probe_fail`.
 4. Restore URL; confirm `ma3_probe_recover`.
 
-### Host 202 (LAN operator laptop) — live install
+### Windows NAS (host 200) — **production probe**
 
-This machine (`192.168.31.202`) runs the off-host probe for SaaS `https://ma3.io`:
+See **[windows/DEPLOYMENT.md](windows/DEPLOYMENT.md)** for the full agent debug map (paths, tasks, redeploy, triage).
+
+Redeploy from dev machine:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File deploy/observability/windows/deploy-host-200.ps1
+```
+
+### Windows dev laptop (optional local install)
+
+Run on a machine **other than** the ma3.io app server (Python 3 only; no WSL):
+
+```powershell
+powershell -ExecutionPolicy Bypass -File deploy/observability/windows/install_probe.ps1
+```
+
+| Component | Role |
+|-----------|------|
+| Scheduled task `ma3-probe` | Every 60s: `probe_ma3.py` via hidden launcher |
+| Startup `ma3-alert-sink.vbs` | `127.0.0.1:8787` sink → Feishu |
+| `%USERPROFILE%\.ma3\probe\probe.env` | Target URL / instance / webhook (not in git) |
+| `%USERPROFILE%\.ma3\probe\feishu.env` | Feishu app credentials (not in git) |
+
+Useful commands:
+
+```powershell
+schtasks /Query /TN ma3-probe /FO LIST /V
+powershell -File $env:USERPROFILE\.ma3\probe\run_probe.ps1
+Get-Content $env:USERPROFILE\.ma3\probe\logs\probe-alerts.jsonl -Tail 20
+```
+
+### Host 202 (LAN operator laptop) — legacy Linux install
+
+Previously `192.168.31.202` ran the off-host probe via systemd. Prefer the Windows setup above on your daily laptop when 202 is powered off.
 
 | Unit | Role |
 |------|------|

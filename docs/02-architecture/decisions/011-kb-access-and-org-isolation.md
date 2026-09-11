@@ -46,9 +46,9 @@ Org admins can promote an org library to `public`, or add `library_grants` for n
 
 ### 2. Mandatory API keys; anonymous MCP reads removed
 
-- All MCP **data tools** (context / report / case / feedback / review, etc.) require a valid `X-API-Key`
-- No key or invalid key → **401** / JSON-RPC `-32001`
-- **Authing Bearer** is only for Observatory human login and the key management UI/API; it is **not** a credential for the MCP data path
+- All MCP **data tools** (context / report / case / feedback / review, etc.) require a valid credential: **API key** or **ma3-issued MCP OAuth access token** (ADR-016)
+- No credential or invalid credential → **401** / JSON-RPC `-32001` (with `WWW-Authenticate` resource metadata for OAuth discovery)
+- **Bare Authing Bearer** is only for Observatory human login and the key management UI/API; it is **not** a credential for the MCP data path. **ma3 MCP OAuth tokens** (audience/resource-bound) may be used on MCP
 - `MA3_DEV_AUTH=1` + dev key retained as a **break-glass admin bypass** (LAN/dev only)
 
 ### 3. API key storage and issuance

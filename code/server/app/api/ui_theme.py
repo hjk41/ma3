@@ -268,10 +268,17 @@ input[type=password],
 input[type=email],
 input[type=search],
 input[type=number],
+textarea.copy-input,
 .copy-input {
   min-width: 280px; padding: 8px 12px; border: 1px solid var(--border);
   border-radius: var(--radius); font: inherit; background: #fff;
 }
+textarea.copy-input {
+  width: 100%; min-height: 7.5rem; resize: vertical; line-height: 1.45;
+  font-family: var(--mono); font-size: 13px;
+}
+.copy-row.stack { flex-direction: column; align-items: stretch; }
+.copy-row.stack .btn { align-self: flex-start; }
 .password-field {
   position: relative; max-width: 360px; width: 100%;
 }

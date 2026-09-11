@@ -57,13 +57,13 @@
 
 **在 ma3.io 应用主机上跑 Prometheus / Alertmanager / Grafana**（`bash deploy/observability/run_saas_stack.sh`）。通过蓝绿 `file_sd` 跟随 live uvicorn 端口。**不要** `remote_write` 到阿里云托管 Prometheus。
 
-公网可达性寻呼仍走运维本机（202）的站外探活。
+公网可达性寻呼：站外探活跑在 **主机 200**（`192.168.31.200`，`hct-nas`）。部署/调试见 [`deploy/observability/windows/DEPLOYMENT.md`](../../deploy/observability/windows/DEPLOYMENT.md)。
 
 ## Phase 2 — 告警
 
 | 项 | 位置 |
 |------|----------|
-| 可达性寻呼 | 主机 202：`ma3-probe.timer` → `ma3-alert-sink` → 飞书 |
+| 可达性寻呼 | 主机 200：`ma3-probe` 计划任务 → `ma3-alert-sink` → 飞书 |
 | 应用指标 / SLO 告警 | 应用主机：Prometheus → Alertmanager → 飞书 sink（`/etc/ma3/feishu.env`） |
 | ticket 跟进 | **人工** |
 
@@ -92,7 +92,7 @@ SLO dashboard 在应用主机（`run_saas_stack.sh`）。UI 仅 loopback，用 S
 
 | Phase | 状态 | 交付 |
 |-------|--------|-------------|
-| 0 | **已完成（主机 202）** | 站外探活 + webhook/飞书 + 文档 |
+| 0 | **已完成（主机 200）** | 站外探活 + webhook/飞书 + 文档 |
 | 1 | **已完成（ma3.io）** | `/metrics`、HTTP+MCP、Prometheus scrape |
 | 2 | **已完成** | Alertmanager + 飞书 webhook + 起步告警 |
 | 3 | **已完成** | SLO-1–3 recording rules + Grafana |

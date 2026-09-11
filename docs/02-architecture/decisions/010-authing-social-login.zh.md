@@ -13,7 +13,7 @@ v1 需要「普通人友好」的登录方式（微信、手机验证码），Ag
 ## 决策
 
 1. **Observatory / 人维护者 UI** 通过 **Authing OIDC 授权码模式** 登录。
-2. **MCP / Agent** 继续使用 `X-API-Key` / library key，**不经过 Authing**。
+2. **MCP / Agent** 继续使用 `X-API-Key` / library key 作为主路径；交互式 MCP 客户端可走 MCP Authorization Spec OAuth（Authing 仅做人 IdP，ma3 签发 MCP token，见 ADR-016）。**不把** Authing access token 直接当作 MCP 主凭证。
 3. 登录成功后 ma3 **upsert `principals`**（`kind=user`），`sso_user` = Authing `sub`。
 4. Session：**HttpOnly cookie** 存 `access_token`，请求时用 Authing **userinfo** 校验并带短期内存缓存。
 5. 启用条件：`MA3_AUTHING_ENABLED=1` 且配置 `MA3_AUTHING_ISSUER`、`MA3_AUTHING_APP_ID`、`MA3_AUTHING_APP_SECRET`。

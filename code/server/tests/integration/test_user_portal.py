@@ -55,7 +55,9 @@ def test_me_overview_is_dashboard_without_account_chrome(authing_portal_client, 
     assert "编辑显示名" not in response.text
     assert "Principal ID" not in response.text
     assert portal_user.principal_id not in response.text
-    assert 'class="copy-row"' not in response.text
+    assert "接入你的 Agent" in response.text
+    assert "/client/connect.md" in response.text
+    assert "贴给你的 agent" in response.text or "请帮我接入" in response.text
 
 
 def test_me_settings_shows_readonly_display_name_and_principal_id(authing_portal_client, portal_user):

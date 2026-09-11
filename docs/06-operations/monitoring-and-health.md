@@ -57,7 +57,7 @@ App-host `/metrics` stays loopback-only. `verify_ma3_prod.sh` asserts the **publ
 
 **Run Prometheus / Alertmanager / Grafana on the ma3.io app host** (`bash deploy/observability/run_saas_stack.sh`). Scrape uses blue-green `file_sd` so the live uvicorn port is followed. **Do not** `remote_write` to Aliyun-managed Prometheus.
 
-Public reachability paging remains the off-host probe on the operator laptop (host 202).
+Public reachability paging: off-host probe on **host 200** (`192.168.31.200`, `hct-nas`). Deploy/debug: [`deploy/observability/windows/DEPLOYMENT.md`](../../deploy/observability/windows/DEPLOYMENT.md).
 
 ## Phase 2 — alerting
 
@@ -92,7 +92,7 @@ Do **not** put secrets or raw API keys in logs. Per-tenant detail stays in logs/
 
 | Phase | Status | Deliverable |
 |-------|--------|-------------|
-| 0 | **Done** (host 202) | Off-host probe + webhook/Feishu + docs |
+| 0 | **Done** (host 200) | Off-host probe + webhook/Feishu + docs |
 | 1 | **Done** (ma3.io) | `/metrics`, HTTP + MCP series, Prometheus scrape |
 | 2 | **Done** | Alertmanager + Feishu webhook + starter alerts |
 | 3 | **Done** | SLO-1–3 recording rules + Grafana dashboard |

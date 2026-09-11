@@ -12,6 +12,7 @@ CLIENT_DIR = Path(__file__).resolve().parents[3] / "client"
 
 CLIENT_MANIFEST_FILES: tuple[tuple[str, str], ...] = (
     ("agent-onboarding.md", "/client/agent-onboarding.md"),
+    ("connect.md", "/client/connect.md"),
     ("templates/ma3-agent-policy.mdc", "/client/templates/ma3-agent-policy.mdc"),
     ("templates/ma3-client.env.example", "/client/templates/ma3-client.env.example"),
     ("skills/ma3/SKILL.md", "/client/skills/ma3/SKILL.md"),
