@@ -309,6 +309,19 @@ def _render_agent_connect_card(base: str, *, locale: str, t: Callable[..., str])
   </div>"""
 
 
+def _render_feedback_card(*, t: Callable[..., str]) -> str:
+    return f"""
+  <div class="card" style="margin-top:16px;">
+    <div class="card-header"><h2>{esc(t("portal.me.feedback_title"))}</h2></div>
+    <div class="card-body">
+      <p class="card-muted">{esc(t("portal.me.feedback_lead"))}</p>
+      <div class="empty-cta" style="margin-top:12px;">
+        <a class="btn" href="https://ma3-talk.slack.com" target="_blank" rel="noopener noreferrer">{esc(t("portal.me.feedback_cta"))}</a>
+      </div>
+    </div>
+  </div>"""
+
+
 def _landing_primary_href(base: str) -> str:
     if setup_service.setup_needs_owner():
         return f"{base}/ui/setup/"
@@ -623,7 +636,8 @@ def portal_me(request: Request) -> Response:
       <a class="btn subtle" href="{esc(base)}/ui/me/writes/">{esc(t("portal.me.view_all"))}</a>
     </div>
     <div class="card-body">{recent_block}</div>
-  </div>"""
+  </div>
+  {_render_feedback_card(t=t)}"""
     return html_response(
         request,
         render_page(
