@@ -278,6 +278,33 @@ Behavior policy: install `/client/templates/ma3-agent-policy.mdc` into your Open
 
 ---
 
+### OpenClaw / ClawHub
+
+Preferred path for OpenClaw: install the **Agent Plugins bundle** (remote MCP + skill) from ClawHub after it is published:
+
+```bash
+openclaw plugins install clawhub:ma3
+# scoped form once published under an owner: clawhub:@<owner>/ma3
+openclaw gateway restart
+openclaw mcp doctor ma3 --probe
+```
+
+Bundle source in this repo: `code/client/clawhub/` (`plugin.json` + `mcp.json` → `https://ma3.io/mcp` + `skills/ma3/SKILL.md`). Publish steps: see that folder’s `README.md`.
+
+Manual MCP (without ClawHub):
+
+```bash
+openclaw mcp add ma3 \
+  --url https://ma3.io/mcp \
+  --transport streamable-http \
+  --auth oauth
+openclaw mcp login ma3
+```
+
+CLI/headless OpenClaw: use an API key from `/ui/keys/` instead of OAuth (headers / env per OpenClaw docs).
+
+---
+
 ### Claude Code
 
 ```bash

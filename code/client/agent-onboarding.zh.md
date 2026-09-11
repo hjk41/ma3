@@ -270,6 +270,33 @@ opencode mcp add ma3 --url https://ma3.io/mcp --header "X-API-Key=${MA3_API_KEY}
 
 ---
 
+### OpenClaw / ClawHub
+
+OpenClaw 推荐安装 ClawHub 上的 **Agent Plugins bundle**（远程 MCP + skill）：
+
+```bash
+openclaw plugins install clawhub:ma3
+# 发布到某 owner 后可用：clawhub:@<owner>/ma3
+openclaw gateway restart
+openclaw mcp doctor ma3 --probe
+```
+
+仓库包路径：`code/client/clawhub/`（`plugin.json` + `mcp.json` → `https://ma3.io/mcp` + `skills/ma3/SKILL.md`）。发布步骤见该目录 `README.md`。
+
+不经过 ClawHub 的手动 MCP：
+
+```bash
+openclaw mcp add ma3 \
+  --url https://ma3.io/mcp \
+  --transport streamable-http \
+  --auth oauth
+openclaw mcp login ma3
+```
+
+无头 / CLI：用 `/ui/keys/` 的 API key，不要把 key 写进 ClawHub 包。
+
+---
+
 ### Claude Code
 
 ```bash

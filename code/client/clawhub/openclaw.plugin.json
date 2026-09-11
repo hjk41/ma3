@@ -1,0 +1,7 @@
+{
+  "id": "ma3",
+  "name": "ma3",
+  "description": "Connect OpenClaw to ma3 (马妈妈) institutional memory at https://ma3.io/mcp, plus the ma3 knowledge-loop skill.",
+  "version": "1.6.0",
+  "categories": ["memory"]
+}

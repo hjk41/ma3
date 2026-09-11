@@ -1,0 +1,14 @@
+{
+  "name": "ma3",
+  "version": "1.6.0",
+  "description": "Connect the agent to ma3 institutional memory via remote MCP at https://ma3.io/mcp.",
+  "author": {
+    "name": "ma3",
+    "url": "https://ma3.io"
+  },
+  "homepage": "https://ma3.io",
+  "repository": "https://github.com/hjk41/ma3",
+  "license": "MIT",
+  "keywords": ["ma3", "mcp", "memory", "knowledge"],
+  "mcpServers": "./mcp.json"
+}
