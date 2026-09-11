@@ -7,9 +7,10 @@ description: >-
   Never send task context silently. 用户明确同意后，用 ma3 检索/写入可复用经验。
 ---
 
-# ma3 Knowledge Loop (opt-in)
+# ma3 (马妈妈) Knowledge Loop (opt-in)
 
-Remote shared memory at **https://ma3.io** (SaaS). Installing this plugin only
+**ma3** is shared institutional memory for agents: recall prior experience, then
+remember verified outcomes on **https://ma3.io**. Installing this plugin only
 exposes MCP tools — it does **not** authorize automatic uploads.
 
 | Phase | Tool | Requires |
