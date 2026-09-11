@@ -22,6 +22,10 @@ $RemoteHost = "ma3-prod"
 $RemoteDir = "/opt/ma3_deploy"
 $Commit = (git -C $RepoRoot rev-parse --short HEAD).Trim()
 
+if ($Paths.Count -eq 1 -and $Paths[0] -match ",") {
+    $Paths = @($Paths[0] -split "," | ForEach-Object { $_.Trim() } | Where-Object { $_ })
+}
+
 if ($Paths.Count -eq 0) {
     $Paths = @(
         "code/server/app/api/ui_theme.py",
