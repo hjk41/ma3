@@ -1,6 +1,6 @@
 {
   "name": "ma3",
-  "version": "1.6.2",
+  "version": "1.6.3",
   "private": true,
   "description": "ma3 (马妈妈) institutional memory for OpenClaw: MCP to https://ma3.io plus consent-first skill to search and save agent experience.",
   "license": "MIT",

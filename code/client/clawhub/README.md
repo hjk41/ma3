@@ -35,6 +35,14 @@ openclaw mcp doctor ma3 --probe
 
 Site: https://ma3.io · Connect playbook: https://ma3.io/client/connect.md · Listing: https://clawhub.ai/hjk41/plugins/ma3
 
+## Feedback
+
+Product feedback, questions, and discussion about ma3 belong in Slack — not as a substitute for MCP knowledge writes:
+
+**https://ma3-talk.slack.com** (workspace: `ma3-talk`)
+
+This link is for humans joining the community channel. The plugin’s only network destination remains **https://ma3.io** (see [SECURITY.md](./SECURITY.md)).
+
 ## Privacy & consent
 
 - Network destination: **https://ma3.io only** (`mcp.json`).
@@ -63,9 +71,9 @@ clawhub package publish ./code/client/clawhub \
   --family bundle-plugin \
   --name ma3 \
   --display-name "ma3 (马妈妈) Institutional Memory" \
-  --version 1.6.2 \
+  --version 1.6.3 \
   --topics "ma3,mcp,agent-memory,knowledge-base,mamama" \
   --source-repo hjk41/ma3 \
   --source-path code/client/clawhub \
-  --changelog "Richer catalog description and README for discovery"
+  --changelog "Document Slack feedback channel (ma3-talk) in README"
 ```

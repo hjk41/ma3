@@ -480,6 +480,13 @@ def _render_public_landing(request: Request, *, locale: str, t: Callable[..., st
       <a class="btn" href="{esc(connect_href)}">{esc(t("landing.connect_docs"))}</a>
       <a class="btn subtle" href="{esc(docs_href)}">{esc(t("landing.hero.cta_docs"))}</a>
     </p>
+  </section>
+  <section class="landing-section">
+    <h2 class="landing-section-title">{esc(t("landing.community.title"))}</h2>
+    <p class="landing-section-lead">{esc(t("landing.community.lead"))}</p>
+    <p style="margin-top:12px;">
+      <a class="btn" href="https://ma3-talk.slack.com">{esc(t("landing.community.cta"))}</a>
+    </p>
   </section>"""
 
 

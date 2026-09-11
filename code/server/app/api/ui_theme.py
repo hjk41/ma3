@@ -864,6 +864,7 @@ def render_page(
         <a href="{esc(base)}/mcp/info">MCP</a>
         <a href="{esc(base)}/client/manifest.json">manifest</a>
         <a href="{esc(base)}/client/agent-onboarding.md">onboarding</a>
+        <a href="https://ma3-talk.slack.com">Slack</a>
         <a href="https://github.com/hjk41/ma3/blob/main/docs/07-commercial/legal/terms-of-service.md">Terms</a>
         <a href="https://github.com/hjk41/ma3/blob/main/docs/07-commercial/legal/privacy-policy.md">Privacy</a>
         <a href="https://github.com/hjk41/ma3/blob/main/docs/07-commercial/legal/data-retention-and-deletion.md">Data</a>

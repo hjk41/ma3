@@ -1,7 +1,7 @@
 {
   "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
   "name": "ma3",
-  "version": "1.6.2",
+  "version": "1.6.3",
   "description": "ma3 (马妈妈) institutional memory MCP for agents: search reusable debug/deploy experience on https://ma3.io and write verified outcomes back. OpenClaw/ClawHub bundle with consent-first skill; auth via OAuth or API key.",
   "homepage": "https://ma3.io",
   "repository": "https://github.com/hjk41/ma3",

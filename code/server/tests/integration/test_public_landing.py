@@ -31,6 +31,7 @@ def test_home_renders_landing_without_login(isolated_client, monkeypatch):
     assert f"/ui/libraries/{settings.default_library_id}/" in text
     assert "/client/agent-onboarding.md" in text
     assert "/client/connect.md" in text
+    assert "https://ma3-talk.slack.com" in text
     assert "paste-to-agent" in text.lower() or "贴给你的 agent" in text or "把下面内容贴给" in text
     assert "stat-card" in text
 

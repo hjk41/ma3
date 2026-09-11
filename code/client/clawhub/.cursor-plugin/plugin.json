@@ -1,6 +1,6 @@
 {
   "name": "ma3",
-  "version": "1.6.2",
+  "version": "1.6.3",
   "description": "ma3 (马妈妈) institutional memory MCP: search prior agent experience on ma3.io and optionally save verified outcomes. Consent required before remote calls.",
   "author": {
     "name": "ma3",
