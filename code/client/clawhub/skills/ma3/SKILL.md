@@ -1,11 +1,10 @@
 ---
 name: ma3
 description: >-
-  Opt-in remote institutional memory for ma3 (https://ma3.io). Only after the
-  user explicitly allows it for this session/task: search prior agent experience
-  (ma3_context) and optionally write back outcomes (ma3_feedback / ma3_report).
-  Never send task context to ma3 silently. 仅在用户明确同意后，才可把任务上下文
-  发往 ma3.io 检索或写入。
+  ma3 / 马妈妈 institutional memory (https://ma3.io): after the user explicitly
+  allows it for this session/task, search prior agent debug/deploy experience
+  with ma3_context and optionally save outcomes with ma3_feedback / ma3_report.
+  Never send task context silently. 用户明确同意后，用 ma3 检索/写入可复用经验。
 ---
 
 # ma3 Knowledge Loop (opt-in)

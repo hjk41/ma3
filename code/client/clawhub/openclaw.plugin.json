@@ -1,7 +1,7 @@
 {
   "id": "ma3",
-  "name": "ma3",
-  "description": "Opt-in remote institutional memory via https://ma3.io/mcp. Requires explicit user consent before sending task context or storing outcomes; OAuth/API key authenticate only.",
-  "version": "1.6.1",
+  "name": "ma3 (马妈妈) Institutional Memory",
+  "description": "ma3 / 马妈妈: shared agent institutional memory over MCP (https://ma3.io). Search prior debug/deploy experience with ma3_context, then optionally save outcomes with ma3_report. Consent required before sending task context; OAuth or portal API key for auth.",
+  "version": "1.6.2",
   "categories": ["memory"]
 }

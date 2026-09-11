@@ -1,8 +1,8 @@
 {
   "name": "ma3",
-  "version": "1.6.1",
+  "version": "1.6.2",
   "private": true,
-  "description": "Opt-in OpenClaw / ClawHub bundle for ma3 institutional memory (remote MCP + consent-first skill).",
+  "description": "ma3 (马妈妈) institutional memory for OpenClaw: MCP to https://ma3.io plus consent-first skill to search and save agent experience.",
   "license": "MIT",
   "homepage": "https://ma3.io",
   "repository": {
@@ -12,9 +12,14 @@
   },
   "keywords": [
     "ma3",
+    "mamama",
+    "马妈妈",
     "mcp",
     "openclaw",
     "clawhub",
-    "memory"
+    "memory",
+    "agent-memory",
+    "institutional-memory",
+    "knowledge-base"
   ]
 }

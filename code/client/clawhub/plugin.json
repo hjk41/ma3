@@ -1,17 +1,23 @@
 {
   "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
   "name": "ma3",
-  "version": "1.6.1",
-  "description": "Opt-in ma3 institutional memory (https://ma3.io/mcp). Explicit user consent required before remote recall or write-back; no silent uploads.",
+  "version": "1.6.2",
+  "description": "ma3 (马妈妈) institutional memory MCP for agents: search reusable debug/deploy experience on https://ma3.io and write verified outcomes back. OpenClaw/ClawHub bundle with consent-first skill; auth via OAuth or API key.",
   "homepage": "https://ma3.io",
   "repository": "https://github.com/hjk41/ma3",
   "license": "MIT",
   "keywords": [
     "ma3",
+    "mamama",
+    "马妈妈",
     "mcp",
     "memory",
-    "knowledge",
+    "agent-memory",
+    "institutional-memory",
+    "knowledge-base",
+    "experience-reuse",
     "openclaw",
+    "clawhub",
     "opt-in"
   ],
   "author": {

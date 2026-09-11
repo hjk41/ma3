@@ -1,7 +1,7 @@
 {
   "name": "ma3",
-  "version": "1.6.1",
-  "description": "Opt-in ma3 institutional memory via https://ma3.io/mcp; requires explicit user consent before remote recall/write.",
+  "version": "1.6.2",
+  "description": "ma3 (马妈妈) institutional memory MCP: search prior agent experience on ma3.io and optionally save verified outcomes. Consent required before remote calls.",
   "author": {
     "name": "ma3",
     "url": "https://ma3.io"
@@ -9,6 +9,14 @@
   "homepage": "https://ma3.io",
   "repository": "https://github.com/hjk41/ma3",
   "license": "MIT",
-  "keywords": ["ma3", "mcp", "memory", "knowledge"],
+  "keywords": [
+    "ma3",
+    "mamama",
+    "mcp",
+    "memory",
+    "agent-memory",
+    "knowledge-base",
+    "openclaw"
+  ],
   "mcpServers": "./mcp.json"
 }
