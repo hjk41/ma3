@@ -6,6 +6,7 @@ import hashlib
 import secrets
 
 from app.core.config import settings
+from app.services import mcp_oauth_as_service
 from app.services.onboarding_service import ensure_personal_library
 from app.services.principal_service import complete_display_name_setup
 from app.storage import db
@@ -36,9 +37,11 @@ def test_prm_and_as_metadata(isolated_client, monkeypatch):
     as_meta = isolated_client.get("/.well-known/oauth-authorization-server")
     assert as_meta.status_code == 200
     meta = as_meta.json()
+    assert meta["authorization_response_iss_parameter_supported"] is True
     assert meta["authorization_endpoint"].endswith("/oauth/authorize")
     assert meta["token_endpoint"].endswith("/oauth/token")
     assert "S256" in meta["code_challenge_methods_supported"]
+    assert meta["client_id_metadata_document_supported"] is True
 
 
 def test_pkce_oauth_exchange_and_mcp_whoami(isolated_client, monkeypatch, portal_user):
@@ -50,8 +53,17 @@ def test_pkce_oauth_exchange_and_mcp_whoami(isolated_client, monkeypatch, portal
     ensure_personal_library(portal_user.principal_id, portal_user.display_name)
 
     verifier, challenge = _pkce_pair()
-    redirect_uri = "http://127.0.0.1:8765/callback"
-    client_id = "https://example.com/mcp-client.json"
+    redirect_uri = "https://chatgpt.com/connector_platform_oauth_redirect"
+    client_id = "https://chatgpt.com/oauth/client.json"
+    monkeypatch.setattr(
+        mcp_oauth_as_service,
+        "fetch_client_metadata",
+        lambda value: {
+            "client_id": value,
+            "redirect_uris": [redirect_uri],
+            "token_endpoint_auth_methods_supported": ["none"],
+        },
+    )
     resource = settings.mcp_resource_url()
 
     auth = isolated_client.get(
@@ -73,6 +85,7 @@ def test_pkce_oauth_exchange_and_mcp_whoami(isolated_client, monkeypatch, portal
     assert location.startswith(redirect_uri)
     assert "code=" in location
     assert "state=xyz" in location
+    assert "iss=http%3A%2F%2Ftestserver" in location
     from urllib.parse import parse_qs, urlparse
 
     code = parse_qs(urlparse(location).query)["code"][0]
@@ -157,3 +170,87 @@ def test_authorize_redirects_to_login_when_anonymous(isolated_client, monkeypatc
     )
     assert response.status_code == 302
     assert response.headers["location"].startswith("/auth/login?next=")
+
+
+def test_chatgpt_stable_redirect_is_allowed():
+    assert mcp_oauth_as_service.redirect_uri_allowed(
+        "https://chatgpt.com/connector_platform_oauth_redirect"
+    )
+
+
+def test_cimd_binds_client_to_declared_redirect(monkeypatch):
+    client_id = "https://chatgpt.com/oauth/client.json"
+    monkeypatch.setattr(
+        mcp_oauth_as_service,
+        "fetch_client_metadata",
+        lambda value: {
+            "client_id": value,
+            "redirect_uris": ["https://chatgpt.com/connector_platform_oauth_redirect"],
+            "token_endpoint_auth_methods_supported": ["none"],
+        },
+    )
+    assert mcp_oauth_as_service.client_redirect_uri_allowed(
+        client_id,
+        "https://chatgpt.com/connector_platform_oauth_redirect",
+    )
+    assert not mcp_oauth_as_service.client_redirect_uri_allowed(
+        client_id,
+        "https://attacker.example/callback",
+    )
+
+
+def test_cimd_fetch_rejects_non_chatgpt_hosts(monkeypatch):
+    called = False
+
+    class UnexpectedClient:
+        def __init__(self, **_kwargs):
+            nonlocal called
+            called = True
+
+    monkeypatch.setattr(mcp_oauth_as_service.httpx, "Client", UnexpectedClient)
+    assert mcp_oauth_as_service.fetch_client_metadata("https://127.0.0.1/client.json") is None
+    assert called is False
+
+
+def test_cimd_accepts_loopback_runtime_port(monkeypatch):
+    client_id = "https://chatgpt.com/oauth/client.json"
+    monkeypatch.setattr(
+        mcp_oauth_as_service,
+        "fetch_client_metadata",
+        lambda _value: {
+            "client_id": client_id,
+            "redirect_uris": ["http://127.0.0.1/callback/id"],
+            "token_endpoint_auth_methods_supported": ["none"],
+        },
+    )
+    assert mcp_oauth_as_service.client_redirect_uri_allowed(
+        client_id, "http://127.0.0.1:54321/callback/id"
+    )
+
+
+def test_cimd_rejects_malformed_client_id():
+    assert not mcp_oauth_as_service.client_redirect_uri_allowed(
+        "https://[invalid", "https://chatgpt.com/connector_platform_oauth_redirect"
+    )
+
+
+def test_cimd_rejects_unsafe_or_mismatched_redirects(monkeypatch):
+    client_id = "https://chatgpt.com/oauth/client.json"
+    monkeypatch.setattr(
+        mcp_oauth_as_service,
+        "fetch_client_metadata",
+        lambda _value: {
+            "client_id": client_id,
+            "redirect_uris": [
+                "http://remote.example/callback#fragment",
+                "http://127.0.0.1/callback;safe",
+            ],
+            "token_endpoint_auth_methods_supported": ["none"],
+        },
+    )
+    assert not mcp_oauth_as_service.client_redirect_uri_allowed(
+        client_id, "http://remote.example/callback#fragment"
+    )
+    assert not mcp_oauth_as_service.client_redirect_uri_allowed(
+        client_id, "http://127.0.0.1:54321/callback;different"
+    )

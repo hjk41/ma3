@@ -15,6 +15,10 @@ from app.services.principal_service import display_name_setup_required
 
 router = APIRouter(tags=["mcp-oauth"])
 
+# ChatGPT uses this callback when the authorization server advertises issuer
+# identification support (RFC 9207).
+CHATGPT_STABLE_REDIRECT_URI = "https://chatgpt.com/connector_platform_oauth_redirect"
+
 
 def _public_base(request: Request) -> str:
     return resolve_public_base_url(request)
@@ -23,12 +27,14 @@ def _public_base(request: Request) -> str:
 def _authorization_server_metadata(base: str) -> dict[str, Any]:
     return {
         "issuer": base,
+        "authorization_response_iss_parameter_supported": True,
         "authorization_endpoint": f"{base}/oauth/authorize",
         "token_endpoint": f"{base}/oauth/token",
         "response_types_supported": ["code"],
         "grant_types_supported": ["authorization_code"],
         "code_challenge_methods_supported": ["S256"],
         "token_endpoint_auth_methods_supported": ["none"],
+        "client_id_metadata_document_supported": True,
         "scopes_supported": ["mcp"],
         "resource_indicators_supported": True,
     }
@@ -57,9 +63,22 @@ def _append_query(url: str, **params: str) -> str:
     return urlunsplit((parts.scheme, parts.netloc, parts.path, urlencode(existing), parts.fragment))
 
 
-def _oauth_error_redirect(redirect_uri: str, *, error: str, state: str | None, description: str) -> RedirectResponse:
+def _oauth_error_redirect(
+    redirect_uri: str,
+    *,
+    issuer: str,
+    error: str,
+    state: str | None,
+    description: str,
+) -> RedirectResponse:
     return RedirectResponse(
-        _append_query(redirect_uri, error=error, error_description=description, **({"state": state} if state else {})),
+        _append_query(
+            redirect_uri,
+            error=error,
+            error_description=description,
+            iss=issuer,
+            **({"state": state} if state else {}),
+        ),
         status_code=302,
     )
 
@@ -96,11 +115,12 @@ def oauth_authorize(
         raise HTTPException(status_code=400, detail="unsupported response_type")
     if not client_id:
         raise HTTPException(status_code=400, detail="client_id required")
-    if not redirect_uri or not mcp_oauth_as_service.redirect_uri_allowed(redirect_uri):
+    if not redirect_uri or not mcp_oauth_as_service.client_redirect_uri_allowed(client_id, redirect_uri):
         raise HTTPException(status_code=400, detail="redirect_uri not allowed")
     if code_challenge_method.upper() != "S256":
         return _oauth_error_redirect(
             redirect_uri,
+            issuer=_public_base(request),
             error="invalid_request",
             state=state,
             description="only S256 PKCE is supported",
@@ -108,6 +128,7 @@ def oauth_authorize(
     if not code_challenge or not mcp_oauth_as_service.validate_code_challenge(code_challenge):
         return _oauth_error_redirect(
             redirect_uri,
+            issuer=_public_base(request),
             error="invalid_request",
             state=state,
             description="code_challenge required (S256, 43 chars)",
@@ -116,6 +137,7 @@ def oauth_authorize(
     if not mcp_oauth_as_service.resource_matches(resource, expected=expected_resource):
         return _oauth_error_redirect(
             redirect_uri,
+            issuer=_public_base(request),
             error="invalid_target",
             state=state,
             description="resource must equal the MCP resource URL",
@@ -143,13 +165,14 @@ def oauth_authorize(
     except ValueError as exc:
         return _oauth_error_redirect(
             redirect_uri,
+            issuer=_public_base(request),
             error="invalid_request",
             state=state,
             description=str(exc),
         )
 
     return RedirectResponse(
-        _append_query(redirect_uri, code=issued.code, **({"state": state} if state else {})),
+        _append_query(redirect_uri, code=issued.code, iss=_public_base(request), **({"state": state} if state else {})),
         status_code=302,
     )
 

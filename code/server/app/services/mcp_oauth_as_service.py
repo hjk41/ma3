@@ -3,11 +3,15 @@ from __future__ import annotations
 
 import base64
 import hashlib
+import json
 import re
 import secrets
+import time
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from urllib.parse import urlparse
+
+import httpx
 
 from app.core.config import settings
 from app.services import mcp_oauth_token_service
@@ -15,6 +19,10 @@ from app.storage import db
 
 _LOCAL_HOSTS = frozenset({"127.0.0.1", "localhost", "[::1]", "::1"})
 _CUSTOM_SCHEMES = frozenset({"cursor", "vscode", "vscode-insiders"})
+_CHATGPT_STABLE_REDIRECT_URI = "https://chatgpt.com/connector_platform_oauth_redirect"
+_CIMD_TIMEOUT_SECONDS = 5.0
+_CIMD_MAX_BYTES = 64 * 1024
+_CIMD_ALLOWED_HOST = "chatgpt.com"
 
 
 def _utcnow() -> datetime:
@@ -73,6 +81,8 @@ def redirect_uri_allowed(redirect_uri: str) -> bool:
     raw = (redirect_uri or "").strip()
     if not raw:
         return False
+    if raw == _CHATGPT_STABLE_REDIRECT_URI:
+        return True
     for allowed in settings.mcp_oauth_redirect_uri_allowlist:
         if raw == allowed:
             return True
@@ -85,6 +95,95 @@ def redirect_uri_allowed(redirect_uri: str) -> bool:
         if host in _LOCAL_HOSTS:
             return True
     return False
+
+
+def fetch_client_metadata(client_id: str) -> dict[str, object] | None:
+    """Fetch and minimally validate an HTTPS Client ID Metadata Document."""
+    try:
+        parsed = urlparse((client_id or "").strip())
+        hostname = (parsed.hostname or "").lower()
+    except ValueError:
+        return None
+    if parsed.scheme != "https" or not parsed.netloc or parsed.query or parsed.fragment:
+        return None
+    # ChatGPT's CIMD documents are hosted on chatgpt.com. Restricting the
+    # fetch destination prevents an unauthenticated authorize request from
+    # becoming an SSRF primitive.
+    if hostname != _CIMD_ALLOWED_HOST and not hostname.endswith(f".{_CIMD_ALLOWED_HOST}"):
+        return None
+    deadline = time.monotonic() + _CIMD_TIMEOUT_SECONDS
+    try:
+        with httpx.Client(follow_redirects=False, timeout=_CIMD_TIMEOUT_SECONDS, trust_env=False) as client:
+            with client.stream("GET", client_id) as response:
+                if response.status_code != 200 or "application/json" not in response.headers.get("content-type", ""):
+                    return None
+                body = bytearray()
+                for chunk in response.iter_bytes():
+                    body.extend(chunk)
+                    if len(body) > _CIMD_MAX_BYTES or time.monotonic() > deadline:
+                        return None
+        metadata = json.loads(bytes(body))
+    except (httpx.HTTPError, ValueError, json.JSONDecodeError):
+        return None
+    if not isinstance(metadata, dict) or metadata.get("client_id") != client_id:
+        return None
+    redirect_uris = metadata.get("redirect_uris")
+    if not isinstance(redirect_uris, list) or not all(isinstance(uri, str) and uri for uri in redirect_uris):
+        return None
+    auth_methods = metadata.get("token_endpoint_auth_methods_supported")
+    if auth_methods is None:
+        legacy_method = metadata.get("token_endpoint_auth_method")
+        auth_methods = [legacy_method] if isinstance(legacy_method, str) else []
+    if not isinstance(auth_methods, list) or "none" not in auth_methods:
+        return None
+    return metadata
+
+
+def _safe_redirect_uri(uri: str) -> tuple[str, str, int | None, str] | None:
+    try:
+        parsed = urlparse(uri)
+        hostname = (parsed.hostname or "").lower()
+        port = parsed.port
+    except ValueError:
+        return None
+    if not parsed.scheme or not parsed.netloc or parsed.fragment or parsed.username or parsed.password:
+        return None
+    if parsed.scheme == "http" and hostname not in _LOCAL_HOSTS:
+        return None
+    if parsed.scheme not in {"http", "https"} and parsed.scheme not in _CUSTOM_SCHEMES:
+        return None
+    path = parsed.path + ((f";{parsed.params}") if parsed.params else "")
+    return parsed.scheme, hostname, port, path + ((f"?{parsed.query}") if parsed.query else "")
+
+
+def _redirect_matches(declared: str, requested: str) -> bool:
+    declared_parts = _safe_redirect_uri(declared)
+    requested_parts = _safe_redirect_uri(requested)
+    if not declared_parts or not requested_parts:
+        return False
+    if declared == requested:
+        return True
+    # Codex/ChatGPT loopback callbacks may allocate a runtime port. The CIMD
+    # document can omit that port; all other URI components remain exact.
+    return (
+        declared_parts[0] == requested_parts[0] == "http"
+        and declared_parts[1] == requested_parts[1]
+        and declared_parts[2] is None
+        and requested_parts[2] is not None
+        and declared_parts[3] == requested_parts[3]
+    )
+
+
+def client_redirect_uri_allowed(client_id: str, redirect_uri: str) -> bool:
+    """Bind CIMD clients to their declared redirects; retain IDE compatibility."""
+    try:
+        client_scheme = urlparse((client_id or "").strip()).scheme
+    except ValueError:
+        return False
+    if client_scheme == "https":
+        metadata = fetch_client_metadata(client_id)
+        return bool(metadata and any(_redirect_matches(uri, redirect_uri) for uri in metadata["redirect_uris"]))
+    return redirect_uri_allowed(redirect_uri)
 
 
 @dataclass(slots=True)
