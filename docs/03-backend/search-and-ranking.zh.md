@@ -113,11 +113,12 @@ sort_key(r)    = ( wrong_tier(r) ASC , final_score(r) DESC , recency(r) DESC , r
 search_records(..., explain=<internal only>)
 ├─ 1. candidate_pool(limit × 4)       # hybrid | lexical | fallback
 ├─ 2. relevance (+ context_boost)
-├─ 3. feedback → Wilson L/U + label
-├─ 4. final_score = GTN(...)
-├─ 5. sort by (wrong_tier ASC, final_score DESC, recency DESC, record_id ASC)
-├─ 6. hide is_wrong if MA3_SEARCH_HIDE_CLEARLY_WRONG, truncate
-└─ 7. explain._rank { relevance, rel_eff, capped, label, L, U, Q, final_score }
+├─ 3. 丢弃 relevance < MA3_SEARCH_REL_MIN 的候选
+├─ 4. feedback → Wilson L/U + label
+├─ 5. final_score = GTN(...)
+├─ 6. sort by (wrong_tier ASC, final_score DESC, recency DESC, record_id ASC)
+├─ 7. hide is_wrong if MA3_SEARCH_HIDE_CLEARLY_WRONG, truncate
+└─ 8. explain._rank { relevance, rel_eff, capped, label, L, U, Q, final_score }
        # explain 仅内部 / Observatory；不经 MCP 返回 agent
 ```
 
@@ -132,7 +133,7 @@ search_records(..., explain=<internal only>)
 | `MA3_SEARCH_T_HIGH` | `0.65` | `L ≥` → verified |
 | `MA3_SEARCH_T_MID` | `0.5` | `U <` → leaning_wrong |
 | `MA3_SEARCH_T_FLOOR` | `0.25` | `U ≤` → clearly_wrong |
-| `MA3_SEARCH_REL_MIN` | `0.35` | 相关度「有效」阈值 |
+| `MA3_SEARCH_REL_MIN` | `0.35` | 相关度硬下限；低于该分数的候选不会返回 |
 | `MA3_SEARCH_EPSILON` | `0.05` | 相关度「接近」带宽 |
 | `MA3_SEARCH_Q_VERIFIED` | `0.02` | verified nudge |
 | `MA3_SEARCH_Q_LEAN` | `0.02` | leaning_wrong nudge |
@@ -148,6 +149,7 @@ search_records(..., explain=<internal only>)
 | 切片 | 状态 |
 |------|------|
 | relevance 统一 + lexical 修复 + GTN 管线 | ✅ |
+| lexical/vector/hybrid 共用最低相关度过滤 | ✅ |
 | Wilson label + explain（仅内部） | ✅ |
 | 方案 B + wrong_tier + HIDE 尊重 limit | ✅ |
 | hybrid golden / Postgres parity | ⏳ v1.1 |

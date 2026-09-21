@@ -269,10 +269,12 @@ def search_records(
     explain: bool = False,
     context: SearchContext | None = None,
 ) -> tuple[list[dict[str, Any]], dict[str, dict[str, Any]]]:
-    """Unified search: relevance pool → GTN scoring → hide clearly-wrong → truncate.
+    """Unified search: relevance pool → minimum relevance gate → GTN → truncate.
 
     Same pipeline for every backend/embedding mode so feedback (Wilson) and the
-    clearly-wrong floor always apply (design/12 §5)."""
+    clearly-wrong floor always apply (design/12 §5). Candidates below
+    ``search_rel_min`` are dropped instead of being returned merely to fill the
+    requested limit."""
     if not library_ids:
         return [], {}
     problem = problem.strip()
@@ -284,6 +286,11 @@ def search_records(
     relevance = _relevance_pool(
         library_ids, problem, pool_limit, explain=explain, context=context, explain_map=explain_map
     )
+    relevance = {
+        record_id: score
+        for record_id, score in relevance.items()
+        if score >= settings.search_rel_min
+    }
     if not relevance:
         return [], {}
 

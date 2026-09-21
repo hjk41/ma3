@@ -11,6 +11,7 @@ import pytest
 
 from app.core.config import settings
 from app.storage import db
+from app.storage import search as search_module
 from app.storage.search import search_records
 
 
@@ -18,6 +19,7 @@ from app.storage.search import search_records
 def _lexical_mode(monkeypatch):
     monkeypatch.setattr(settings, "disable_embeddings", True)
     monkeypatch.setattr(settings, "search_hide_clearly_wrong", True)
+    monkeypatch.setattr(settings, "search_rel_min", 0.35)
 
 
 def _lib() -> str:
@@ -48,7 +50,40 @@ def test_lexical_fix_ranks_above_policy_noise():
     noise = _add(lib, "agent policy upgrade notes", "mihomo mentioned once in passing")
     order = _ids(lib, "mihomo proxy docker")
     assert order[0] == fix
-    assert noise in order  # matched via 'mihomo' but ranked lower
+    assert noise not in order  # matched one token, but falls below the relevance floor
+
+
+def test_low_relevance_matches_are_not_returned_to_fill_limit():
+    lib = _lib()
+    strong = _add(lib, "mihomo proxy docker networking issue", "mihomo proxy docker fix")
+    weak = _add(lib, "unrelated note mentioning mihomo", "misc")
+
+    order = _ids(lib, "mihomo proxy docker", limit=20)
+
+    assert order == [strong]
+    assert weak not in order
+
+
+def test_all_low_relevance_matches_return_empty():
+    lib = _lib()
+    _add(lib, "unrelated note mentioning mihomo", "misc")
+
+    assert _ids(lib, "mihomo proxy docker") == []
+
+
+def test_min_relevance_gate_is_shared_by_vector_and_hybrid_paths(monkeypatch):
+    lib = _lib()
+    at_threshold = _add(lib, "candidate at threshold")
+    below_threshold = _add(lib, "candidate below threshold")
+    monkeypatch.setattr(settings, "disable_embeddings", False)
+    monkeypatch.setattr(settings, "search_rel_min", 0.35)
+    monkeypatch.setattr(
+        search_module,
+        "_relevance_pool",
+        lambda *_args, **_kwargs: {at_threshold: 0.35, below_threshold: 0.349999},
+    )
+
+    assert _ids(lib, "arbitrary query") == [at_threshold]
 
 
 def test_lexical_not_created_at_desc():

@@ -115,11 +115,12 @@ When `MA3_SEARCH_HIDE_CLEARLY_WRONG=1`, records where `is_wrong` is true are fil
 search_records(..., explain=<internal only>)
 ├─ 1. candidate_pool(limit × 4)       # hybrid | lexical | fallback
 ├─ 2. relevance (+ context_boost)
-├─ 3. feedback → Wilson L/U + label
-├─ 4. final_score = GTN(...)
-├─ 5. sort by (wrong_tier ASC, final_score DESC, recency DESC, record_id ASC)
-├─ 6. hide is_wrong if MA3_SEARCH_HIDE_CLEARLY_WRONG, truncate
-└─ 7. explain._rank { relevance, rel_eff, capped, label, L, U, Q, final_score }
+├─ 3. drop relevance < MA3_SEARCH_REL_MIN
+├─ 4. feedback → Wilson L/U + label
+├─ 5. final_score = GTN(...)
+├─ 6. sort by (wrong_tier ASC, final_score DESC, recency DESC, record_id ASC)
+├─ 7. hide is_wrong if MA3_SEARCH_HIDE_CLEARLY_WRONG, truncate
+└─ 8. explain._rank { relevance, rel_eff, capped, label, L, U, Q, final_score }
        # explain is internal / Observatory only; not returned to the agent via MCP
 ```
 
@@ -134,7 +135,7 @@ search_records(..., explain=<internal only>)
 | `MA3_SEARCH_T_HIGH` | `0.65` | `L ≥` → verified |
 | `MA3_SEARCH_T_MID` | `0.5` | `U <` → leaning_wrong |
 | `MA3_SEARCH_T_FLOOR` | `0.25` | `U ≤` → clearly_wrong |
-| `MA3_SEARCH_REL_MIN` | `0.35` | "Effective" relevance threshold |
+| `MA3_SEARCH_REL_MIN` | `0.35` | Hard minimum relevance; lower-scored candidates are not returned |
 | `MA3_SEARCH_EPSILON` | `0.05` | Relevance "closeness" bandwidth |
 | `MA3_SEARCH_Q_VERIFIED` | `0.02` | verified nudge |
 | `MA3_SEARCH_Q_LEAN` | `0.02` | leaning_wrong nudge |
@@ -150,6 +151,7 @@ search_records(..., explain=<internal only>)
 | Slice | Status |
 |------|------|
 | Unified relevance + lexical fix + GTN pipeline | ✅ |
+| Minimum relevance gate shared by lexical/vector/hybrid paths | ✅ |
 | Wilson label + explain (internal only) | ✅ |
 | Plan B + wrong_tier + HIDE respects limit | ✅ |
 | Hybrid golden / Postgres parity | ⏳ v1.1 |
