@@ -56,7 +56,7 @@ ma3_report (supplement/new)
     → status = buffered
     → publish_at = now + write_buffer_hours
     → created_by = principal_id
-    → 不入 search / ma3_context（对他人）
+    → 写入带 created_by 的私有 FTS/embedding 索引；对他人的 search / ma3_context 不可见
     → 写入者 deep link + ma3_list_my_writes + 本人 ma3_context 可见
 
 缓冲期结束（background job，每 60s）
@@ -106,6 +106,10 @@ ma3_report (supplement/new)
 | `ma3_list_my_writes` | 增加 `status`, `publish_at` |
 
 Agent policy：收到 `status=buffered` 时告知用户缓冲截止时间；提示 `/ui/me/writes/` 或 `ma3_publish_record` 提前发布。
+
+作者召回与 active 记录共用相关度阈值、上下文加权、GTN 排序和最终 limit/case 截断。所有索引查询必须使用
+`status='active' OR (status='buffered' AND created_by=caller)`；不得先查出 buffered 再在应用层做权限过滤。
+PATCH 重建私有索引，publish/自动发布将索引状态切为 active，删除同时清理 FTS 与 embedding。
 
 ---
 

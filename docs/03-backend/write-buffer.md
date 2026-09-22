@@ -58,7 +58,7 @@ ma3_report (supplement/new)
     → status = buffered
     → publish_at = now + write_buffer_hours
     → created_by = principal_id
-    → not entered into search / ma3_context (for others)
+    → persisted in owner-scoped FTS/embedding indexes; excluded from search / ma3_context for others
     → visible to the writer via deep link + ma3_list_my_writes + their own ma3_context
 
 At end of buffer period (background job, every 60s)
@@ -108,6 +108,10 @@ Bulk list operations (buffered only): bulk publish · bulk delete → `POST /ui/
 | `ma3_list_my_writes` | Adds `status`, `publish_at` |
 
 Agent policy: when receiving `status=buffered`, inform the user of the buffer deadline; suggest `/ui/me/writes/` or `ma3_publish_record` to publish early.
+
+Author recall shares the active-record relevance floor, context boost, GTN ranking, and final limit/case truncation. Every index query must enforce
+`status='active' OR (status='buffered' AND created_by=caller)`; buffered rows must never be fetched first and filtered for authorization afterward.
+PATCH rebuilds the private index, publish/auto-publish changes its status to active, and deletion removes both FTS and embedding entries.
 
 ---
 

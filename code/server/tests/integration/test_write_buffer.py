@@ -114,6 +114,124 @@ def test_author_sees_buffered_in_context_other_user_does_not(buffered_library):
     assert report["record_id"] not in _context_ids(reader_ctx)
 
 
+def test_author_buffered_uses_relevance_before_case_truncation(buffered_library, monkeypatch):
+    monkeypatch.setattr(settings, "disable_embeddings", True)
+    monkeypatch.setattr(settings, "search_rel_min", 0.35)
+    mcp = McpClient(buffered_library)
+    author_principal = "user:buffer-author-ranked"
+    author_key = _writer_key(author_principal)
+    reader_key = _reader_key("user:buffer-reader-ranked")
+
+    target_case = db.get_or_create_case(settings.default_library_id, "buffered target case")
+    target = db.insert_record(
+        library_id=settings.default_library_id,
+        case_id=target_case,
+        status="buffered",
+        problem="远程 SSH 到阿里云 ECS 时出现 connection refused 或连接在密钥交换阶段被关闭",
+        outcome="resolved",
+        result_summary="阿里云 SSH connection refused 排障与代理路径修复",
+        payload={"task_type": "debug_network"},
+        principal_id=author_principal,
+    )
+    for index in range(3):
+        competitor_case = db.get_or_create_case(
+            settings.default_library_id,
+            f"active competitor case {index}",
+        )
+        db.insert_record(
+            library_id=settings.default_library_id,
+            case_id=competitor_case,
+            status="active",
+            problem=f"ssh connection refused candidate {index}",
+            outcome="resolved",
+            result_summary="miscellaneous note",
+            payload={"task_type": "debug_network"},
+        )
+
+    query = {
+        "problem": "我想远程ssh到一台阿里云的机器，但是ssh connection refused",
+        "task_type": "debug_network",
+        "max_cases": 3,
+        "max_records_per_case": 1,
+    }
+    author_ctx = mcp.structured("ma3_context", query, api_key=author_key)
+    reader_ctx = mcp.structured("ma3_context", query, api_key=reader_key)
+
+    assert target["record_id"] in _context_ids(author_ctx)
+    assert target["record_id"] not in _context_ids(reader_ctx)
+
+
+def test_buffered_private_indexes_follow_patch_and_publish(buffered_library, monkeypatch):
+    import numpy as np
+
+    from app.services import embedding_service
+
+    monkeypatch.setattr(settings, "disable_embeddings", False)
+    monkeypatch.setattr(
+        embedding_service,
+        "embed_record_text",
+        lambda **_kwargs: np.ones(settings.embedding_dim, dtype=np.float32),
+    )
+    mcp = McpClient(buffered_library)
+    principal_id = "user:buffer-private-index"
+    author_key = _writer_key(principal_id)
+    report = mcp.structured(
+        "ma3_report",
+        _report_args(problem="private buffered index original"),
+        api_key=author_key,
+    )
+    record_id = report["record_id"]
+
+    with db.connect() as conn:
+        search_row = db._fetchone(
+            conn,
+            "SELECT status, created_by, search_text FROM record_search_index WHERE record_id = ?",
+            (record_id,),
+        )
+        embedding_row = db._fetchone(
+            conn,
+            "SELECT status, created_by FROM record_embeddings WHERE record_id = ?",
+            (record_id,),
+        )
+    assert dict(search_row)["status"] == "buffered"
+    assert dict(search_row)["created_by"] == principal_id
+    assert dict(embedding_row) == {"status": "buffered", "created_by": principal_id}
+
+    mcp.structured(
+        "ma3_patch_record",
+        {
+            "record_id": record_id,
+            "problem": "private buffered index updated",
+            "outcome": "resolved",
+            "result_summary": "updated private index summary",
+        },
+        api_key=author_key,
+    )
+    with db.connect() as conn:
+        patched = db._fetchone(
+            conn,
+            "SELECT status, created_by, search_text FROM record_search_index WHERE record_id = ?",
+            (record_id,),
+        )
+    assert dict(patched)["status"] == "buffered"
+    assert "private buffered index updated" in dict(patched)["search_text"]
+
+    mcp.structured("ma3_publish_record", {"record_id": record_id}, api_key=author_key)
+    with db.connect() as conn:
+        published_search = db._fetchone(
+            conn,
+            "SELECT status, created_by FROM record_search_index WHERE record_id = ?",
+            (record_id,),
+        )
+        published_embedding = db._fetchone(
+            conn,
+            "SELECT status, created_by FROM record_embeddings WHERE record_id = ?",
+            (record_id,),
+        )
+    assert dict(published_search) == {"status": "active", "created_by": principal_id}
+    assert dict(published_embedding) == {"status": "active", "created_by": principal_id}
+
+
 def test_publish_record_makes_active_and_searchable(buffered_library):
     mcp = McpClient(buffered_library)
     author_key = _writer_key("user:buffer-author-c")

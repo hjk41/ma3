@@ -105,6 +105,9 @@ async def lifespan(_app: FastAPI):
         started = time.perf_counter()
         warm_up_model(required=True)
         logger.info("embedding model ready in %.1fs", time.perf_counter() - started)
+    indexed = db.backfill_buffered_search_indexes()
+    if indexed:
+        logger.info("backfilled private search indexes for %d buffered record(s)", indexed)
     try:
         yield
     finally:

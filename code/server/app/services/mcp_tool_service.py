@@ -202,24 +202,15 @@ def _context_payload(auth: McpAuthContext, payload: Ma3ContextPayload, *, explai
     db.publish_due_buffered_records()
     lib_ids = auth.readable_library_ids
     limit = payload.max_cases * payload.max_records_per_case
+    principal_id = None if auth.principal.kind == "anonymous" else auth.principal.principal_id
     hits, rank_explain = db.search_records(
         lib_ids,
         payload.problem,
         limit=limit,
         explain=explain,
         context=_search_context(payload),
+        principal_id=principal_id,
     )
-    principal_id = None if auth.principal.kind == "anonymous" else auth.principal.principal_id
-    if principal_id:
-        buffered_hits = db.search_author_buffered_records(
-            lib_ids, principal_id, payload.problem, limit=min(10, limit)
-        )
-        seen = {str(h.get("id")) for h in hits if h.get("id")}
-        for row in buffered_hits:
-            rid = str(row.get("id"))
-            if rid and rid not in seen:
-                hits.append(row)
-                seen.add(rid)
     hits = attach_feedback_to_records(hits, principal_id=principal_id)
     env_dict = payload.environment.model_dump(exclude_none=True) if payload.environment else None
     warnings: list[str] = [] if hits else ["no matching active records"]

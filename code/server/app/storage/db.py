@@ -203,6 +203,8 @@ def initialize_database() -> None:
             _execute(conn, "ALTER TABLE record_embeddings ADD COLUMN library_id TEXT")
         if not _column_exists(conn, "record_embeddings", "status"):
             _execute(conn, "ALTER TABLE record_embeddings ADD COLUMN status TEXT NOT NULL DEFAULT 'active'")
+        if not _column_exists(conn, "record_embeddings", "created_by"):
+            _execute(conn, "ALTER TABLE record_embeddings ADD COLUMN created_by TEXT")
         if is_postgres():
             _execute(
                 conn,
@@ -211,6 +213,7 @@ def initialize_database() -> None:
                   record_id TEXT PRIMARY KEY,
                   library_id TEXT,
                   status TEXT NOT NULL,
+                  created_by TEXT,
                   search_text TEXT NOT NULL DEFAULT '',
                   tags_text TEXT NOT NULL DEFAULT '',
                   search_tsv TSVECTOR NOT NULL,
@@ -227,12 +230,29 @@ def initialize_database() -> None:
                   record_id TEXT PRIMARY KEY,
                   library_id TEXT,
                   status TEXT NOT NULL,
+                  created_by TEXT,
                   search_text TEXT NOT NULL DEFAULT '',
                   tags_text TEXT NOT NULL DEFAULT '',
                   updated_at TEXT NOT NULL
                 )
                 """,
             )
+        if not _column_exists(conn, "record_search_index", "created_by"):
+            _execute(conn, "ALTER TABLE record_search_index ADD COLUMN created_by TEXT")
+        _execute(
+            conn,
+            """
+            CREATE INDEX IF NOT EXISTS idx_record_search_visibility
+            ON record_search_index (library_id, status, created_by)
+            """,
+        )
+        _execute(
+            conn,
+            """
+            CREATE INDEX IF NOT EXISTS idx_record_embeddings_visibility
+            ON record_embeddings (library_id, status, created_by)
+            """,
+        )
 
         if not _fetchone(conn, "SELECT 1 FROM organizations WHERE id = ?", (settings.default_org_id,)):
             _execute(
@@ -765,6 +785,8 @@ def _migrate_pgvector(conn: Any) -> None:
         _execute(conn, "ALTER TABLE record_embeddings ADD COLUMN library_id TEXT")
     if not _column_exists(conn, "record_embeddings", "status"):
         _execute(conn, f"ALTER TABLE record_embeddings ADD COLUMN status TEXT NOT NULL DEFAULT 'active'")
+    if not _column_exists(conn, "record_embeddings", "created_by"):
+        _execute(conn, "ALTER TABLE record_embeddings ADD COLUMN created_by TEXT")
     vec_col = f"embedding_vec vector({dim})"
     if not _column_exists(conn, "record_embeddings", "embedding_vec"):
         _execute(conn, f"ALTER TABLE record_embeddings ADD COLUMN {vec_col}")
@@ -773,9 +795,11 @@ def _migrate_pgvector(conn: Any) -> None:
         """
         UPDATE record_embeddings e
         SET library_id = r.library_id,
-            status = r.status
+            status = r.status,
+            created_by = r.created_by
         FROM records r
-        WHERE r.id = e.record_id AND e.library_id IS NULL
+        WHERE r.id = e.record_id
+          AND (e.library_id IS NULL OR e.created_by IS NULL)
         """,
     )
     rows = _fetchall(
@@ -830,13 +854,19 @@ def _fetch_records_by_ids(
     *,
     active_only: bool = True,
     include_payload: bool = False,
+    principal_id: str | None = None,
 ) -> list[dict[str, Any]]:
     if not record_ids or not library_ids:
         return []
     id_placeholders = ",".join("?" for _ in record_ids)
     lib_placeholders = ",".join("?" for _ in library_ids)
     payload_col = ", payload_json" if include_payload else ""
-    status_clause = " AND status = 'active'" if active_only else ""
+    params: list[Any] = [*record_ids, *library_ids]
+    if active_only and principal_id:
+        status_clause = " AND (status = 'active' OR (status = 'buffered' AND created_by = ?))"
+        params.append(principal_id)
+    else:
+        status_clause = " AND status = 'active'" if active_only else ""
     query = f"""
         SELECT id, library_id, case_id, status, problem, outcome, result_summary, created_at{payload_col}
         FROM records
@@ -844,7 +874,7 @@ def _fetch_records_by_ids(
           AND library_id IN ({lib_placeholders}){status_clause}
     """
     with connect() as conn:
-        rows = _fetchall(conn, query, [*record_ids, *library_ids])
+        rows = _fetchall(conn, query, params)
     out: list[dict[str, Any]] = []
     for row in rows:
         item = _row_dict(row)
@@ -858,21 +888,33 @@ def _fetch_records_by_ids(
     return out
 
 
-def _list_active_record_ids(library_ids: set[str], limit: int | None = None) -> set[str]:
+def _list_searchable_record_ids(
+    library_ids: set[str],
+    limit: int | None = None,
+    *,
+    principal_id: str | None = None,
+) -> set[str]:
     if not library_ids:
         return set()
     if limit is None:
         limit = settings.vector_scan_limit
     placeholders = ",".join("?" for _ in library_ids)
+    params: list[Any] = list(library_ids)
+    if principal_id:
+        status_clause = "(status = 'active' OR (status = 'buffered' AND created_by = ?))"
+        params.append(principal_id)
+    else:
+        status_clause = "status = 'active'"
     query = f"""
         SELECT id
         FROM records
-        WHERE library_id IN ({placeholders}) AND status = 'active'
+        WHERE library_id IN ({placeholders}) AND {status_clause}
         ORDER BY created_at DESC
         LIMIT ?
     """
+    params.append(limit)
     with connect() as conn:
-        rows = _fetchall(conn, query, [*library_ids, limit])
+        rows = _fetchall(conn, query, params)
     return {str(row["id"]) for row in rows}
 
 
@@ -947,6 +989,7 @@ def upsert_record_search_index(
     record_id: str,
     library_id: str,
     status: str,
+    created_by: str | None,
     search_text: str,
     tags_text: str,
     updated_at: str,
@@ -957,13 +1000,14 @@ def upsert_record_search_index(
                 conn,
                 """
                 INSERT INTO record_search_index (
-                    record_id, library_id, status, search_text, tags_text,
+                    record_id, library_id, status, created_by, search_text, tags_text,
                     search_tsv, tags_tsv, updated_at
                 )
-                VALUES (?, ?, ?, ?, ?, to_tsvector('simple', ?), to_tsvector('simple', ?), ?)
+                VALUES (?, ?, ?, ?, ?, ?, to_tsvector('simple', ?), to_tsvector('simple', ?), ?)
                 ON CONFLICT (record_id) DO UPDATE SET
                     library_id = EXCLUDED.library_id,
                     status = EXCLUDED.status,
+                    created_by = EXCLUDED.created_by,
                     search_text = EXCLUDED.search_text,
                     tags_text = EXCLUDED.tags_text,
                     search_tsv = EXCLUDED.search_tsv,
@@ -974,6 +1018,7 @@ def upsert_record_search_index(
                     record_id,
                     library_id,
                     status,
+                    created_by,
                     search_text,
                     tags_text,
                     search_text,
@@ -986,17 +1031,18 @@ def upsert_record_search_index(
             conn,
             """
             INSERT INTO record_search_index (
-                record_id, library_id, status, search_text, tags_text, updated_at
+                record_id, library_id, status, created_by, search_text, tags_text, updated_at
             )
-            VALUES (?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT (record_id) DO UPDATE SET
                 library_id = excluded.library_id,
                 status = excluded.status,
+                created_by = excluded.created_by,
                 search_text = excluded.search_text,
                 tags_text = excluded.tags_text,
                 updated_at = excluded.updated_at
             """,
-            (record_id, library_id, status, search_text, tags_text, updated_at),
+            (record_id, library_id, status, created_by, search_text, tags_text, updated_at),
         )
 
 
@@ -1008,6 +1054,7 @@ def upsert_record_embedding(
     created_at: str,
     library_id: str,
     status: str,
+    created_by: str | None,
 ) -> None:
     from app.services.embedding_service import deserialize_embedding, vector_as_list
 
@@ -1023,49 +1070,52 @@ def upsert_record_embedding(
                 conn,
                 """
                 INSERT INTO record_embeddings (
-                    record_id, embedding, model, created_at, library_id, status, embedding_vec
+                    record_id, embedding, model, created_at, library_id, status, created_by, embedding_vec
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?::vector)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?::vector)
                 ON CONFLICT (record_id) DO UPDATE SET
                     embedding = EXCLUDED.embedding,
                     model = EXCLUDED.model,
                     created_at = EXCLUDED.created_at,
                     library_id = EXCLUDED.library_id,
                     status = EXCLUDED.status,
+                    created_by = EXCLUDED.created_by,
                     embedding_vec = EXCLUDED.embedding_vec
                 """,
-                (record_id, embedding, model, created_at, library_id, status, vec_list),
+                (record_id, embedding, model, created_at, library_id, status, created_by, vec_list),
             )
             return
         if is_postgres():
             _execute(
                 conn,
                 """
-                INSERT INTO record_embeddings (record_id, embedding, model, created_at, library_id, status)
-                VALUES (?, ?, ?, ?, ?, ?)
+                INSERT INTO record_embeddings (record_id, embedding, model, created_at, library_id, status, created_by)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT (record_id) DO UPDATE SET
                     embedding = EXCLUDED.embedding,
                     model = EXCLUDED.model,
                     created_at = EXCLUDED.created_at,
                     library_id = EXCLUDED.library_id,
-                    status = EXCLUDED.status
+                    status = EXCLUDED.status,
+                    created_by = EXCLUDED.created_by
                 """,
-                (record_id, embedding, model, created_at, library_id, status),
+                (record_id, embedding, model, created_at, library_id, status, created_by),
             )
             return
         _execute(
             conn,
             """
-            INSERT INTO record_embeddings (record_id, embedding, model, created_at, library_id, status)
-            VALUES (?, ?, ?, ?, ?, ?)
+            INSERT INTO record_embeddings (record_id, embedding, model, created_at, library_id, status, created_by)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT (record_id) DO UPDATE SET
                 embedding = excluded.embedding,
                 model = excluded.model,
                 created_at = excluded.created_at,
                 library_id = excluded.library_id,
-                status = excluded.status
+                status = excluded.status,
+                created_by = excluded.created_by
             """,
-            (record_id, embedding, model, created_at, library_id, status),
+            (record_id, embedding, model, created_at, library_id, status, created_by),
         )
 
 
@@ -1074,14 +1124,13 @@ def index_record(
     record_id: str,
     library_id: str,
     status: str,
+    created_by: str | None,
     problem: str,
     outcome: str,
     result_summary: str,
     payload: dict[str, Any],
     created_at: str,
 ) -> None:
-    if status == "buffered":
-        return
     from app.core.config import settings as app_settings
     from app.services.embedding_service import embed_record_text, serialize_embedding
 
@@ -1095,6 +1144,7 @@ def index_record(
         record_id=record_id,
         library_id=library_id,
         status=status,
+        created_by=created_by,
         search_text=search_text,
         tags_text=tags_text,
         updated_at=created_at,
@@ -1120,10 +1170,17 @@ def index_record(
         created_at=created_at,
         library_id=library_id,
         status=status,
+        created_by=created_by,
     )
 
 
-def ann_vector_search(library_ids: set[str], query_vector: Any, limit: int) -> dict[str, float]:
+def ann_vector_search(
+    library_ids: set[str],
+    query_vector: Any,
+    limit: int,
+    *,
+    principal_id: str | None = None,
+) -> dict[str, float]:
     if not pgvector_ready() or not library_ids:
         return {}
     from app.services.embedding_service import vector_as_list
@@ -1133,16 +1190,23 @@ def ann_vector_search(library_ids: set[str], query_vector: Any, limit: int) -> d
     except Exception:
         return {}
     placeholders = ",".join("?" for _ in library_ids)
+    if principal_id:
+        status_clause = "(status = 'active' OR (status = 'buffered' AND created_by = ?))"
+    else:
+        status_clause = "status = 'active'"
     sql = f"""
         SELECT record_id, 1 - (embedding_vec <=> ?::vector) AS score
         FROM record_embeddings
         WHERE embedding_vec IS NOT NULL
           AND library_id IN ({placeholders})
-          AND status = 'active'
+          AND {status_clause}
         ORDER BY embedding_vec <=> ?::vector
         LIMIT ?
     """
-    params: list[Any] = [vec_list, *library_ids, vec_list, limit]
+    params: list[Any] = [vec_list, *library_ids]
+    if principal_id:
+        params.append(principal_id)
+    params.extend([vec_list, limit])
     with connect() as conn:
         _execute(conn, "SET LOCAL hnsw.ef_search = 80")
         rows = _fetchall(conn, sql, params)
@@ -1323,27 +1387,18 @@ def insert_record(
             "created_at": row["created_at"] if row else now,
             "idempotent_replay": True,
         }
-    if status == "buffered":
-        return {
-            "record_id": rid,
-            "library_id": library_id,
-            "case_id": case_id,
-            "status": status,
-            "created_at": now,
-            "publish_at": publish_at,
-            "idempotent_replay": False,
-        }
     index_record(
         record_id=rid,
         library_id=library_id,
         status=status,
+        created_by=principal_id,
         problem=problem,
         outcome=outcome,
         result_summary=result_summary,
         payload=payload,
         created_at=now,
     )
-    return {
+    result = {
         "record_id": rid,
         "library_id": library_id,
         "case_id": case_id,
@@ -1351,6 +1406,9 @@ def insert_record(
         "created_at": now,
         "idempotent_replay": False,
     }
+    if status == "buffered":
+        result["publish_at"] = publish_at
+    return result
 
 
 def get_record(record_id: str) -> dict[str, Any] | None:
@@ -1488,6 +1546,7 @@ def sync_record_search_index(record_id: str) -> None:
             record_id=record_id,
             library_id=str(record["library_id"]),
             status=str(status),
+            created_by=str(record["created_by"]) if record.get("created_by") else None,
             problem=str(record["problem"]),
             outcome=str(record["outcome"]),
             result_summary=str(record["result_summary"]),
@@ -3991,6 +4050,7 @@ def update_buffered_record(
                 """,
                 (problem, outcome, result_summary, raw, publish_at, record_id),
             )
+    sync_record_search_index(record_id)
     return get_record(record_id)
 
 
@@ -4019,42 +4079,40 @@ def publish_due_buffered_records(*, limit: int = 500) -> int:
     return count
 
 
-def search_author_buffered_records(
-    library_ids: set[str],
-    principal_id: str,
-    problem: str,
-    *,
-    limit: int = 10,
-) -> list[dict[str, Any]]:
-    if not library_ids or not problem.strip():
-        return []
-    placeholders = ",".join("?" for _ in library_ids)
-    op = "ILIKE" if is_postgres() else "LIKE"
-    pattern = f"%{problem.strip()[:200]}%"
+def backfill_buffered_search_indexes(*, limit: int = 1000) -> int:
+    """Build missing owner-scoped indexes for records created before this feature."""
+    embedding_clause = ""
+    if not settings.disable_embeddings:
+        embedding_clause = """
+          OR e.record_id IS NULL
+          OR e.status != r.status
+          OR COALESCE(e.created_by, '') != COALESCE(r.created_by, '')
+        """
     with connect() as conn:
         rows = _fetchall(
             conn,
             f"""
-            SELECT * FROM records
-            WHERE library_id IN ({placeholders})
-              AND status = 'buffered'
-              AND created_by = ?
-              AND (problem {op} ? OR result_summary {op} ?)
-            ORDER BY created_at DESC
+            SELECT r.id
+            FROM records r
+            LEFT JOIN record_search_index i ON i.record_id = r.id
+            LEFT JOIN record_embeddings e ON e.record_id = r.id
+            WHERE r.status = 'buffered'
+              AND (
+                i.record_id IS NULL
+                OR i.status != r.status
+                OR COALESCE(i.created_by, '') != COALESCE(r.created_by, '')
+                {embedding_clause}
+              )
+            ORDER BY r.created_at DESC
             LIMIT ?
             """,
-            [*library_ids, principal_id, pattern, pattern, limit],
+            (limit,),
         )
-    out: list[dict[str, Any]] = []
+    count = 0
     for row in rows:
-        item = _row_dict(row)
-        payload = item.pop("payload_json", None)
-        if isinstance(payload, str):
-            item["payload"] = json.loads(payload)
-        else:
-            item["payload"] = payload
-        out.append(item)
-    return out
+        sync_record_search_index(str(row["id"]))
+        count += 1
+    return count
 
 
 def list_feedback_for_principal(
