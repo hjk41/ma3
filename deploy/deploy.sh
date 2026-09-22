@@ -81,14 +81,15 @@ DEPLOY_GIT_COMMIT="$(git -C "${REPO_DIR}" rev-parse --short HEAD 2>/dev/null || 
 echo "==> profile=${DEPLOY_PROFILE} mode=${ENV_MODE} blue_green=${BLUE_GREEN} -> ${REMOTE_USER}@${REMOTE_HOST}:${REMOTE_DIR} port=${MA3_PORT} commit=${DEPLOY_GIT_COMMIT}"
 
 RSYNC_EXCLUDES=(
-  --exclude '.git' --exclude '.venv' --exclude '__pycache__' --exclude '*.pyc'
+  --exclude '.git' --exclude '.venv*' --exclude '__pycache__' --exclude '*.pyc'
   --exclude '.cursor'
   --exclude '.pytest_cache' --exclude 'server/data' --exclude 'server/.venv'
-  --exclude 'data/hf-cache' --exclude 'ma3db_*.sql.gz'
+  # Top-level data contains host-owned blue-green state and must never be synced or deleted.
+  --exclude '/data/***' --filter 'P /data/***' --exclude 'ma3db_*.sql.gz'
   # Local deploy configs may contain VERIFY_API_KEY / host secrets — never rsync them.
   --exclude 'deploy/deploy.*.env' --exclude 'deploy/.env'
   # ma3.env is host-specific; never overwrite/delete it from the source tree.
-  --exclude 'ma3.env' --filter 'P ma3.env' --filter 'P ma3.pid' --filter 'P data/'
+  --exclude 'ma3.env' --filter 'P ma3.env' --filter 'P ma3.pid'
 )
 
 echo "==> [1/3] rsync ${REPO_DIR} -> remote"
