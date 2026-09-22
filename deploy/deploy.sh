@@ -15,6 +15,10 @@
 #   preserve    production: NEVER touch the remote ma3.env except to inject
 #               MA3_GIT_COMMIT. Asserts production-safe invariants before restart.
 #
+# Source transport:
+#   preserve defaults to DEPLOY_SOURCE=git: the host fetches one exact commit
+#   into REMOTE_DIR/releases/<sha>. regenerate defaults to rsync for LAN/dev.
+#
 # A host guard (ALLOWED_HOSTS) refuses to run against an unexpected target, so a
 # 202 config can never be pushed to ma3.io (or vice-versa).
 # ===========================================================================
@@ -51,6 +55,11 @@ UVICORN_HOST="${UVICORN_HOST:-0.0.0.0}"
 HEALTHZ_TIMEOUT="${HEALTHZ_TIMEOUT:-240}"
 REQUIRE_VECTOR="${REQUIRE_VECTOR:-1}"
 RUN_VERIFY="${RUN_VERIFY:-1}"
+if [[ -z "${DEPLOY_SOURCE:-}" ]]; then
+  if [[ "${ENV_MODE}" == "preserve" ]]; then DEPLOY_SOURCE=git; else DEPLOY_SOURCE=rsync; fi
+fi
+GIT_REF="${GIT_REF:-refs/heads/main}"
+GIT_DEPLOY_KEY="${GIT_DEPLOY_KEY:-}"
 # Blue-green (preserve + Caddy only). Default off so LAN/regenerate and
 # single-port prod keep the classic pkill→restart path.
 BLUE_GREEN="${BLUE_GREEN:-0}"
@@ -77,8 +86,31 @@ if [[ "${BLUE_GREEN}" == "1" && "${ENV_MODE}" != "preserve" ]]; then
   exit 2
 fi
 
-DEPLOY_GIT_COMMIT="$(git -C "${REPO_DIR}" rev-parse --short HEAD 2>/dev/null || true)"
-echo "==> profile=${DEPLOY_PROFILE} mode=${ENV_MODE} blue_green=${BLUE_GREEN} -> ${REMOTE_USER}@${REMOTE_HOST}:${REMOTE_DIR} port=${MA3_PORT} commit=${DEPLOY_GIT_COMMIT}"
+case "${DEPLOY_SOURCE}" in
+git | rsync) ;;
+*) echo "FATAL: unknown DEPLOY_SOURCE='${DEPLOY_SOURCE}' (use 'git' or 'rsync')" >&2; exit 2 ;;
+esac
+if [[ "${DEPLOY_SOURCE}" == "git" && "${ENV_MODE}" != "preserve" ]]; then
+  echo "FATAL: DEPLOY_SOURCE=git currently requires ENV_MODE=preserve" >&2
+  exit 2
+fi
+
+DEPLOY_GIT_COMMIT_FULL="$(git -C "${REPO_DIR}" rev-parse "${DEPLOY_GIT_COMMIT:-HEAD}^{commit}" 2>/dev/null || true)"
+[[ "${DEPLOY_GIT_COMMIT_FULL}" =~ ^[0-9a-f]{40}$ ]] || {
+  echo "FATAL: cannot resolve deployment commit '${DEPLOY_GIT_COMMIT:-HEAD}'" >&2
+  exit 2
+}
+DEPLOY_GIT_COMMIT="${DEPLOY_GIT_COMMIT_FULL:0:7}"
+
+if [[ "${DEPLOY_SOURCE}" == "git" ]]; then
+  GIT_REPO_URL="${GIT_REPO_URL:-$(git -C "${REPO_DIR}" remote get-url origin 2>/dev/null || true)}"
+  : "${GIT_REPO_URL:?DEPLOY_SOURCE=git requires GIT_REPO_URL or a local origin remote}"
+  if [[ "${GIT_REPO_URL}" == git@* || "${GIT_REPO_URL}" == ssh://* ]]; then
+    : "${GIT_DEPLOY_KEY:?SSH GIT_REPO_URL requires a remote read-only GIT_DEPLOY_KEY}"
+  fi
+fi
+
+echo "==> profile=${DEPLOY_PROFILE} mode=${ENV_MODE} source=${DEPLOY_SOURCE} blue_green=${BLUE_GREEN} -> ${REMOTE_USER}@${REMOTE_HOST}:${REMOTE_DIR} port=${MA3_PORT} commit=${DEPLOY_GIT_COMMIT}"
 
 RSYNC_EXCLUDES=(
   --exclude '.git' --exclude '.venv*' --exclude '__pycache__' --exclude '*.pyc'
@@ -92,9 +124,28 @@ RSYNC_EXCLUDES=(
   --exclude 'ma3.env' --filter 'P ma3.env' --filter 'P ma3.pid'
 )
 
-echo "==> [1/3] rsync ${REPO_DIR} -> remote"
-rsync -avz -e "${RSYNC_SSH}" --delete "${RSYNC_EXCLUDES[@]}" \
-  "${REPO_DIR}/" "${REMOTE_USER}@${REMOTE_HOST}:${REMOTE_DIR}/"
+if [[ "${DEPLOY_SOURCE}" == "git" ]]; then
+  APP_DIR="${REMOTE_DIR}/releases/${DEPLOY_GIT_COMMIT_FULL}"
+  echo "==> [1/3] remote fetch ${GIT_REF} -> ${APP_DIR}"
+  REMOTE_PREPARE="${REMOTE_DIR}/current/deploy/common/prepare_git_release.sh"
+  if $SSH "${REMOTE_USER}@${REMOTE_HOST}" "test -x '${REMOTE_PREPARE}'"; then
+    # Normal path: only command arguments (including the exact SHA) cross SSH.
+    $SSH "${REMOTE_USER}@${REMOTE_HOST}" bash "${REMOTE_PREPARE}" \
+      "${REMOTE_DIR}" "${GIT_REPO_URL}" "${GIT_REF}" \
+      "${DEPLOY_GIT_COMMIT_FULL}" "${GIT_DEPLOY_KEY}"
+  else
+    # One-time migration/bootstrap before the first Git-backed release exists.
+    $SSH "${REMOTE_USER}@${REMOTE_HOST}" bash -s -- \
+      "${REMOTE_DIR}" "${GIT_REPO_URL}" "${GIT_REF}" \
+      "${DEPLOY_GIT_COMMIT_FULL}" "${GIT_DEPLOY_KEY}" \
+      <"${SCRIPT_DIR}/common/prepare_git_release.sh"
+  fi
+else
+  APP_DIR="${REMOTE_DIR}"
+  echo "==> [1/3] rsync ${REPO_DIR} -> remote"
+  rsync -avz -e "${RSYNC_SSH}" --delete "${RSYNC_EXCLUDES[@]}" \
+    "${REPO_DIR}/" "${REMOTE_USER}@${REMOTE_HOST}:${REMOTE_DIR}/"
+fi
 
 # ===========================================================================
 if [[ "${ENV_MODE}" == "preserve" ]]; then
@@ -116,7 +167,9 @@ if [[ "${ENV_MODE}" == "preserve" ]]; then
   $SSH "${REMOTE_USER}@${REMOTE_HOST}" bash -s <<REMOTE
 set -euo pipefail
 REMOTE_DIR="${REMOTE_DIR}"; PORT="${MA3_PORT}"; UVICORN_HOST="${UVICORN_HOST}"
-DEPLOY_GIT_COMMIT="${DEPLOY_GIT_COMMIT:-}"; REQUIRE_VECTOR="${REQUIRE_VECTOR}"
+APP_DIR="${APP_DIR}"; DEPLOY_SOURCE="${DEPLOY_SOURCE}"
+DEPLOY_GIT_COMMIT="${DEPLOY_GIT_COMMIT}"; DEPLOY_GIT_COMMIT_FULL="${DEPLOY_GIT_COMMIT_FULL}"
+REQUIRE_VECTOR="${REQUIRE_VECTOR}"
 HEALTHZ_TIMEOUT="${HEALTHZ_TIMEOUT}"
 EXPECT_INSTANCE_ID="${EXPECT_INSTANCE_ID}"; EXPECT_PUBLIC_BASE_URL="${EXPECT_PUBLIC_BASE_URL}"
 ASSERT_DEV_AUTH_OFF="${ASSERT_DEV_AUTH_OFF}"; ASSERT_NO_LAN_PROXY="${ASSERT_NO_LAN_PROXY}"
@@ -139,32 +192,52 @@ if [[ "\${ASSERT_NO_LAN_PROXY}" == "1" ]] && grep -qE "^(HTTP_PROXY|HTTPS_PROXY|
 fi
 [[ "\${fail}" -ne 0 ]] && { echo "Aborting: production ma3.env failed invariants." >&2; exit 1; }
 
-cd "\${REMOTE_DIR}/code/server"
+activate_git_release() {
+  [[ "\${DEPLOY_SOURCE}" == "git" ]] || return 0
+  local current="\${REMOTE_DIR}/current" previous="\${REMOTE_DIR}/previous"
+  local old="" tmp=""
+  mkdir -p "\${REMOTE_DIR}/data"
+  if [[ -L "\${current}" ]]; then old="\$(readlink -f "\${current}")"; fi
+  if [[ -n "\${old}" && "\${old}" != "\${APP_DIR}" ]]; then
+    tmp="\${REMOTE_DIR}/.previous.tmp.\$\$"
+    ln -s "\${old}" "\${tmp}"
+    mv -Tf "\${tmp}" "\${previous}"
+  fi
+  tmp="\${REMOTE_DIR}/.current.tmp.\$\$"
+  ln -s "\${APP_DIR}" "\${tmp}"
+  mv -Tf "\${tmp}" "\${current}"
+  printf '%s\n' "\${DEPLOY_GIT_COMMIT_FULL}" >"\${REMOTE_DIR}/data/deployed_commit"
+  echo "==> activated release \${APP_DIR}"
+}
+
+persist_deploy_commit() {
+  [[ -n "\${DEPLOY_GIT_COMMIT}" ]] || return 0
+  if grep -q '^MA3_GIT_COMMIT=' "\${ENV}"; then
+    sed -i "s/^MA3_GIT_COMMIT=.*/MA3_GIT_COMMIT=\${DEPLOY_GIT_COMMIT}/" "\${ENV}"
+  else
+    echo "MA3_GIT_COMMIT=\${DEPLOY_GIT_COMMIT}" >>"\${ENV}"
+  fi
+}
+
+cd "\${APP_DIR}/code/server"
 [[ -d .venv ]] || python3 -m venv .venv
 .venv/bin/pip install -q --upgrade pip
 .venv/bin/pip install -q -r requirements.txt
 
-if [[ -n "\${DEPLOY_GIT_COMMIT}" ]]; then
-  if grep -q '^MA3_GIT_COMMIT=' "\${ENV}"; then
-    sed -i "s/^MA3_GIT_COMMIT=.*/MA3_GIT_COMMIT=\${DEPLOY_GIT_COMMIT}/" "\${ENV}"
-  else
-    echo "MA3_GIT_COMMIT=\${DEPLOY_GIT_COMMIT}" >> "\${ENV}"
-  fi
-fi
-
 if [[ "\${BLUE_GREEN}" == "1" ]]; then
   # shellcheck disable=SC1091
-  source "\${REMOTE_DIR}/deploy/common/bluegreen_remote.sh"
+  source "\${APP_DIR}/deploy/common/bluegreen_remote.sh"
   mkdir -p "\$(dirname "\${CADDY_UPSTREAM_FILE}")"
   if [[ ! -f "\${CADDY_UPSTREAM_FILE}" ]]; then
     echo "==> seeding CADDY_UPSTREAM_FILE=\${CADDY_UPSTREAM_FILE} (ensure Caddyfile imports it)"
-    cp -f "\${REMOTE_DIR}/deploy/caddy/upstream.caddy.example" "\${CADDY_UPSTREAM_FILE}"
+    cp -f "\${APP_DIR}/deploy/caddy/upstream.caddy.example" "\${CADDY_UPSTREAM_FILE}"
   fi
   bluegreen_cutover
 else
   pkill -f "uvicorn app.main:app.*--port \${PORT}" || true
   sleep 3
   set -a; source "\${ENV}"; set +a
+  export MA3_GIT_COMMIT="\${DEPLOY_GIT_COMMIT}"
   unset MA3_DISABLE_EMBEDDINGS || true
   nohup .venv/bin/python -m uvicorn app.main:app --host "\${UVICORN_HOST}" --port "\${PORT}" --app-dir . \
     > /tmp/ma3-v1-uvicorn.log 2>&1 &
@@ -182,6 +255,8 @@ else
   [[ "\${ready}" -eq 1 ]] || { echo "healthz not ready after \${HEALTHZ_TIMEOUT}s" >&2; tail -40 /tmp/ma3-v1-uvicorn.log >&2; exit 1; }
   python3 -m json.tool /tmp/ma3-healthz.json
 fi
+persist_deploy_commit
+activate_git_release
 REMOTE
 
   if [[ "${RUN_VERIFY}" == "1" ]]; then
@@ -349,4 +424,4 @@ else
   exit 2
 fi
 
-echo "==> Done: profile=${DEPLOY_PROFILE} commit=${DEPLOY_GIT_COMMIT}"
+echo "==> Done: profile=${DEPLOY_PROFILE} source=${DEPLOY_SOURCE} commit=${DEPLOY_GIT_COMMIT}"

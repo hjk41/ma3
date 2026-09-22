@@ -46,9 +46,16 @@ See **[self-hosting.md](self-hosting.md)** and `deploy/self-host/` in the repo (
 
 ## Directories and Data
 
-- Runtime `data/` must **not** be rsynced with `--delete`
+- Production code is fetched by the server into `$REMOTE_DIR/releases/<full-sha>`; operator
+  worktrees are not uploaded. `$REMOTE_DIR/current` changes only after a successful cutover.
+- Runtime `ma3.env` and `data/` remain directly under `$REMOTE_DIR`, outside every release.
 - Prewarm embeddings → `HF_HOME/hub/`
 - The deploy bundle includes `server/scripts/` (seed fallback)
+
+Production Git access uses anonymous HTTPS for a public repository, or a repository-scoped,
+read-only GitHub Deploy Key for a private repository.
+See [deploy/README.md](../../deploy/README.md) for host bootstrap, exact-SHA guards, directory
+layout, deployment, and rollback.
 
 ## Health Checks
 
@@ -61,8 +68,9 @@ curl -s "$BASE/doctor"   # or MCP ma3_doctor
 
 Every production deploy (`ENV_MODE=preserve`) must be accepted per the standard procedure in **[deploy/README.md](../../deploy/README.md)**:
 
-1. `./deploy/deploy.sh deploy/deploy.<prod>.env` (local config file, not in git; automatically includes remote smoke + public `verify_ma3_prod.sh`)
-2. Or standalone: `MA3_BASE_URL=$MA3_BASE_URL bash deploy/common/verify_ma3_prod.sh` (against the production public URL)
+1. Push the desired commit to the configured `GIT_REF`.
+2. `./deploy/deploy.sh deploy/deploy.<prod>.env` (the host fetches that exact commit; the local config is not in git; remote smoke + public `verify_ma3_prod.sh` run automatically)
+3. Or standalone verification: `MA3_BASE_URL=$MA3_BASE_URL bash deploy/common/verify_ma3_prod.sh` (against the production public URL)
 
 Checklist summary: healthz / UI & Auth / client bundle / anonymous MCP rejection / `ma3dev` rejection / pytest.  
 When `VERIFY_API_KEY` is unset, MCP test cases requiring an API key are skipped; this must be noted when reporting.

@@ -8,6 +8,7 @@
 #   BLUE_GREEN_PORT_A (default 8000), BLUE_GREEN_PORT_B (default 8001)
 #   CADDY_UPSTREAM_FILE, CADDY_RELOAD_CMD
 # Optional:
+#   APP_DIR (default REMOTE_DIR) — immutable release containing code/server
 #   BLUE_GREEN_DRAIN_SEC (default 5) — wait after Caddy switch before stopping old
 #   BLUE_GREEN_PUBLIC_SMOKE_URL — if set, curl /healthz on public URL after switch
 set -euo pipefail
@@ -140,11 +141,15 @@ bluegreen_wait_health() {
 bluegreen_start_uvicorn() {
   local port="$1"
   local env_file="${REMOTE_DIR}/ma3.env"
-  cd "${REMOTE_DIR}/code/server"
+  local app_dir="${APP_DIR:-${REMOTE_DIR}}"
+  cd "${app_dir}/code/server"
   set -a
   # shellcheck disable=SC1090
   source "${env_file}"
   set +a
+  if [[ -n "${DEPLOY_GIT_COMMIT:-}" ]]; then
+    export MA3_GIT_COMMIT="${DEPLOY_GIT_COMMIT}"
+  fi
   unset MA3_DISABLE_EMBEDDINGS || true
   # Stop a leftover process on the idle slot (failed prior attempt).
   pkill -f "uvicorn app.main:app.*--port ${port}" 2>/dev/null || true

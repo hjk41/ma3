@@ -44,9 +44,14 @@ HF_HOME=/path/to/hf
 
 ## 目录与数据
 
-- 运行时 `data/` **不可** rsync `--delete`
+- 生产代码由服务器拉取到 `$REMOTE_DIR/releases/<full-sha>`，不上传控制端工作区；仅在切流
+  成功后更新 `$REMOTE_DIR/current`。
+- 运行时 `ma3.env` 与 `data/` 固定留在 `$REMOTE_DIR` 根目录，位于所有 release 之外。
 - prewarm embedding → `HF_HOME/hub/`
 - deploy bundle 含 `server/scripts/`（seed 兜底）
+
+生产 Git 访问对公共仓库使用匿名 HTTPS；私有仓库才使用服务器上的仓库级 GitHub 只读 Deploy Key。主机初始化、精确 SHA 护栏、
+目录结构、部署与回滚见 [deploy/README.zh.md](../../deploy/README.zh.md)。
 
 ## 健康检查
 
@@ -59,8 +64,9 @@ curl -s "$BASE/doctor"   # 或 MCP ma3_doctor
 
 每次线上部署（`ENV_MODE=preserve`）必须按 **[deploy/README.md](../../deploy/README.md)** 的标准流程验收：
 
-1. `./deploy/deploy.sh deploy/deploy.<prod>.env`（本地配置文件，不进 git；自动含远端 smoke + 公网 `verify_ma3_prod.sh`）
-2. 或单独：`MA3_BASE_URL=$MA3_BASE_URL bash deploy/common/verify_ma3_prod.sh`（对生产公网 URL）
+1. 先把目标 commit push 到配置的 `GIT_REF`。
+2. `./deploy/deploy.sh deploy/deploy.<prod>.env`（服务器拉取该精确 commit；本地配置不进 git；自动含远端 smoke + 公网 `verify_ma3_prod.sh`）
+3. 或单独验收：`MA3_BASE_URL=$MA3_BASE_URL bash deploy/common/verify_ma3_prod.sh`（对生产公网 URL）
 
 清单摘要：healthz / UI·Auth / client bundle / 匿名 MCP 拒绝 / `ma3dev` 拒绝 / pytest。  
 未设 `VERIFY_API_KEY` 时跳过需 API key 的 MCP 测例，汇报时须注明。

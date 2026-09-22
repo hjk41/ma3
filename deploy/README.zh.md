@@ -14,7 +14,7 @@
 生产（`ENV_MODE=preserve`，如 ma3.io）固定走下面这条路径；以后每次部署都按此执行。
 
 ```bash
-# 1. 部署（自动：rsync → 断言 ma3.env → 重启 → 远端 loopback smoke → 公网验收）
+# 1. 部署（自动：服务器按精确 SHA 拉 Git → 断言 ma3.env → 蓝绿切换 → 验收）
 ./deploy/deploy.sh deploy/deploy.ma3.io.env
 
 # 2. 若自动验收未跑通，或只想复跑验收（不重新部署）：
@@ -58,6 +58,8 @@ deploy/
 ├── common/verify_ma3.sh      # LAN/regenerate 验收（进 git）
 ├── common/verify_ma3_prod.sh # 生产/公网验收（进 git）——每次线上部署必跑
 ├── common/bluegreen_remote.sh # Caddy 蓝绿切换（进 git）
+├── common/prepare_git_release.sh # 远端 Git 缓存与不可变 release 准备
+├── tests/test_prepare_git_release.sh # release 准备回归测试
 ├── README.md                 # 本文（进 git）
 ├── .gitignore                # 忽略本地 *.env 与遗留脚本
 ├── deploy.<lan>.env          # 本地：LAN staging（不进 git）
@@ -81,9 +83,59 @@ deploy/
 | 远端 `ma3.env` | 从 `LEGACY_ENV_FILE` + 配置**重新生成** | **保留远端 env**，只注入 `MA3_GIT_COMMIT` |
 | dev 后门 | `DEV_AUTH` 可设 `1`（LAN 可用 `ma3dev`） | 启动前断言 `MA3_DEV_AUTH≠1`，否则中止 |
 | legacy 回填 | `RUN_MIGRATION=1` 跑 backfill | 不迁移 |
+| 代码来源 | 默认 `rsync` | 默认由服务器拉取**精确 commit** |
 | uvicorn bind | `0.0.0.0`（直连 LAN） | `127.0.0.1`（Caddy 反代 443） |
 | 重启 | `pkill` → 在 `MA3_PORT` 启动 | 默认相同；`BLUE_GREEN=1` 时 → 空闲端口 + Caddy upstream reload |
 | 验收 | `common/verify_ma3.sh`（含 pytest，常用 `ma3dev`） | 远端 loopback smoke + **`common/verify_ma3_prod.sh`（公网 URL）** |
+
+### 生产代码来源：服务器拉 Git release（preserve 强制路径）
+
+控制端不再上传本机工作区。脚本把本地目标 commit 解析为完整 40 位 SHA，只通过 SSH
+发送触发信息与小型准备脚本；服务器拉取配置的 Git ref，确认该 SHA 可从 ref 到达，
+再解包为独立 release：
+
+```text
+$REMOTE_DIR/
+├── ma3.env                    # 主机共享配置，不进 Git
+├── data/                      # 共享运行态与蓝绿状态
+├── repo.git/                  # bare Git 拉取缓存
+├── releases/<full-sha>/       # 不可变应用源码 + 该 release 的 .venv
+├── current -> releases/<sha>  # 仅在切流成功后更新
+└── previous -> releases/<sha> # 上一个成功版本（如存在）
+```
+
+生产配置必须包含：
+
+```bash
+DEPLOY_SOURCE=git
+GIT_REPO_URL=https://github.com/YOUR_ORG/ma3.git
+GIT_REF=refs/heads/main
+# 仅私有仓库需要：
+# GIT_DEPLOY_KEY=/root/.ssh/ma3_github_deploy
+```
+
+仓库访问配置：
+
+1. 公共仓库直接使用匿名 `https://github.com/...git` URL，服务器不保存任何 GitHub 凭据。
+2. 私有仓库才在服务器生成专用 SSH key，并把公钥添加为 GitHub 仓库的**只读 Deploy
+   Key**；绝不复制开发者个人私钥。
+3. 使用 SSH Git URL 时，在部署用户的 `known_hosts` 中固定 GitHub host key；部署强制
+   `StrictHostKeyChecking=yes`。Deploy Key 放在 release 外并限制权限。
+
+正常部署和回滚：
+
+```bash
+# 本地 HEAD 已 push 到 GIT_REF 后部署。
+./deploy/deploy.sh deploy/deploy.ma3.io.env
+
+# 回滚到仍可从 GIT_REF 到达的旧 commit。
+DEPLOY_GIT_COMMIT=<本地可解析的旧-sha> \
+  ./deploy/deploy.sh deploy/deploy.ma3.io.env
+```
+
+服务器会拒绝未拉到的 SHA、不属于 `GIT_REF` 的 SHA，以及 commit marker 不一致的复用
+release。只有新进程健康且蓝绿切换成功后才移动 `current`。本机未提交和未跟踪文件永远
+不会进入生产。
 
 ### Caddy 蓝绿（可选，仅 preserve）
 
@@ -96,7 +148,7 @@ deploy/
 未部署时查看状态：
 
 ```bash
-ssh user@host 'REMOTE_DIR=/opt/ma3_deploy CADDY_UPSTREAM_FILE=/opt/ma3_deploy/data/bluegreen/upstream.caddy bash /opt/ma3_deploy/deploy/common/bluegreen_remote.sh status'
+ssh user@host 'REMOTE_DIR=/opt/ma3_deploy CADDY_UPSTREAM_FILE=/opt/ma3_deploy/data/bluegreen/upstream.caddy bash /opt/ma3_deploy/current/deploy/common/bluegreen_remote.sh status'
 ```
 
 **在线上 Caddyfile 已 import 该 upstream 文件之前，不要开 `BLUE_GREEN=1`**——否则 reload 不会切流量，停掉旧端口会直接断站。
@@ -104,8 +156,9 @@ ssh user@host 'REMOTE_DIR=/opt/ma3_deploy CADDY_UPSTREAM_FILE=/opt/ma3_deploy/da
 ### 防串环境的护栏
 
 - **主机守卫 `ALLOWED_HOSTS`**：`REMOTE_HOST` 不在允许列表就 `exit 2`。LAN 配置永远无法推到生产。
-- **preserve 模式保留远端 `ma3.env`**：rsync `--exclude ma3.env`，脚本不 source 任何 legacy env、
-  不重写 env，只 `sed` 更新 `MA3_GIT_COMMIT`。
+- **preserve 的主机状态位于 release 外**：Git archive 只含代码；`ma3.env` 与 `data/` 留在
+  `$REMOTE_DIR`，脚本通过不变式检查后只更新 `MA3_GIT_COMMIT`。
+- **commit 护栏**：生产使用完整 SHA，并验证它可从 `GIT_REF` 到达；不执行浮动的 `git pull`。
 - **preserve 模式启动前断言**：`MA3_DEV_AUTH≠1`、`MA3_INSTANCE_ID`、`MA3_PUBLIC_BASE_URL`、无 LAN 代理变量。
 
 ### 环境变量文件（LAN staging 运行时）
@@ -176,6 +229,9 @@ bash deploy/common/verify_ma3.sh
 |------|------|------|
 | `deploy/deploy.sh` | git | 通用部署驱动 |
 | `deploy/deploy.env.sample` | git | 配置模板 |
+| `deploy/common/prepare_git_release.sh` | git | 精确 SHA 远端拉取与 release 准备 |
+| `deploy/tests/test_prepare_git_release.sh` | git | Git release 完整性/可达性测试 |
+| `deploy/tests/test_deploy_git_source.sh` | git | 部署驱动 bootstrap/复用测试 |
 | `deploy/common/verify_ma3_prod.sh` | git | **生产公网验收（每次线上必跑）** |
 | `deploy/common/verify_ma3.sh` | git | LAN / regenerate 验收 |
 | `deploy/deploy.*.env` | 本地 | 各环境真实配置（不进 git） |

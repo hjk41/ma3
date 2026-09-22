@@ -27,8 +27,10 @@
 ### 前置
 
 - 本地 checkout 为待发布 commit；建议该 commit CI 已绿。
-- 存在 gitignore 配置：`deploy/deploy.ma3.io.env`（含 `REMOTE_HOST`、`ALLOWED_HOSTS`、`BLUE_GREEN=1`，可选 `VERIFY_API_KEY`）。
+- 该 commit 已 push 到配置的 `GIT_REF`。
+- 存在 gitignore 配置：`deploy/deploy.ma3.io.env`（含 `REMOTE_HOST`、`ALLOWED_HOSTS`、`DEPLOY_SOURCE=git`、Git remote/ref/deploy-key 路径、`BLUE_GREEN=1`，可选 `VERIFY_API_KEY`）。
 - 能 SSH 到应用主机（直连或常用代理）。
+- 公共仓库可由应用主机匿名 HTTPS 拉取；若改为私有仓库，则需仓库级 GitHub 只读 Deploy Key，并固定 GitHub SSH host key。
 - 远端已有 `/opt/ma3_deploy/ma3.env`（含密钥；deploy **不会**覆盖）。
 
 ### 步骤
@@ -40,14 +42,14 @@
 
 脚本自动完成：
 
-1. **rsync** → `$REMOTE_DIR`（排除 `ma3.env`、本地 `deploy.*.env`、`.venv` 等）
+1. 把本地 HEAD 解析成完整 SHA；服务器 **fetch** `GIT_REF`、验证 SHA 可到达，并准备 `releases/<sha>`
 2. **断言**生产 env（`MA3_DEV_AUTH≠1`、instance id、公网 URL、无局域网代理变量）
-3. 远端 `code/server` **pip install**
-4. 写入 **`MA3_GIT_COMMIT`**
+3. 在该 release 的 `code/server/.venv` 中 **pip install**
+4. 新进程使用 **`MA3_GIT_COMMIT`**；仅在健康检查和切流成功后持久化
 5. **重启** uvicorn：
    - `BLUE_GREEN=1`：idle 端口启动 → `/healthz` → 改写 Caddy upstream → `caddy reload` → 公网 smoke → drain → 停旧端口；并更新 Prometheus `file_sd`
    - 非蓝绿：`pkill` 后在 `MA3_PORT` 启动
-6. **远端 loopback smoke** + 本地对公网跑 **`verify_ma3_prod.sh`**
+6. 原子更新 `current`（并保留 `previous`），再做**远端 loopback smoke** + 本地公网 **`verify_ma3_prod.sh`**
 
 ### 仅复验（不重新部署）
 
@@ -65,7 +67,7 @@ bash deploy/common/verify_ma3_prod.sh
 ssh root@<app-host> \
   'REMOTE_DIR=/opt/ma3_deploy \
    CADDY_UPSTREAM_FILE=/opt/ma3_deploy/data/bluegreen/upstream.caddy \
-   bash /opt/ma3_deploy/deploy/common/bluegreen_remote.sh status'
+   bash /opt/ma3_deploy/current/deploy/common/bluegreen_remote.sh status'
 ```
 
 ---
@@ -81,9 +83,12 @@ ssh root@<app-host> \
 ### B. 错误 commit 已上线
 
 ```bash
-git checkout <known-good-sha>
-./deploy/deploy.sh deploy/deploy.ma3.io.env
+DEPLOY_GIT_COMMIT=<known-good-sha> \
+  ./deploy/deploy.sh deploy/deploy.ma3.io.env
 ```
+
+脚本会复用或重新准备该旧 release 并再次蓝绿切流；SHA 必须仍可从 `GIT_REF` 到达，
+无需切换/重置本机工作区，也不会上传工作区。
 
 ### C. 紧急：Caddy 指回另一槽位（仅当旧 uvicorn 仍在监听）
 
@@ -91,7 +96,7 @@ git checkout <known-good-sha>
 
 ### D. 仅 `ma3.env` 配错
 
-在主机上编辑 `/opt/ma3_deploy/ma3.env`（勿把密钥 rsync 上去），再正常发版或谨慎重启 live 端口，并复验。
+在主机上编辑 `/opt/ma3_deploy/ma3.env`（密钥不得进 Git），再正常发版或谨慎重启 live 端口，并复验。
 
 ---
 
@@ -189,7 +194,7 @@ ssh root@<app-host> 'REMOTE_DIR=/opt/ma3_deploy bash /opt/ma3_deploy/deploy/obse
 
 ## 8. 本 runbook 验收
 
-- [x] 发版步骤（rsync → 重启/蓝绿 → smoke / `verify_ma3_prod.sh`）
+- [x] 发版步骤（精确 SHA Git release → 重启/蓝绿 → smoke / `verify_ma3_prod.sh`）
 - [x] 回滚（Caddy 自动回滚、重发好 commit、紧急切 upstream）
 - [x] preserve / regenerate 的 schema 说明与验证
 - [x] 日志位置与常用 grep

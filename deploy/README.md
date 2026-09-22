@@ -16,7 +16,7 @@ On failure: fix → redeploy → **re-run the full checklist** → then report (
 Production (`ENV_MODE=preserve`, e.g. ma3.io) always follows this path:
 
 ```bash
-# 1. Deploy (automatic: rsync → assert ma3.env → restart → remote loopback smoke → public verify)
+# 1. Deploy (automatic: remote Git fetch by exact SHA → assert ma3.env → blue-green → verify)
 ./deploy/deploy.sh deploy/deploy.ma3.io.env
 
 # 2. If auto-verify did not pass, or you only want to re-run verification (no redeploy):
@@ -60,6 +60,8 @@ deploy/
 ├── common/verify_ma3.sh      # LAN/regenerate verify (in git)
 ├── common/verify_ma3_prod.sh # production/public verify (in git) — required on every prod deploy
 ├── common/bluegreen_remote.sh # Caddy blue-green cutover helpers (in git)
+├── common/prepare_git_release.sh # remote Git cache + immutable release preparation
+├── tests/test_prepare_git_release.sh # release preparation regression test
 ├── README.md                 # this file (in git)
 ├── .gitignore                # ignore local *.env and legacy scripts
 ├── deploy.<lan>.env          # local: LAN staging (not in git)
@@ -83,9 +85,60 @@ New environment: copy `deploy.env.sample` to local `deploy.<name>.env` and fill 
 | Remote `ma3.env` | Regenerated from `LEGACY_ENV_FILE` + config | **Keep remote env**; only inject `MA3_GIT_COMMIT` |
 | Dev backdoor | `DEV_AUTH` may be `1` (LAN may use `ma3dev`) | Abort if `MA3_DEV_AUTH=1` |
 | Legacy backfill | `RUN_MIGRATION=1` runs backfill | No migration |
+| Source | `rsync` by default | **Remote Git fetch of one exact commit** by default |
 | uvicorn bind | `0.0.0.0` (direct LAN) | `127.0.0.1` (Caddy reverse proxy on 443) |
 | Restart | `pkill` → start on `MA3_PORT` | Default same; with `BLUE_GREEN=1` → idle port + Caddy upstream reload |
 | Verify | `common/verify_ma3.sh` (pytest; often `ma3dev`) | remote loopback smoke + **`common/verify_ma3_prod.sh` (public URL)** |
+
+### Production source: remote Git release (mandatory for preserve)
+
+The operator machine no longer uploads its working tree. It resolves the local commit to a full
+40-character SHA and sends only the trigger/helper over SSH. The server fetches the configured ref,
+verifies that the exact SHA is reachable from that ref, and materializes an archive at:
+
+```text
+$REMOTE_DIR/
+├── ma3.env                    # shared, host-owned, never in Git
+├── data/                      # shared runtime and blue-green state
+├── repo.git/                  # bare fetch cache
+├── releases/<full-sha>/       # immutable application source + per-release .venv
+├── current -> releases/<sha>  # updated only after successful cutover
+└── previous -> releases/<sha> # prior successful release, when available
+```
+
+Required production config:
+
+```bash
+DEPLOY_SOURCE=git
+GIT_REPO_URL=https://github.com/YOUR_ORG/ma3.git
+GIT_REF=refs/heads/main
+# Private repository only:
+# GIT_DEPLOY_KEY=/root/.ssh/ma3_github_deploy
+```
+
+Repository access:
+
+1. For a public repository, use its anonymous `https://github.com/...git` URL; no credential belongs
+   on the host.
+2. For a private repository, create a dedicated SSH key on the server and add its public half as a
+   **read-only Deploy Key**. Never copy a developer's personal private key to the server.
+3. For SSH Git URLs, pin GitHub's host key in the deploy user's `known_hosts`; deployment enforces
+   `StrictHostKeyChecking=yes`. Keep the key outside `$REMOTE_DIR/releases` with restricted permissions.
+
+Normal deploy and rollback:
+
+```bash
+# Deploy local HEAD after it has been pushed to GIT_REF.
+./deploy/deploy.sh deploy/deploy.ma3.io.env
+
+# Roll back by redeploying a previous commit that is still reachable from GIT_REF.
+DEPLOY_GIT_COMMIT=<full-or-local-resolvable-sha> \
+  ./deploy/deploy.sh deploy/deploy.ma3.io.env
+```
+
+The server refuses a missing/unfetched SHA, a SHA outside `GIT_REF`, or a reused release directory
+whose commit marker does not match. `current` is moved only after the new process is healthy and the
+blue-green cutover succeeds. Uncommitted and untracked files on the operator machine are never deployed.
 
 ### Caddy blue-green (optional, preserve only)
 
@@ -98,7 +151,7 @@ Default preserve deploys still briefly stop the old uvicorn before starting the 
 Status without deploying:
 
 ```bash
-ssh user@host 'REMOTE_DIR=/opt/ma3_deploy CADDY_UPSTREAM_FILE=/opt/ma3_deploy/data/bluegreen/upstream.caddy bash /opt/ma3_deploy/deploy/common/bluegreen_remote.sh status'
+ssh user@host 'REMOTE_DIR=/opt/ma3_deploy CADDY_UPSTREAM_FILE=/opt/ma3_deploy/data/bluegreen/upstream.caddy bash /opt/ma3_deploy/current/deploy/common/bluegreen_remote.sh status'
 ```
 
 Do **not** enable `BLUE_GREEN=1` until the live Caddyfile already imports the upstream file — otherwise reload will not move traffic and stopping the old port will outage the site.
@@ -106,7 +159,8 @@ Do **not** enable `BLUE_GREEN=1` until the live Caddyfile already imports the up
 ### Guardrails against cross-environment mistakes
 
 - **Host guard `ALLOWED_HOSTS`**: if `REMOTE_HOST` is not allowed → `exit 2`. A LAN config can never push to production.
-- **preserve keeps remote `ma3.env`**: rsync `--exclude ma3.env`; script does not source any legacy env or rewrite env — only `sed`s `MA3_GIT_COMMIT`.
+- **preserve keeps host state outside releases**: Git archives contain code only; `ma3.env` and `data/` remain under `$REMOTE_DIR`. The script only updates `MA3_GIT_COMMIT` after invariant checks.
+- **commit guard**: production deploys use a full SHA verified as reachable from `GIT_REF`; no floating `git pull` is used.
 - **preserve pre-start asserts**: `MA3_DEV_AUTH≠1`, `MA3_INSTANCE_ID`, `MA3_PUBLIC_BASE_URL`, no LAN proxy vars.
 
 ### Env files (LAN staging runtime)
@@ -177,6 +231,9 @@ Notes: (list anything not tested, e.g. "VERIFY_API_KEY not set; skipped doctor/c
 |------|------|------|
 | `deploy/deploy.sh` | git | Generic deploy driver |
 | `deploy/deploy.env.sample` | git | Config template |
+| `deploy/common/prepare_git_release.sh` | git | Exact-SHA remote fetch and release preparation |
+| `deploy/tests/test_prepare_git_release.sh` | git | Git release integrity/reachability tests |
+| `deploy/tests/test_deploy_git_source.sh` | git | Deploy-driver bootstrap/reuse tests |
 | `deploy/common/verify_ma3_prod.sh` | git | **Production public verify (required every prod deploy)** |
 | `deploy/common/verify_ma3.sh` | git | LAN / regenerate verify |
 | `deploy/deploy.*.env` | local | Per-env real config (not in git) |

@@ -27,8 +27,10 @@ There is no separate 24×7 rota. Treat Feishu pages as the on-call signal.
 ### Preconditions
 
 - Local checkout on the commit to ship; CI green on that commit preferred.
-- Gitignored config present: `deploy/deploy.ma3.io.env` (`REMOTE_HOST`, `ALLOWED_HOSTS`, `BLUE_GREEN=1`, `VERIFY_API_KEY` optional).
+- The commit is pushed to the configured `GIT_REF`.
+- Gitignored config present: `deploy/deploy.ma3.io.env` (`REMOTE_HOST`, `ALLOWED_HOSTS`, `DEPLOY_SOURCE=git`, Git remote/ref/deploy-key path, `BLUE_GREEN=1`, `VERIFY_API_KEY` optional).
 - SSH to the app host works (direct or via your usual proxy).
+- The app host can anonymously fetch the public HTTPS repository; for a private repository, it has a repository-scoped, read-only Deploy Key and pinned GitHub SSH host key.
 - Remote `/opt/ma3_deploy/ma3.env` already provisioned (secrets; never overwritten by deploy).
 
 ### Steps
@@ -40,14 +42,14 @@ There is no separate 24×7 rota. Treat Feishu pages as the on-call signal.
 
 What this does automatically:
 
-1. **rsync** repo → `$REMOTE_DIR` (excludes `ma3.env`, local deploy `*.env`, `.venv`, …).
+1. Resolve local HEAD to a full SHA; on the host, **fetch** `GIT_REF`, verify the SHA is reachable, and prepare `releases/<sha>`.
 2. **Assert** production env invariants (`MA3_DEV_AUTH≠1`, instance id, public URL, no LAN proxy vars).
-3. **pip install** on remote `code/server`.
-4. Inject **`MA3_GIT_COMMIT`** into remote `ma3.env`.
+3. **pip install** in that release's `code/server/.venv`.
+4. Start the new process with **`MA3_GIT_COMMIT`**; persist it only after health/cutover succeeds.
 5. **Restart** uvicorn:
    - With `BLUE_GREEN=1`: start idle port → `/healthz` → rewrite Caddy upstream → `caddy reload` → public smoke → drain → stop old port; update Prometheus `file_sd` target.
    - Without blue-green: `pkill` old process → start on `MA3_PORT`.
-6. **Remote loopback smoke** + local **`verify_ma3_prod.sh`** against the public URL.
+6. Atomically move `current` (and retain `previous`), then run **remote loopback smoke** + local **`verify_ma3_prod.sh`** against the public URL.
 
 ### If auto-verify was skipped or you only want to re-check
 
@@ -65,7 +67,7 @@ bash deploy/common/verify_ma3_prod.sh
 ssh root@<app-host> \
   'REMOTE_DIR=/opt/ma3_deploy \
    CADDY_UPSTREAM_FILE=/opt/ma3_deploy/data/bluegreen/upstream.caddy \
-   bash /opt/ma3_deploy/deploy/common/bluegreen_remote.sh status'
+   bash /opt/ma3_deploy/current/deploy/common/bluegreen_remote.sh status'
 ```
 
 ---
@@ -81,11 +83,12 @@ Prefer the lightest path that restores a known-good `/healthz` and public verify
 ### B. Bad commit already live (code regression)
 
 ```bash
-git checkout <known-good-sha>   # or reset --hard on a deploy-only clone
-./deploy/deploy.sh deploy/deploy.ma3.io.env
+DEPLOY_GIT_COMMIT=<known-good-sha> \
+  ./deploy/deploy.sh deploy/deploy.ma3.io.env
 ```
 
-That re-rsyncs the good tree and performs another blue-green (or classic) cutover.
+That reuses or prepares the known-good release and performs another blue-green cutover. The SHA
+must remain reachable from `GIT_REF`; no local checkout/reset or working-tree upload is required.
 
 ### C. Emergency: point Caddy at the other slot (only if old uvicorn still listening)
 
@@ -93,7 +96,7 @@ That re-rsyncs the good tree and performs another blue-green (or classic) cutove
 # On app host — only when the previous port is still healthy
 REMOTE_DIR=/opt/ma3_deploy
 # shellcheck: source helpers
-source "${REMOTE_DIR}/deploy/common/bluegreen_remote.sh"
+source "${REMOTE_DIR}/current/deploy/common/bluegreen_remote.sh"
 # write upstream to the healthy port, then:
 #   bluegreen_write_upstream <port>
 #   bluegreen_write_prometheus_targets <port>
@@ -104,7 +107,7 @@ If the old process was already killed after drain, use path **B** instead.
 
 ### D. Config-only mistake in `ma3.env`
 
-Edit `/opt/ma3_deploy/ma3.env` on the host (do not rsync secrets from a laptop copy), then restart via a normal deploy or a careful `pkill` + uvicorn start on the live port. Re-run verify.
+Edit `/opt/ma3_deploy/ma3.env` on the host (never put secrets in Git), then restart via a normal deploy or a careful `pkill` + uvicorn start on the live port. Re-run verify.
 
 ---
 
@@ -214,7 +217,7 @@ Details: [monitoring-and-health.md](monitoring-and-health.md), [deploy/observabi
 
 ## 8. Acceptance checklist (this runbook)
 
-- [x] Release steps (rsync → restart/blue-green → smoke / `verify_ma3_prod.sh`)
+- [x] Release steps (exact-SHA Git release → restart/blue-green → smoke / `verify_ma3_prod.sh`)
 - [x] Rollback procedure (Caddy auto-rollback, redeploy good SHA, emergency upstream)
 - [x] Schema / migration notes for preserve vs regenerate + verification
 - [x] Log locations and common greps
