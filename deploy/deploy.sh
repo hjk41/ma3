@@ -46,6 +46,7 @@ set +a
 
 MA3_PORT="${MA3_PORT:-8000}"
 SSH_KEY="${SSH_KEY:-${HOME}/.ssh/id_rsa}"
+SSH_EXTRA_OPTS="${SSH_EXTRA_OPTS:-}"
 UVICORN_HOST="${UVICORN_HOST:-0.0.0.0}"
 HEALTHZ_TIMEOUT="${HEALTHZ_TIMEOUT:-240}"
 REQUIRE_VECTOR="${REQUIRE_VECTOR:-1}"
@@ -60,8 +61,8 @@ CADDY_UPSTREAM_FILE="${CADDY_UPSTREAM_FILE:-${REMOTE_DIR}/data/bluegreen/upstrea
 CADDY_RELOAD_CMD="${CADDY_RELOAD_CMD:-caddy reload --config /etc/caddy/Caddyfile}"
 # When blue-green is on, smoke the public URL after Caddy switch (rollback on fail).
 BLUE_GREEN_PUBLIC_SMOKE_URL="${BLUE_GREEN_PUBLIC_SMOKE_URL:-}"
-SSH="ssh -i ${SSH_KEY} -o ConnectTimeout=15"
-RSYNC_SSH="ssh -i ${SSH_KEY}"
+SSH="ssh -i ${SSH_KEY} -o ConnectTimeout=15 ${SSH_EXTRA_OPTS}"
+RSYNC_SSH="ssh -i ${SSH_KEY} ${SSH_EXTRA_OPTS}"
 
 # ---- host guard ------------------------------------------------------------
 guard_ok=0
@@ -81,6 +82,7 @@ echo "==> profile=${DEPLOY_PROFILE} mode=${ENV_MODE} blue_green=${BLUE_GREEN} ->
 
 RSYNC_EXCLUDES=(
   --exclude '.git' --exclude '.venv' --exclude '__pycache__' --exclude '*.pyc'
+  --exclude '.cursor'
   --exclude '.pytest_cache' --exclude 'server/data' --exclude 'server/.venv'
   --exclude 'data/hf-cache' --exclude 'ma3db_*.sql.gz'
   # Local deploy configs may contain VERIFY_API_KEY / host secrets — never rsync them.
