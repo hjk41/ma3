@@ -51,10 +51,10 @@ grep -q 'source=git' "${tmp}/deploy.out"
 grep -q 'remote fetch refs/heads/main' "${tmp}/deploy.out"
 test "$(cat "${tmp}/ssh-count")" = 3
 
-mkdir -p "${tmp}/remote/current/deploy/common"
+mkdir -p "${tmp}/remote/bin"
 cp "${REPO_DIR}/deploy/common/prepare_git_release.sh" \
-  "${tmp}/remote/current/deploy/common/prepare_git_release.sh"
-chmod +x "${tmp}/remote/current/deploy/common/prepare_git_release.sh"
+  "${tmp}/remote/bin/prepare_git_release.sh"
+chmod +x "${tmp}/remote/bin/prepare_git_release.sh"
 printf '0\n' >"${tmp}/ssh-count"
 FAKE_REMOTE_PREPARE_EXISTS=1 FAKE_SSH_COUNT_FILE="${tmp}/ssh-count" \
   PATH="${tmp}/bin:${PATH}" \

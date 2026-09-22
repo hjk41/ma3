@@ -90,14 +90,16 @@ deploy/
 
 ### 生产代码来源：服务器拉 Git release（preserve 强制路径）
 
-控制端不再上传本机工作区。脚本把本地目标 commit 解析为完整 40 位 SHA，只通过 SSH
-发送触发信息与小型准备脚本；服务器拉取配置的 Git ref，确认该 SHA 可从 ref 到达，
+控制端不再上传本机工作区。脚本把本地目标 commit 解析为完整 40 位 SHA，正常部署只通过
+SSH 发送短命令参数。仅首次迁移会传一次小型准备脚本；首次成功后将它安装到
+`$REMOTE_DIR/bin/prepare_git_release.sh`，供后续复用。服务器拉取配置的 Git ref，确认该 SHA 可从 ref 到达，
 再解包为独立 release：
 
 ```text
 $REMOTE_DIR/
 ├── ma3.env                    # 主机共享配置，不进 Git
 ├── data/                      # 共享运行态与蓝绿状态
+├── bin/prepare_git_release.sh # 首次成功后安装的稳定 bootstrap helper
 ├── repo.git/                  # bare Git 拉取缓存
 ├── releases/<full-sha>/       # 不可变应用源码 + 该 release 的 .venv
 ├── current -> releases/<sha>  # 仅在切流成功后更新
@@ -134,8 +136,9 @@ DEPLOY_GIT_COMMIT=<本地可解析的旧-sha> \
 ```
 
 服务器会拒绝未拉到的 SHA、不属于 `GIT_REF` 的 SHA，以及 commit marker 不一致的复用
-release。只有新进程健康且蓝绿切换成功后才移动 `current`。本机未提交和未跟踪文件永远
-不会进入生产。
+release。只有新进程健康且蓝绿切换成功后才移动 `current`。切流逻辑由已拉取 release 内的
+`deploy_release_remote.sh` 执行，控制端不传应用代码，也不发送大段内联 shell。本机未提交
+和未跟踪文件永远不会进入生产。
 
 ### Caddy 蓝绿（可选，仅 preserve）
 
@@ -230,8 +233,10 @@ bash deploy/common/verify_ma3.sh
 | `deploy/deploy.sh` | git | 通用部署驱动 |
 | `deploy/deploy.env.sample` | git | 配置模板 |
 | `deploy/common/prepare_git_release.sh` | git | 精确 SHA 远端拉取与 release 准备 |
+| `deploy/common/deploy_release_remote.sh` | git | 远端不变式检查、进程启动与原子 release 激活 |
 | `deploy/tests/test_prepare_git_release.sh` | git | Git release 完整性/可达性测试 |
 | `deploy/tests/test_deploy_git_source.sh` | git | 部署驱动 bootstrap/复用测试 |
+| `deploy/tests/test_deploy_release_remote.sh` | git | release marker 护栏测试 |
 | `deploy/common/verify_ma3_prod.sh` | git | **生产公网验收（每次线上必跑）** |
 | `deploy/common/verify_ma3.sh` | git | LAN / regenerate 验收 |
 | `deploy/deploy.*.env` | 本地 | 各环境真实配置（不进 git） |

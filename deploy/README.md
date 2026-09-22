@@ -93,13 +93,16 @@ New environment: copy `deploy.env.sample` to local `deploy.<name>.env` and fill 
 ### Production source: remote Git release (mandatory for preserve)
 
 The operator machine no longer uploads its working tree. It resolves the local commit to a full
-40-character SHA and sends only the trigger/helper over SSH. The server fetches the configured ref,
+40-character SHA and sends only compact command arguments over SSH. On the first migration only,
+the small preparation helper is streamed once; a successful release installs it at
+`$REMOTE_DIR/bin/prepare_git_release.sh` for subsequent deploys. The server fetches the configured ref,
 verifies that the exact SHA is reachable from that ref, and materializes an archive at:
 
 ```text
 $REMOTE_DIR/
 ├── ma3.env                    # shared, host-owned, never in Git
 ├── data/                      # shared runtime and blue-green state
+├── bin/prepare_git_release.sh # stable bootstrap helper installed after first success
 ├── repo.git/                  # bare fetch cache
 ├── releases/<full-sha>/       # immutable application source + per-release .venv
 ├── current -> releases/<sha>  # updated only after successful cutover
@@ -138,7 +141,9 @@ DEPLOY_GIT_COMMIT=<full-or-local-resolvable-sha> \
 
 The server refuses a missing/unfetched SHA, a SHA outside `GIT_REF`, or a reused release directory
 whose commit marker does not match. `current` is moved only after the new process is healthy and the
-blue-green cutover succeeds. Uncommitted and untracked files on the operator machine are never deployed.
+blue-green cutover succeeds. The cutover itself runs from `deploy_release_remote.sh` in the fetched
+release, so the operator does not transmit application code or a large inline shell program.
+Uncommitted and untracked files on the operator machine are never deployed.
 
 ### Caddy blue-green (optional, preserve only)
 
@@ -232,8 +237,10 @@ Notes: (list anything not tested, e.g. "VERIFY_API_KEY not set; skipped doctor/c
 | `deploy/deploy.sh` | git | Generic deploy driver |
 | `deploy/deploy.env.sample` | git | Config template |
 | `deploy/common/prepare_git_release.sh` | git | Exact-SHA remote fetch and release preparation |
+| `deploy/common/deploy_release_remote.sh` | git | Remote invariant checks, process start, and atomic release activation |
 | `deploy/tests/test_prepare_git_release.sh` | git | Git release integrity/reachability tests |
 | `deploy/tests/test_deploy_git_source.sh` | git | Deploy-driver bootstrap/reuse tests |
+| `deploy/tests/test_deploy_release_remote.sh` | git | Release-marker guard test |
 | `deploy/common/verify_ma3_prod.sh` | git | **Production public verify (required every prod deploy)** |
 | `deploy/common/verify_ma3.sh` | git | LAN / regenerate verify |
 | `deploy/deploy.*.env` | local | Per-env real config (not in git) |

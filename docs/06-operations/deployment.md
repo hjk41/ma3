@@ -48,6 +48,8 @@ See **[self-hosting.md](self-hosting.md)** and `deploy/self-host/` in the repo (
 
 - Production code is fetched by the server into `$REMOTE_DIR/releases/<full-sha>`; operator
   worktrees are not uploaded. `$REMOTE_DIR/current` changes only after a successful cutover.
+- Normal deploys send only compact arguments over SSH. The host reuses
+  `$REMOTE_DIR/bin/prepare_git_release.sh`, then runs the cutover script from the fetched release.
 - Runtime `ma3.env` and `data/` remain directly under `$REMOTE_DIR`, outside every release.
 - Prewarm embeddings → `HF_HOME/hub/`
 - The deploy bundle includes `server/scripts/` (seed fallback)

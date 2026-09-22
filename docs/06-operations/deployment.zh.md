@@ -46,6 +46,8 @@ HF_HOME=/path/to/hf
 
 - 生产代码由服务器拉取到 `$REMOTE_DIR/releases/<full-sha>`，不上传控制端工作区；仅在切流
   成功后更新 `$REMOTE_DIR/current`。
+- 正常部署经 SSH 只发送短参数；主机复用 `$REMOTE_DIR/bin/prepare_git_release.sh`，再运行
+  已拉取 release 内的切流脚本。
 - 运行时 `ma3.env` 与 `data/` 固定留在 `$REMOTE_DIR` 根目录，位于所有 release 之外。
 - prewarm embedding → `HF_HOME/hub/`
 - deploy bundle 含 `server/scripts/`（seed 兜底）
