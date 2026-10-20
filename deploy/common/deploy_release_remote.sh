@@ -104,8 +104,13 @@ persist_deploy_commit() {
 
 cd "${APP_DIR}/code/server"
 [[ -d .venv ]] || python3 -m venv .venv
-.venv/bin/pip install -q --upgrade pip
-.venv/bin/pip install -q -r requirements.txt
+[[ -x .venv/bin/python ]] || {
+  echo "FATAL: new release venv is missing .venv/bin/python" >&2
+  exit 1
+}
+# CPU-only torch via scripts/pip_install_requirements.sh, into this release
+# venv, before cutover. The helper installs with `python` on PATH.
+PATH="${PWD}/.venv/bin:${PATH:-}" bash scripts/pip_install_requirements.sh
 
 if [[ "${BLUE_GREEN}" == "1" ]]; then
   # shellcheck disable=SC1091
