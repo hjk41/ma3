@@ -58,6 +58,15 @@ if [[ "${1:-}" == "-m" && "${2:-}" == "pip" ]]; then
   fi
   exit 0
 fi
+if [[ "${1:-}" == "-c" ]]; then
+  if [[ "${2:-}" == *"sys.implementation.name"* ]]; then
+    printf '%s\n' 'cpython 3 12'
+  fi
+  exit 0
+fi
+if [[ "${1:-}" == "-m" && "${2:-}" == "uvicorn" ]]; then
+  exit 1
+fi
 echo "unexpected python invocation: $*" >&2
 exit 1
 EOF
@@ -137,5 +146,69 @@ test "${status}" -ne 0
 grep -q 'ASSERT FAIL: MA3_DEV_AUTH=1' <<<"${output}"
 test ! -e "${python_log}"
 test ! -e "${remote}/current"
+
+# A compatible current release is reused without pip; its owning release must
+# remain in place because the new release's venv is a symlink to it.
+cat >"${remote}/ma3.env" <<'EOF'
+MA3_DEV_AUTH=0
+MA3_INSTANCE_ID=test
+MA3_PUBLIC_BASE_URL=https://example.invalid
+EOF
+donor="${remote}/releases/cccccccccccccccccccccccccccccccccccccccc"
+reuse_release="${remote}/releases/dddddddddddddddddddddddddddddddddddddddd"
+mkdir -p "${donor}/code/server/.venv/bin" "${reuse_release}/code/server"
+cp "${tmp}/bin/python3" "${donor}/code/server/.venv/bin/python"
+cp "${REPO_DIR}/code/server/requirements.txt" "${donor}/code/server/requirements.txt"
+cp "${REPO_DIR}/code/server/requirements.txt" "${reuse_release}/code/server/requirements.txt"
+printf '%s\n' dddddddddddddddddddddddddddddddddddddddd >"${reuse_release}/.ma3-release-commit"
+ln -s "${donor}" "${remote}/current"
+: >"${python_log}"
+set +e
+output="$(
+  FAKE_PYTHON_LOG="${python_log}" PATH="${tmp}/bin:${PATH}" \
+    bash "${REPO_DIR}/deploy/common/deploy_release_remote.sh" \
+    "${remote}" "${reuse_release}" git ddddddd dddddddddddddddddddddddddddddddddddddddd \
+    59991 127.0.0.1 1 1 test https://example.invalid 1 1 0 8000 8001 0 \
+    "${remote}/data/upstream.caddy" Y2FkZHkgcmVsb2Fk "" 2>&1
+)"
+status=$?
+set -e
+test "${status}" -ne 0  # fake uvicorn cannot pass healthz
+grep -q 'reuse venv' <<<"${output}"
+test -L "${reuse_release}/code/server/.venv"
+test "$(readlink -f "${reuse_release}/code/server/.venv")" = \
+  "$(readlink -f "${donor}/code/server/.venv")"
+if grep -q -- ' -m pip ' "${python_log}"; then
+  echo "pip ran on a reused venv" >&2
+  exit 1
+fi
+test -d "${donor}/code/server/.venv"
+test "$(readlink -f "${remote}/current")" = "$(readlink -f "${donor}")"
+
+# A changed requirements file must build a separate environment, not install
+# into the live release's venv.
+mismatch_release="${remote}/releases/eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+mkdir -p "${mismatch_release}/code/server/scripts"
+cp "${REPO_DIR}/code/server/requirements.txt" "${mismatch_release}/code/server/requirements.txt"
+printf '%s\n' '# different dependencies' >>"${mismatch_release}/code/server/requirements.txt"
+cp "${REPO_DIR}/code/server/scripts/pip_install_requirements.sh" \
+  "${mismatch_release}/code/server/scripts/pip_install_requirements.sh"
+printf '%s\n' eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee >"${mismatch_release}/.ma3-release-commit"
+: >"${python_log}"
+set +e
+output="$(
+  FAKE_PYTHON_LOG="${python_log}" PATH="${tmp}/bin:${PATH}" \
+    bash "${REPO_DIR}/deploy/common/deploy_release_remote.sh" \
+    "${remote}" "${mismatch_release}" git eeeeeee eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee \
+    59992 127.0.0.1 1 1 test https://example.invalid 1 1 0 8000 8001 0 \
+    "${remote}/data/upstream.caddy" Y2FkZHkgcmVsb2Fk "" 2>&1
+)"
+status=$?
+set -e
+test "${status}" -ne 0
+test -d "${mismatch_release}/code/server/.venv"
+test ! -L "${mismatch_release}/code/server/.venv"
+grep -q -- ' -m pip install -r requirements.txt' "${python_log}"
+test "$(readlink -f "${remote}/current")" = "$(readlink -f "${donor}")"
 
 echo "deploy release guard tests passed"

@@ -104,10 +104,16 @@ $REMOTE_DIR/
 ├── data/                      # shared runtime and blue-green state
 ├── bin/prepare_git_release.sh # stable bootstrap helper installed after first success
 ├── repo.git/                  # bare fetch cache
-├── releases/<full-sha>/       # immutable application source + per-release .venv
+├── releases/<full-sha>/       # immutable application source + .venv (owned or reused)
 ├── current -> releases/<sha>  # updated only after successful cutover
 └── previous -> releases/<sha> # prior successful release, when available
 ```
+
+When `requirements.txt` and the Python runtime match, a new release links its
+`.venv` to the current release's working environment and skips `pip`. Keep the
+release that owns that environment while any newer release links to it. If the
+checks fail, deployment builds a separate `.venv` with CPU-only PyTorch before
+cutover; it never installs packages into a reused environment.
 
 Required production config:
 

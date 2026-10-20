@@ -103,14 +103,48 @@ persist_deploy_commit() {
 }
 
 cd "${APP_DIR}/code/server"
-[[ -d .venv ]] || python3 -m venv .venv
-[[ -x .venv/bin/python ]] || {
-  echo "FATAL: new release venv is missing .venv/bin/python" >&2
-  exit 1
+reuse_current_venv() {
+  [[ "${DEPLOY_SOURCE}" == "git" && -L "${REMOTE_DIR}/current" ]] || return 1
+  local current_release donor_venv owner_release remote_real old_python old_abi system_abi
+  current_release="$(readlink -f "${REMOTE_DIR}/current")" || return 1
+  [[ -f "${current_release}/code/server/requirements.txt" ]] || return 1
+  cmp -s "${current_release}/code/server/requirements.txt" requirements.txt || return 1
+  donor_venv="$(readlink -f "${current_release}/code/server/.venv")" || return 1
+  remote_real="$(readlink -f "${REMOTE_DIR}")" || return 1
+  case "${donor_venv}" in
+    "${remote_real}/releases/"*/code/server/.venv) ;;
+    *) return 1 ;;
+  esac
+  owner_release="${donor_venv%/code/server/.venv}"
+  cmp -s "${owner_release}/code/server/requirements.txt" requirements.txt || return 1
+  old_python="${donor_venv}/bin/python"
+  [[ -x "${old_python}" ]] || return 1
+  old_abi="$("${old_python}" -c 'import sys; print(sys.implementation.name, sys.version_info.major, sys.version_info.minor)' 2>/dev/null)" || return 1
+  system_abi="$(python3 -c 'import sys; print(sys.implementation.name, sys.version_info.major, sys.version_info.minor)' 2>/dev/null)" || return 1
+  [[ "${old_abi}" == "${system_abi}" ]] || return 1
+  "${old_python}" -c 'import fastapi, uvicorn, sentence_transformers' >/dev/null 2>&1 || return 1
+  if [[ -e .venv || -L .venv ]]; then
+    [[ -L .venv && "$(readlink -f .venv)" == "${donor_venv}" ]] || return 1
+  else
+    ln -s "${donor_venv}" .venv || return 1
+  fi
+  echo "==> reuse venv ${donor_venv}; retain owning release ${owner_release}"
 }
-# CPU-only torch via scripts/pip_install_requirements.sh, into this release
-# venv, before cutover. The helper installs with `python` on PATH.
-PATH="${PWD}/.venv/bin:${PATH:-}" bash scripts/pip_install_requirements.sh
+
+if ! reuse_current_venv; then
+  # Never install into a symlink: it may point at the live release's venv.
+  [[ ! -L .venv ]] || {
+    echo "FATAL: existing release venv symlink is incompatible; refusing to modify it" >&2
+    exit 1
+  }
+  [[ -d .venv ]] || python3 -m venv .venv
+  [[ -x .venv/bin/python ]] || {
+    echo "FATAL: new release venv is missing .venv/bin/python" >&2
+    exit 1
+  }
+  # The helper installs CPU-only torch before requirements, before cutover.
+  PATH="${PWD}/.venv/bin:${PATH:-}" bash scripts/pip_install_requirements.sh
+fi
 
 if [[ "${BLUE_GREEN}" == "1" ]]; then
   # shellcheck disable=SC1091
