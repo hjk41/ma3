@@ -75,6 +75,7 @@ def test_ma3_validate_success_and_failure(isolated_client):
                 "problem": "validate me",
                 "outcome": "resolved",
                 "result_summary": "ok",
+                "evidence": [{"kind": "test", "summary": "validate success"}],
             },
         },
     )

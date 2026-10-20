@@ -20,9 +20,11 @@
 | Field | Meaning |
 |------|------|
 | `service_version` | server release |
-| `skill_bundle_version` | policy + onboarding + Agent Skill bundle (default **1.6.0** = C1) |
+| `skill_bundle_version` | policy + onboarding + Agent Skill bundle (default **1.6.1**) |
 | `sync_tooling_version` | sync scripts/lib |
-| `tool_schema_version` | MCP payload generation |
+| `tool_schema_version` | MCP payload generation (default **ma3.mcp.v2**; compatible minimum **ma3.mcp.v1**) |
+
+`min_client_version` stays **1.0.0**. A client still on **1.6.0** / `ma3.mcp.v1` therefore receives `policy_refresh_required` and `mcp_reload_required` with `client_update_required` false.
 
 The Agent reports on every MCP call: `client_version` (aligned with skill_bundle) and `tool_schema_version`.
 
@@ -38,7 +40,7 @@ Local source of truth: `~/.ma3/ma3-client.json`.
 
 ## Policy Highlights (Agent behavior)
 
-- **FIRST-ACTION GATE (1.6.0)**: before mutating work, call `ma3_context` first
+- **FIRST-ACTION GATE**: before mutating work, call `ma3_context` first (current bundle **1.6.1**)
 - Agent Skill `skills/ma3/SKILL.md` ships in the client bundle (recall → work → remember)
 - After reusable conclusions: `ma3_report` (`confirmation` may be omitted)
 - Writing to the community library: explicit `library_id: "lib_default"`
@@ -51,7 +53,7 @@ Local source of truth: `~/.ma3/ma3-client.json`.
 | Path | Content |
 |------|------|
 | `GET /client/manifest.json` | versions + sha256 + urls |
-| `GET /client/templates/ma3-agent-policy.mdc` | policy (1.6.0 GATE) |
+| `GET /client/templates/ma3-agent-policy.mdc` | policy (bundle **1.6.1**) |
 | `GET /client/skills/ma3/SKILL.md` | Agent Skill |
 | `GET /client/mcp-tools.json` | tools snapshot |
 | `GET /client/scripts/sync_ma3_client.{sh,py}` | sync entrypoints |

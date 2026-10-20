@@ -140,6 +140,7 @@ Refute payload sketch:
   "problem": "<same problem domain>",
   "outcome": "resolved",
   "result_summary": "Record vk_... suggested X but Y was required because ...",
+  "evidence": [{ "kind": "log", "summary": "..." }],
   "based_on_record_ids": ["vk_wrong..."]
 }
 ```
@@ -175,7 +176,8 @@ no correct record).
   "report_kind": "new",
   "outcome": "resolved",
   "problem": "<what was broken or needed>",
-  "result_summary": "<root cause + fix future agents can reuse>"
+  "result_summary": "<root cause + fix future agents can reuse>",
+  "evidence": [{ "kind": "command", "summary": "..." }]
 }
 ```
 
@@ -189,6 +191,7 @@ Write when you **verified** an approach does not work (not mere guesses).
   "outcome": "failed",
   "problem": "<what you tried to solve>",
   "result_summary": "Tried <approach>; failed because <evidence>. Use <alternative> instead.",
+  "evidence": [{ "kind": "log", "summary": "..." }],
   "not_applicable_if": ["<when this dead-end advice would mislead>"]
 }
 ```
@@ -207,6 +210,8 @@ Before any report:
    - Reusable community lessons → `lib_default`
    - Personal / host-specific / secrets-adjacent → your `kind: "personal"` library
 3. Build the full payload (`redaction_mode: "auto"` — no secrets, no huge logs).
+   Active reports (`visibility` omitted or `"active"`) need a nonempty `evidence` or `actions` list.
+   Use `visibility: "draft"` only when neither is available yet. `ma3_validate` enforces this.
 4. **`ma3_validate`** with `tool_name: "ma3_report"` and `arguments: <full flat payload>`.
    Payload is **flat** — not wrapped in `{ "tool_name", "arguments" }`.
 5. **`ma3_report`** with the same payload + `client_version`.

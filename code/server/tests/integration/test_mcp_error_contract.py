@@ -172,6 +172,7 @@ def test_writer_access_denied_message_is_actionable(isolated_client):
                 "outcome": "resolved",
                 "result_summary": "should be denied",
                 "library_id": "lib_ro_contract",
+                "evidence": [{"kind": "test", "summary": "reader denial still checks auth"}],
             },
         },
         api_key=key,

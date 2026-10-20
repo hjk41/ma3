@@ -23,13 +23,46 @@ from __future__ import annotations
 
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic_core import PydanticCustomError
 
 from app.models.agent_types import AgentAction
 from app.models.common import EnvironmentFingerprint, EvidenceItem, TargetRef, VersionInfo
 
 
 _TARGET_EXAMPLE = {"product": "ma3", "component": "remote-mcp"}
+
+# Omitted visibility defaults to active. Draft is the only visibility that may
+# omit both evidence and actions. Kept as data so the published JSON Schema and
+# the runtime validator cannot drift.
+ACTIVE_REPORT_SUPPORT_MESSAGE = (
+    "active records require at least one evidence item or action; use visibility=draft otherwise"
+)
+
+REPORT_ACTIVE_SUPPORT_SCHEMA_IF: dict[str, Any] = {
+    "not": {
+        "required": ["visibility"],
+        "properties": {"visibility": {"const": "draft"}},
+    }
+}
+
+REPORT_ACTIVE_SUPPORT_SCHEMA_THEN: dict[str, Any] = {
+    "anyOf": [
+        {"required": ["evidence"], "properties": {"evidence": {"minItems": 1}}},
+        {"required": ["actions"], "properties": {"actions": {"minItems": 1}}},
+    ]
+}
+
+
+def active_report_lacks_support(*, visibility: str, evidence: list[Any], actions: list[Any]) -> bool:
+    """True when a non-draft report has neither evidence nor actions.
+
+    Omitted visibility is active once the payload model applies defaults.
+    The published JSON Schema encodes the omitted case with ``if``/``then``
+    because JSON Schema does not apply ``default`` before ``if``.
+    """
+
+    return visibility != "draft" and not evidence and not actions
 
 
 _REPORT_EXAMPLE = {
@@ -116,6 +149,11 @@ class Ma3ReportPayload(BaseModel):
     Same looseness as ``Ma3ContextPayload`` for ``task_type``/``goal``/``target``,
     plus the write-side fields. ``actions`` and ``evidence`` are the typed
     nested arrays whose absence caused the original -32602 confusion.
+
+    Omitted ``visibility`` means ``active``. Active reports require a nonempty
+    ``evidence`` list or a nonempty ``actions`` list. Explicit
+    ``visibility=draft`` may omit both. The schema ``if``/``then`` states the
+    same rule for clients that validate ``inputSchema`` directly.
     """
 
     problem: str = Field(..., min_length=1)
@@ -129,8 +167,20 @@ class Ma3ReportPayload(BaseModel):
     environment: EnvironmentFingerprint | None = None
     versions: VersionInfo | None = None
     observations: list[str] = Field(default_factory=list)
-    actions: list[AgentAction] = Field(default_factory=list)
-    evidence: list[EvidenceItem] = Field(default_factory=list)
+    actions: list[AgentAction] = Field(
+        default_factory=list,
+        description=(
+            "Actions taken. When visibility is omitted or active, this list or "
+            "evidence must be nonempty. Optional when visibility is draft."
+        ),
+    )
+    evidence: list[EvidenceItem] = Field(
+        default_factory=list,
+        description=(
+            "Evidence items. When visibility is omitted or active, this list or "
+            "actions must be nonempty. Optional when visibility is draft."
+        ),
+    )
     based_on_record_ids: list[str] = Field(default_factory=list, max_length=20)
     relation_type: Literal["derived_from", "supersedes", "related"] | None = None
     applicable_if: list[str] = Field(default_factory=list)
@@ -146,7 +196,13 @@ class Ma3ReportPayload(BaseModel):
     )
     dry_run: bool = False
     redaction_mode: Literal["auto", "none"] = "auto"
-    visibility: Literal["active", "draft"] = "active"
+    visibility: Literal["active", "draft"] = Field(
+        default="active",
+        description=(
+            "Record visibility. Omitted means active. Active requires a nonempty "
+            "evidence list or a nonempty actions list. draft may omit both."
+        ),
+    )
     report_kind: str | None = None
     confirmation: str | None = Field(
         default=None,
@@ -174,9 +230,23 @@ class Ma3ReportPayload(BaseModel):
         ),
     )
 
+    @model_validator(mode="after")
+    def _active_requires_evidence_or_actions(self) -> Ma3ReportPayload:
+        if active_report_lacks_support(
+            visibility=self.visibility,
+            evidence=self.evidence,
+            actions=self.actions,
+        ):
+            raise PydanticCustomError("active_report_support", ACTIVE_REPORT_SUPPORT_MESSAGE)
+        return self
+
     model_config = ConfigDict(
         extra="forbid",
-        json_schema_extra={"examples": [_REPORT_EXAMPLE]},
+        json_schema_extra={
+            "examples": [_REPORT_EXAMPLE],
+            "if": REPORT_ACTIVE_SUPPORT_SCHEMA_IF,
+            "then": REPORT_ACTIVE_SUPPORT_SCHEMA_THEN,
+        },
     )
 
 
@@ -388,10 +458,12 @@ class Ma3ValidatePayload(BaseModel):
 
     Runs only the Pydantic validation pipeline for ``tool_name`` against the
     complete JSON payload supplied in ``arguments``. ``tool_name`` only selects
-    which target tool schema to validate. Returns either ``{ok: true}`` or the
+    which target tool schema to validate. For ``ma3_report`` that pipeline
+    includes the active-visibility rule (nonempty ``evidence`` or ``actions``,
+    unless ``visibility`` is ``draft``). Returns either ``{ok: true}`` or the
     same structured ``validation_errors`` shape clients get on a real call so
     an agent can iterate quickly without consuming write quota or polluting the
-    case graph.
+    case graph. No database writes.
     """
 
     tool_name: Literal[

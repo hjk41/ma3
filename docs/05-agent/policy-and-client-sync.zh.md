@@ -18,9 +18,11 @@
 | 字段 | 含义 |
 |------|------|
 | `service_version` | 服务端 release |
-| `skill_bundle_version` | policy + onboarding 集合 |
+| `skill_bundle_version` | policy + onboarding + Agent Skill 集合（默认 **1.6.1**） |
 | `sync_tooling_version` | sync 脚本/lib |
-| `tool_schema_version` | MCP payload 代际 |
+| `tool_schema_version` | MCP payload 代际（默认 **ma3.mcp.v2**；兼容下限 **ma3.mcp.v1**） |
+
+`min_client_version` 仍为 **1.0.0**。仍上报 **1.6.0** / `ma3.mcp.v1` 的客户端会收到 `policy_refresh_required` 与 `mcp_reload_required`，且 `client_update_required` 为 false。
 
 Agent 每次 MCP 调用上报：`client_version`（对齐 skill_bundle）、`tool_schema_version`。
 

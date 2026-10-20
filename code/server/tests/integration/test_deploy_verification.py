@@ -120,6 +120,7 @@ def test_deploy_ma3_report_dry_run(mcp: McpClient):
             "outcome": "success",
             "result_summary": "must not persist",
             "dry_run": True,
+            "evidence": [{"kind": "test", "summary": "deploy dry-run evidence"}],
         },
     )
     assert body["persisted"] is False

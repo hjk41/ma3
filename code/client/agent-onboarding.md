@@ -101,6 +101,7 @@ Once MCP is connected (OAuth token or API key), run a read/write smoke test, con
    - `result_summary`: "Agent completed onboarding: whoami, context, and personal-library write succeeded."
    - `task_type`: "onboarding"
    - `tags`: `["onboarding", "connectivity-test"]`
+   - `evidence`: `[{ "kind": "log", "summary": "whoami, context, and validate succeeded" }]` (required when `visibility` is omitted; that default is active. `actions` can be used instead. `visibility: "draft"` may omit both.)
    - **Do not** pass `library_id` (defaults to the personal library)
    - You may use `idempotency_key` to avoid duplicate writes on repeated onboarding
 

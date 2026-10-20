@@ -57,7 +57,13 @@ def _summarize_validation_errors(tool_name: str | None, errors: list[dict[str, A
         elif etype in {"extra_forbidden", "value_error.extra"}:
             extra.append(loc)
         else:
-            other.append(f"{loc}: {err.get('msg', etype)}")
+            msg = str(err.get("msg") or etype)
+            # Model-level checks have an empty loc. Prefixing "<root>:" hides the
+            # actionable sentence from hosts that only show error.message.
+            if loc == "<root>":
+                other.append(msg)
+            else:
+                other.append(f"{loc}: {msg}")
 
     parts: list[str] = []
     prefix = f"Invalid params for {tool_name}" if tool_name else "Invalid params"

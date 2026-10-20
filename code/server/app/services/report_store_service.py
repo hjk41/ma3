@@ -4,7 +4,11 @@ from typing import Any
 
 from fastapi import HTTPException
 
-from app.models.mcp_payloads import Ma3ReportPayload
+from app.models.mcp_payloads import (
+    ACTIVE_REPORT_SUPPORT_MESSAGE,
+    Ma3ReportPayload,
+    active_report_lacks_support,
+)
 
 _TRANSPORT_KEYS = frozenset(
     {
@@ -29,12 +33,15 @@ def validate_report_write(payload: Ma3ReportPayload, *, is_maintainer: bool) -> 
         raise HTTPException(status_code=403, detail="supersedes relations require maintainer access")
     if payload.redaction_mode == "none" and not is_maintainer:
         raise HTTPException(status_code=403, detail="redaction_mode=none requires maintainer access")
-    status = "draft" if payload.visibility == "draft" else "active"
-    if status == "active" and not payload.evidence and not payload.actions:
-        raise HTTPException(
-            status_code=400,
-            detail="active records require at least one evidence item or action; use visibility=draft otherwise",
-        )
+    # Same predicate as Ma3ReportPayload's model validator. MCP preflight
+    # (ma3_validate, dry_run, and the write) hits that validator before any
+    # database access; this call remains for direct write checks.
+    if active_report_lacks_support(
+        visibility=payload.visibility,
+        evidence=payload.evidence,
+        actions=payload.actions,
+    ):
+        raise HTTPException(status_code=400, detail=ACTIVE_REPORT_SUPPORT_MESSAGE)
 
 
 def storage_payload(dump: dict[str, Any]) -> dict[str, Any]:

@@ -1,8 +1,8 @@
 ---
 description: ma3 agent policy — query before work, report reusable outcomes
 alwaysApply: true
-ma3_skill_bundle_version: "1.6.0"
-ma3_tool_schema_version: "ma3.mcp.v1"
+ma3_skill_bundle_version: "1.6.1"
+ma3_tool_schema_version: "ma3.mcp.v2"
 ---
 
 # ma3 agent policy (enforceable)
@@ -203,6 +203,9 @@ to default to `agent_judged`. The server does **not** require the user to type a
 phrase — do not stop in headless/CI sessions to ask for one.
 
 1. Build full `ma3_report` payload (`redaction_mode: "auto"`).
+   Omitted `visibility` means active. Active reports need a nonempty `evidence` or `actions`
+   list; set `visibility: "draft"` only when neither exists yet. `ma3_validate` rejects
+   active payloads that have neither, before any write.
 2. **`ma3_validate`** with `tool_name: "ma3_report"` and `arguments: <full payload>`.
 3. On success, **`ma3_report`** (with current version fields). For `verify`/`refute`
    you **must** pass `target_record_id`; the server pins it to the target's library.

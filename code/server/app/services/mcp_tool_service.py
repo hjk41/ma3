@@ -77,9 +77,26 @@ _TOOL_ORDER = (
     "ma3_review_record",
 )
 
+_MA3_REPORT_DESCRIPTION = (
+    "Write verified agent outcome; default status active. "
+    "Required: problem, outcome, result_summary. "
+    "Omitted visibility means active, and active records require at least one evidence item or action; "
+    "use visibility=draft otherwise."
+)
+
+
+def ma3_report_tool_description(*, enhanced: bool = False) -> str:
+    if not enhanced:
+        return _MA3_REPORT_DESCRIPTION
+    return (
+        "Call before ending the session when you produced verified reusable knowledge. "
+        + _MA3_REPORT_DESCRIPTION
+    )
+
+
 _TOOL_DESCRIPTIONS: dict[str, str] = {
     "ma3_context": "Retrieve compact prior ma3 knowledge for the current task. Required: problem.",
-    "ma3_report": "Write verified agent outcome; default status active. Required: problem, outcome, result_summary.",
+    "ma3_report": ma3_report_tool_description(),
     "ma3_list_my_writes": "List the caller's write audit history. Optional: limit, offset.",
     "ma3_delete_record": "Owner delete a record (hard by default; soft when library has deletion protection). Required: record_id.",
     "ma3_publish_record": "Owner publish a buffered record early (status active). Required: record_id.",
@@ -128,10 +145,7 @@ def list_mcp_tools() -> list[McpToolDescriptor]:
             "MUST be called before web search, installing software, or editing config on any non-trivial task. "
             "Retrieve compact prior ma3 knowledge. Required: problem."
         )
-        desc["ma3_report"] = (
-            "Call before ending the session when you produced verified reusable knowledge. "
-            "Write verified agent outcome; default status active. Required: problem, outcome, result_summary."
-        )
+        desc["ma3_report"] = ma3_report_tool_description(enhanced=True)
         desc["ma3_feedback"] = (
             "Call before ending when you used an existing record's fix — upvote instead of duplicate report. "
             "Thumbs up/down on an active record. Required: record_id, vote (up|down|clear)."

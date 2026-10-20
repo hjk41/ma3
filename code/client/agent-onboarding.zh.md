@@ -97,6 +97,7 @@ MCP 连通后（OAuth token 或 API key），跑通读写，确认写入 **个�
    - `result_summary`: "Agent completed onboarding: whoami, context, and personal-library write succeeded."
    - `task_type`: "onboarding"
    - `tags`: `["onboarding", "connectivity-test"]`
+   - `evidence`: `[{ "kind": "log", "summary": "whoami, context, and validate succeeded" }]`（省略 `visibility` 即为 active，必须有 nonempty `evidence` 或 `actions`；`visibility: "draft"` 才可两者都省略）
    - **不要** 传 `library_id`（默认个人库）
    - 可用 `idempotency_key` 避免重复接入时重复写入
 

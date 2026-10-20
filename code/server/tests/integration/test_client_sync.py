@@ -42,6 +42,85 @@ def test_manifest_includes_mcp_tools_and_dual_versions(isolated_client):
     assert any(t["name"] == "ma3_context" for t in tools["tools"])
 
 
+def test_compatible_release_refresh_without_breaking_update(isolated_client, tmp_path):
+    """1.6.0/v1 clients refresh policy and MCP schema; 1.6.1/v2 clients are current."""
+    assert settings.skill_version == "1.6.1"
+    assert settings.recommended_client_version == "1.6.1"
+    assert settings.tool_schema_version == "ma3.mcp.v2"
+    assert settings.min_client_version == "1.0.0"
+    assert settings.min_tool_schema_version == "ma3.mcp.v1"
+
+    mcp = McpClient(isolated_client, api_key="ma3dev")
+    prior = mcp.structured(
+        "ma3_doctor",
+        {"client_version": "1.6.0", "tool_schema_version": "ma3.mcp.v1"},
+    )["server"]
+    assert prior["policy_refresh_required"] is True
+    assert prior["mcp_reload_required"] is True
+    assert prior["client_update_required"] is False
+
+    current = mcp.structured(
+        "ma3_doctor",
+        {"client_version": "1.6.1", "tool_schema_version": "ma3.mcp.v2"},
+    )["server"]
+    assert current["policy_refresh_required"] is False
+    assert current["mcp_reload_required"] is False
+    assert current["client_update_required"] is False
+
+    manifest = isolated_client.get("/client/manifest.json").json()
+    assert manifest["skill_bundle_version"] == "1.6.1"
+    assert manifest["recommended_client_version"] == "1.6.1"
+    assert manifest["tool_schema_version"] == "ma3.mcp.v2"
+    assert manifest["min_client_version"] == "1.0.0"
+    assert manifest["min_tool_schema_version"] == "ma3.mcp.v1"
+    tools = isolated_client.get("/client/mcp-tools.json").json()
+    assert tools["tool_schema_version"] == "ma3.mcp.v2"
+
+    install_dir = tmp_path / "ma3"
+    state_path = install_dir / "ma3-client.json"
+    state_path.parent.mkdir(parents=True, exist_ok=True)
+    state_path.write_text(
+        json.dumps(
+            {
+                "base_url": "http://testserver",
+                "skill_bundle_version": "1.6.0",
+                "tool_schema_version": "ma3.mcp.v1",
+                "synced_at": "2026-09-30T01:38:09+00:00",
+                "files": {item["path"]: "0" * 64 for item in manifest["files"]},
+            }
+        ),
+        encoding="utf-8",
+    )
+    plan = plan_sync(load_client_state(state_path), manifest)
+    assert plan.policy_refresh is True
+    assert plan.mcp_reload is True
+    assert "templates/ma3-agent-policy.mdc" in plan.files_to_update
+    assert "skills/ma3/SKILL.md" in plan.files_to_update
+    assert "mcp-tools.json" in plan.files_to_update
+
+    state, _applied = sync_client(
+        HttpFetchAdapter(isolated_client),
+        base_url="http://testserver",
+        state_path=state_path,
+        install_dir=install_dir,
+        bin_dir=install_dir / "bin",
+        lib_dir=install_dir / "lib",
+        force=False,
+    )
+    assert state.skill_bundle_version == "1.6.1"
+    assert state.tool_schema_version == "ma3.mcp.v2"
+    policy = (install_dir / "policy" / "ma3-agent-policy.mdc").read_text(encoding="utf-8")
+    assert 'ma3_skill_bundle_version: "1.6.1"' in policy
+    assert 'ma3_tool_schema_version: "ma3.mcp.v2"' in policy
+    synced_tools = json.loads((install_dir / "mcp-tools.json").read_text(encoding="utf-8"))
+    assert synced_tools["tool_schema_version"] == "ma3.mcp.v2"
+
+    settled = plan_sync(load_client_state(state_path), build_client_manifest())
+    assert settled.policy_refresh is False
+    assert settled.mcp_reload is False
+    assert settled.files_to_update == []
+
+
 def test_server_block_policy_and_mcp_flags(isolated_client):
     stale = ClientReport(skill_bundle_version="0.0.1", tool_schema_version="ma3.mcp.v0")
     block = build_mcp_server_block(client_report=stale)
@@ -159,7 +238,8 @@ def test_manifest_includes_env_template_and_tooling(isolated_client):
     assert "ma3_context" in skill
     policy = isolated_client.get("/client/templates/ma3-agent-policy.mdc").text
     assert "FIRST-ACTION GATE" in policy
-    assert 'ma3_skill_bundle_version: "1.6.0"' in policy
+    assert 'ma3_skill_bundle_version: "1.6.1"' in policy
+    assert 'ma3_tool_schema_version: "ma3.mcp.v2"' in policy
 
 
 def test_sync_plan_detects_manifest_change(isolated_client, tmp_path, monkeypatch):

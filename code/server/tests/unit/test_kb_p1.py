@@ -38,9 +38,18 @@ def test_context_boost_tag_overlap():
 
 
 def test_validate_report_requires_evidence_for_active():
-    payload = Ma3ReportPayload(problem="p", outcome="resolved", result_summary="s", visibility="active")
+    # model_construct skips the schema validator so this still locks the write helper.
+    payload = Ma3ReportPayload.model_construct(
+        problem="p",
+        outcome="resolved",
+        result_summary="s",
+        visibility="active",
+        evidence=[],
+        actions=[],
+    )
     try:
         validate_report_write(payload, is_maintainer=False)
         raise AssertionError("expected HTTPException")
     except HTTPException as exc:
         assert exc.status_code == 400
+        assert "evidence" in str(exc.detail)

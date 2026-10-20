@@ -119,8 +119,9 @@ ma3_context returned relevant record(s)?
 └─ NO  — solved locally → ma3_report new (if save consented)
 ```
 
-Always use `redaction_mode: auto` on reports. If
-`client_update_required` is true, sync client policy first.
+Always use `redaction_mode: auto` on reports. Active reports (omitted `visibility`
+or `"active"`) need a nonempty `evidence` or `actions` list; `visibility: "draft"`
+may omit both. If `client_update_required` is true, sync client policy first.
 
 ---
 
