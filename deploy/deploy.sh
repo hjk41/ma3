@@ -55,6 +55,7 @@ UVICORN_HOST="${UVICORN_HOST:-0.0.0.0}"
 HEALTHZ_TIMEOUT="${HEALTHZ_TIMEOUT:-240}"
 REQUIRE_VECTOR="${REQUIRE_VECTOR:-1}"
 RUN_VERIFY="${RUN_VERIFY:-1}"
+REQUIRE_VENV_REUSE="${REQUIRE_VENV_REUSE:-0}"
 if [[ -z "${DEPLOY_SOURCE:-}" ]]; then
   if [[ "${ENV_MODE}" == "preserve" ]]; then DEPLOY_SOURCE=git; else DEPLOY_SOURCE=rsync; fi
 fi
@@ -175,7 +176,7 @@ if [[ "${ENV_MODE}" == "preserve" ]]; then
     "${ASSERT_DEV_AUTH_OFF}" "${ASSERT_NO_LAN_PROXY}" \
     "${BLUE_GREEN}" "${BLUE_GREEN_PORT_A}" "${BLUE_GREEN_PORT_B}" \
     "${BLUE_GREEN_DRAIN_SEC}" "${CADDY_UPSTREAM_FILE}" \
-    "${CADDY_RELOAD_CMD_B64}" "${PUBLIC_SMOKE_ARG}"
+    "${CADDY_RELOAD_CMD_B64}" "${PUBLIC_SMOKE_ARG}" "${REQUIRE_VENV_REUSE}"
 
   if [[ "${RUN_VERIFY}" == "1" ]]; then
     # Resolve loopback port: blue-green uses recorded active_port; classic uses MA3_PORT.

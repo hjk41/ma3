@@ -32,6 +32,20 @@ grep -q 'release marker does not match' <<<"${output}"
 full_sha="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
 printf '%s\n' "${full_sha}" >"${release}/.ma3-release-commit"
 mkdir -p "${release}/code/server/scripts" "${tmp}/bin"
+
+# A reuse-only deployment fails before creating a venv or running pip.
+set +e
+output="$(bash "${REPO_DIR}/deploy/common/deploy_release_remote.sh" \
+  "${remote}" "${release}" git aaaaaaa "${full_sha}" \
+  8000 127.0.0.1 1 1 test https://example.invalid 1 1 0 8000 8001 0 \
+  "${remote}/data/upstream.caddy" Y2FkZHkgcmVsb2Fk "" 1 2>&1)"
+status=$?
+set -e
+test "${status}" -ne 0
+grep -q 'compatible current venv required' <<<"${output}"
+test ! -e "${release}/code/server/.venv"
+test ! -e "${remote}/current"
+
 cp "${REPO_DIR}/code/server/scripts/pip_install_requirements.sh" \
   "${release}/code/server/scripts/pip_install_requirements.sh"
 cat >"${tmp}/bin/python3" <<'EOF'
@@ -169,7 +183,7 @@ output="$(
     bash "${REPO_DIR}/deploy/common/deploy_release_remote.sh" \
     "${remote}" "${reuse_release}" git ddddddd dddddddddddddddddddddddddddddddddddddddd \
     59991 127.0.0.1 1 1 test https://example.invalid 1 1 0 8000 8001 0 \
-    "${remote}/data/upstream.caddy" Y2FkZHkgcmVsb2Fk "" 2>&1
+    "${remote}/data/upstream.caddy" Y2FkZHkgcmVsb2Fk "" 1 2>&1
 )"
 status=$?
 set -e

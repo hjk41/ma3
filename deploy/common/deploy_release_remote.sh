@@ -4,8 +4,8 @@
 # or large shell heredoc crosses the operator SSH connection.
 set -euo pipefail
 
-if [[ "$#" -ne 20 ]]; then
-  echo "usage: $0 REMOTE_DIR APP_DIR DEPLOY_SOURCE SHORT_SHA FULL_SHA PORT UVICORN_HOST REQUIRE_VECTOR HEALTHZ_TIMEOUT EXPECT_INSTANCE_ID EXPECT_PUBLIC_BASE_URL ASSERT_DEV_AUTH_OFF ASSERT_NO_LAN_PROXY BLUE_GREEN PORT_A PORT_B DRAIN CADDY_UPSTREAM_FILE CADDY_RELOAD_CMD_B64 PUBLIC_SMOKE_URL" >&2
+if [[ "$#" -lt 20 || "$#" -gt 21 ]]; then
+  echo "usage: $0 REMOTE_DIR APP_DIR DEPLOY_SOURCE SHORT_SHA FULL_SHA PORT UVICORN_HOST REQUIRE_VECTOR HEALTHZ_TIMEOUT EXPECT_INSTANCE_ID EXPECT_PUBLIC_BASE_URL ASSERT_DEV_AUTH_OFF ASSERT_NO_LAN_PROXY BLUE_GREEN PORT_A PORT_B DRAIN CADDY_UPSTREAM_FILE CADDY_RELOAD_CMD_B64 PUBLIC_SMOKE_URL [REQUIRE_VENV_REUSE]" >&2
   exit 2
 fi
 
@@ -29,6 +29,7 @@ BLUE_GREEN_DRAIN_SEC="${17}"
 CADDY_UPSTREAM_FILE="${18}"
 CADDY_RELOAD_CMD="$(printf '%s' "${19}" | base64 -d)"
 BLUE_GREEN_PUBLIC_SMOKE_URL="${20}"
+REQUIRE_VENV_REUSE="${21:-0}"
 if [[ "${BLUE_GREEN_PUBLIC_SMOKE_URL}" == "__MA3_EMPTY__" ]]; then
   BLUE_GREEN_PUBLIC_SMOKE_URL=""
 fi
@@ -132,6 +133,10 @@ reuse_current_venv() {
 }
 
 if ! reuse_current_venv; then
+  [[ "${REQUIRE_VENV_REUSE}" != "1" ]] || {
+    echo "FATAL: compatible current venv required; refusing dependency install" >&2
+    exit 1
+  }
   # Never install into a symlink: it may point at the live release's venv.
   [[ ! -L .venv ]] || {
     echo "FATAL: existing release venv symlink is incompatible; refusing to modify it" >&2
