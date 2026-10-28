@@ -1614,7 +1614,7 @@ def get_record_relations(
             SELECT rr.source_id, rr.target_id, rr.relation_type, rr.created_at
             FROM record_relations rr
             JOIN records r ON r.id = rr.target_id
-            WHERE rr.source_id IN ({placeholders}){lib_filter}
+            WHERE rr.source_id IN ({placeholders}){lib_filter} AND r.status <> 'buffered'
             ORDER BY rr.created_at
             """,
             [*record_ids, *lib_params],
@@ -1625,7 +1625,7 @@ def get_record_relations(
             SELECT rr.source_id, rr.target_id, rr.relation_type, rr.created_at
             FROM record_relations rr
             JOIN records r ON r.id = rr.source_id
-            WHERE rr.target_id IN ({placeholders}){lib_filter}
+            WHERE rr.target_id IN ({placeholders}){lib_filter} AND r.status <> 'buffered'
             ORDER BY rr.created_at
             """,
             [*record_ids, *lib_params],

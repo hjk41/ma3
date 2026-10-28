@@ -333,3 +333,38 @@ def test_non_owner_cannot_publish(buffered_library):
         expect_error=True,
     )
     assert err["code"] in {-32603, 403} or "403" in str(err)
+
+
+def test_author_can_cite_own_buffered_record_as_based_on(buffered_library):
+    mcp = McpClient(buffered_library)
+    author_key = _writer_key("user:buffer-author-h")
+    other_key = _writer_key("user:buffer-author-other-h")
+    buffered = mcp.structured("ma3_report", _report_args(problem="own buffered based_on source"), api_key=author_key)
+    assert buffered["status"] == "buffered"
+    buffered_id = buffered["record_id"]
+
+    err = mcp.call(
+        "ma3_report",
+        _report_args(problem="other user cites buffered", based_on_record_ids=[buffered_id]),
+        api_key=other_key,
+        expect_error=True,
+    )
+    assert "based_on record must be active" in str(err)
+
+    verify = mcp.structured(
+        "ma3_report",
+        _report_args(
+            problem="author verifies own buffered record",
+            report_kind="verify",
+            target_record_id=buffered_id,
+            based_on_record_ids=[buffered_id],
+        ),
+        api_key=author_key,
+    )
+    assert verify["status"] == "active"
+    verify_id = verify["record_id"]
+    assert db.get_record_relations([verify_id]) == {verify_id: []}
+
+    mcp.structured("ma3_publish_record", {"record_id": buffered_id}, api_key=author_key)
+    out = db.get_record_relations([verify_id])[verify_id]
+    assert [(r["direction"], r["peer_id"]) for r in out] == [("out", buffered_id)]

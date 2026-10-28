@@ -706,8 +706,13 @@ def _call_mcp_tool_impl(name: str, arguments: dict[str, Any], auth: McpAuthConte
             ref = db.get_record(ref_id)
             if not ref or ref.get("library_id") not in auth.readable_library_ids:
                 raise HTTPException(status_code=400, detail=f"based_on record not readable: {ref_id}")
-            if ref.get("status") != "active":
-                raise HTTPException(status_code=400, detail=f"based_on record must be active: {ref_id}")
+            if ref.get("status") != "active" and not (
+                ref.get("status") == "buffered" and db.is_record_owner(ref_id, auth.principal.principal_id)
+            ):
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"based_on record must be active or your own buffered record: {ref_id}",
+                )
         dump = storage_payload(payload.model_dump(mode="json"))
         dump["report_kind"] = write_plan.report_kind
         dump["confirmation"] = write_plan.confirmation
